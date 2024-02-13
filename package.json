@@ -1,0 +1,29 @@
+{
+  "name": "missiv-monorepo",
+  "version": "0.0.0",
+  "description": "A server/client for messages",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "ldenv": "^0.3.7",
+    "syncpack": "^11.2.1"
+  },
+  "scripts": {
+    "preinstall": "npx only-allow pnpm",
+    "---------------------- INSTALL ----------------------": "",
+    "sync-deps": "syncpack fix-mismatches && pnpm -r format:fix",
+    "---------------------- FORMAT ----------------------": "",
+    "format": "prettier --write . && pnpm -r format",
+    "format:check": "prettier --check . && pnpm -r format:check",
+    "---------------------- DEV ----------------------": "",
+    "client:dev": "pnpm --filter ./client dev",
+    "server:dev": "pnpm --filter ./server dev",
+    "---------------------- DEPLOY ----------------------": "",
+    "build": "ldenv pnpm run --filter ./client build",
+    "serve": "pnpm --filter ./client serve",
+    "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
+    "start:wezterm": "wezterm --config-file wezterm.lua start $PWD",
+    "stop": "zellij kill-session $npm_package_name",
+    "start": "zellij --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
+  }
+}
