@@ -9,7 +9,7 @@ SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 {
 "type": "sendMessage",
 "to": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-"message": "hello world 2"
+"message": "hello world"
 }
 ### 
 
@@ -68,3 +68,23 @@ content-type: application/json
 "lastMessageTimestampMS": 2145916800000
 }
 ### 
+
+
+############################################################
+
+
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+
+{
+"type": "kv:list"
+}
+###
+
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+
+{
+"type": "kv:delete"
+}
+###

@@ -25,41 +25,54 @@ export async function getChatMessages(env: Env, accountA: Address, accountB: Add
 	return toJSONResponse(values);
 }
 export async function getConversations(env: Env, account: Address) {
-	const list = await env.MESSAGES.list({ prefix: `account:${account}:` });
-	const values: { [key: string]: any } = {};
-	const accounts: { [account: Address]: any } = {};
+	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:0_unread:` });
+	const unreadAccounts: { [account: Address]: number } = {};
+	for (const key of unreadList.keys) {
+		const splitted = key.name.split(':');
+		const acccountFrom = splitted[splitted.length - 1] as Address;
+		const messageTimestampMS = Number(splitted[splitted.length - 2]);
+		unreadAccounts[acccountFrom] = messageTimestampMS;
+	}
+	const list = await env.MESSAGES.list({ prefix: `account:${account}:1_last:` });
+	const accounts: { [account: Address]: { timestampMS: number; unread: boolean } } = {};
+	const toRemove: { [key: string]: boolean } = {};
 	for (const key of list.keys) {
 		const splitted = key.name.split(':');
 		const acccountFrom = splitted[splitted.length - 1] as Address;
+		const messageTimestampMS = Number(splitted[splitted.length - 2]);
 		if (!accounts[acccountFrom]) {
-			const value = await env.MESSAGES.get(key.name);
-			values[key.name] = value;
-			accounts[acccountFrom] = value;
+			const unread = unreadAccounts[acccountFrom];
+			accounts[acccountFrom] = { timestampMS: unread ? Math.max(messageTimestampMS, unread) : messageTimestampMS, unread: !!unread };
 		} else {
-			// remove duplicate
-			await env.MESSAGES.delete(key.name);
+			toRemove[key.name] = true;
 		}
 	}
-	return values;
+
+	for (const keyName of Object.keys(toRemove)) {
+		await env.MESSAGES.delete(keyName);
+	}
+	const conversations: { account: Address; last: number; unread: boolean }[] = [];
+	for (const account of Object.keys(accounts) as Address[]) {
+		const data = accounts[account];
+		const conversation = {
+			account: account,
+			last: data.timestampMS,
+			unread: data.unread,
+		};
+		conversations.push(conversation);
+	}
+	return conversations;
 }
 
 export async function markAsRead(env: Env, account: Address, lastMessageTimestampMS: number) {
-	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:unread:` });
+	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:0_unread:` });
 	let read = 0;
 	for (const unreadKey of unreadList.keys) {
 		const splitted = unreadKey.name.split(':');
 		const timestamp = Number(splitted[splitted.length - 2]);
 		if (timestamp <= lastMessageTimestampMS) {
-			const value = await env.MESSAGES.get(unreadKey.name);
-			if (value) {
-				await env.MESSAGES.delete(unreadKey.name);
-				read++;
-			}
-		} else {
-			// console.log({
-			// 	timestamp,
-			// 	lastMessageTimestampMS,
-			// });
+			await env.MESSAGES.delete(unreadKey.name);
+			read++;
 		}
 	}
 	return { read };
@@ -68,8 +81,8 @@ export async function markAsRead(env: Env, account: Address, lastMessageTimestam
 export async function recordMessage(env: Env, account: Address, timestampMS: number, action: ActionSendMessage) {
 	const chatMessageID = `message:${getChatID(action.to, account)}:${timestampMS}`;
 	await env.MESSAGES.put(chatMessageID, JSON.stringify({ message: action.message, from: account }));
-	await env.MESSAGES.put(`account:${action.to}:last:${timestampMS}:${account}`, chatMessageID);
-	await env.MESSAGES.put(`account:${action.to}:unread:${timestampMS}:${account}`, chatMessageID);
+	await env.MESSAGES.put(`account:${action.to}:0_unread:${timestampMS}:${account}`, chatMessageID);
+	await env.MESSAGES.put(`account:${action.to}:1_last:${timestampMS}:${account}`, chatMessageID);
 }
 
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
