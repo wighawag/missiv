@@ -1,20 +1,10 @@
 import type { Env } from '../env';
+import { Action, ActionSendMessage, Address, SchemaAction, SchemaAddress, parse } from '../types';
 import { toJSONResponse } from '../utils';
 
 const NotImplementedResponse = () => new Response('Not Implemented', { status: 500 });
 
-export type Action = { timestampMS: number } & (
-	| { type: 'sendMessage'; to: `0x${string}`; message: string }
-	| {
-			type: 'getConversations';
-	  }
-	| { type: 'markAsRead'; lastMessageTimestampMS: number }
-	| { type: 'kv:delete' }
-	| { type: 'kv:list' }
-	| { type: 'getMessages'; with: `0x${string}` }
-);
-
-export function getChatID(accountA: `0x${string}`, accountB: `0x${string}`) {
+export function getChatID(accountA: Address, accountB: Address) {
 	if (accountA > accountB) {
 		return `${accountA}${accountB}`;
 	} else {
@@ -22,7 +12,7 @@ export function getChatID(accountA: `0x${string}`, accountB: `0x${string}`) {
 	}
 }
 
-export async function getChatMessages(env: Env, accountA: `0x${string}`, accountB: `0x${string}`): Promise<Response> {
+export async function getChatMessages(env: Env, accountA: Address, accountB: Address): Promise<Response> {
 	// TODO authenticate before
 	// encrypted means it should be fine, but still
 	const list = await env.MESSAGES.list({ prefix: `message:${getChatID(accountA, accountB)}:` });
@@ -34,9 +24,27 @@ export async function getChatMessages(env: Env, accountA: `0x${string}`, account
 
 	return toJSONResponse(values);
 }
+export async function getConversations(env: Env, account: Address) {
+	const list = await env.MESSAGES.list({ prefix: `account:${account}:` });
+	const values: { [key: string]: any } = {};
+	const accounts: { [account: Address]: any } = {};
+	for (const key of list.keys) {
+		const splitted = key.name.split(':');
+		const acccountFrom = splitted[splitted.length - 1] as Address;
+		if (!accounts[acccountFrom]) {
+			const value = await env.MESSAGES.get(key.name);
+			values[key.name] = value;
+			accounts[acccountFrom] = value;
+		} else {
+			// remove duplicate
+			await env.MESSAGES.delete(key.name);
+		}
+	}
+	return values;
+}
 
-export async function markAsRead(env: Env, account: `0x${string}`, lastMessageTimestampMS: number) {
-	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:0_unread:` });
+export async function markAsRead(env: Env, account: Address, lastMessageTimestampMS: number) {
+	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:unread:` });
 	let read = 0;
 	for (const unreadKey of unreadList.keys) {
 		const splitted = unreadKey.name.split(':');
@@ -44,10 +52,6 @@ export async function markAsRead(env: Env, account: `0x${string}`, lastMessageTi
 		if (timestamp <= lastMessageTimestampMS) {
 			const value = await env.MESSAGES.get(unreadKey.name);
 			if (value) {
-				const readKey = unreadKey.name.replace('0_unread', '1_read');
-				// TODO only put most recent, the unread/read list are just to keep track exising conversation
-				//  they do not store messages
-				await env.MESSAGES.put(readKey, value);
 				await env.MESSAGES.delete(unreadKey.name);
 				read++;
 			}
@@ -61,6 +65,13 @@ export async function markAsRead(env: Env, account: `0x${string}`, lastMessageTi
 	return { read };
 }
 
+export async function recordMessage(env: Env, account: Address, timestampMS: number, action: ActionSendMessage) {
+	const chatMessageID = `message:${getChatID(action.to, account)}:${timestampMS}`;
+	await env.MESSAGES.put(chatMessageID, JSON.stringify({ message: action.message, from: account }));
+	await env.MESSAGES.put(`account:${action.to}:last:${timestampMS}:${account}`, chatMessageID);
+	await env.MESSAGES.put(`account:${action.to}:unread:${timestampMS}:${account}`, chatMessageID);
+}
+
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
 	if (request.method == 'POST') {
 	} else {
@@ -68,16 +79,16 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 	}
 	const rawContent = await request.text();
 	console.log(rawContent);
-	const action: Action = JSON.parse(rawContent);
+	const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 	const timestampMS = Date.now();
-	let account: `0x${string}` | undefined;
+	let account: Address | undefined;
 	const authentication = request.headers.get('SIGNATURE');
 	if (authentication) {
 		if (authentication.startsWith('FAKE:')) {
 			if (env.WORKER_ENV !== 'dev') {
 				throw new Error(`FAKE authentication only allowed in dev mode`);
 			}
-			account = authentication.split(':')[1] as `0x${string}`;
+			account = parse(SchemaAddress, authentication.split(':')[1]);
 			if (!account) {
 				throw new Error(`no account provided in FAKE mode`);
 			}
@@ -91,11 +102,9 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			// TODO  validation
 
-			const chatMessageID = `message:${getChatID(action.to, account)}:${timestampMS}`;
-			await env.MESSAGES.put(chatMessageID, JSON.stringify({ message: action.message, from: account }));
-			await env.MESSAGES.put(`account:${action.to}:0_unread:${timestampMS}:${account}`, chatMessageID);
+			await recordMessage(env, account, timestampMS, action);
+
 			return toJSONResponse({
 				timestampMS,
 			});
@@ -105,24 +114,9 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			const list = await env.MESSAGES.list({ prefix: `account:${account}:` });
-			const values: { [key: string]: any } = {};
-			const accounts: { [account: `0x${string}`]: any } = {};
-			for (const key of list.keys) {
-				const splitted = key.name.split(':');
-				const acccountFrom = splitted[splitted.length - 1] as `0x${string}`;
-				if (!accounts[acccountFrom]) {
-					// TODO TOlower case all account
-					const value = await env.MESSAGES.get(key.name);
-					values[key.name] = value;
-					accounts[acccountFrom] = value;
-				} else {
-					// remove duplicate
-					await env.MESSAGES.delete(key.name);
-				}
-			}
+			const conversations = await getConversations(env, account);
 
-			return toJSONResponse(values);
+			return toJSONResponse(conversations);
 		}
 
 		case 'markAsRead': {
