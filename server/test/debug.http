@@ -1,0 +1,16 @@
+
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+
+{
+"type": "kv:list"
+}
+
+###
+
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+
+{
+"type": "kv:delete"
+}

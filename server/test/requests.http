@@ -1,0 +1,70 @@
+
+# sending "hello world"
+#  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+#  to 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+{
+"type": "sendMessage",
+"to": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"message": "hello world 2"
+}
+### 
+
+
+
+# sending "Yo !"
+#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+#  to 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+POST http://localhost:8787/api HTTP/1.1
+content-type: application/json
+SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+
+{
+"type": "sendMessage",
+"to": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+"message": "Yo !"
+}
+### 
+
+
+# getting list of chats
+#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+POST http://localhost:8787/api HTTP/1.1
+SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+content-type: application/json
+
+{
+"type": "getConversations"
+}
+### 
+
+
+
+# getting messages from chat
+#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+#  with 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+POST http://localhost:8787/api HTTP/1.1
+SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+content-type: application/json
+
+{
+"type": "getMessages",
+"with": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
+### 
+
+
+# mark as read up to 01/01/2038
+#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+POST http://localhost:8787/api HTTP/1.1
+SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+content-type: application/json
+
+{
+"type": "markAsRead",
+"lastMessageTimestampMS": 2145916800000
+}
+### 
