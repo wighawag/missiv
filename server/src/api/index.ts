@@ -1,8 +1,9 @@
+import { CorsResponse } from '../cors';
 import type { Env } from '../env';
 import { Action, ActionSendMessage, Address, SchemaAction, SchemaAddress, parse } from '../types';
 import { toJSONResponse } from '../utils';
 
-const NotImplementedResponse = () => new Response('Not Implemented', { status: 500 });
+const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
 
 export function getChatID(accountA: Address, accountB: Address) {
 	if (accountA > accountB) {
@@ -88,7 +89,7 @@ export async function recordMessage(env: Env, account: Address, timestampMS: num
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
 	if (request.method == 'POST') {
 	} else {
-		return new Response('Method not allowed', { status: 405 });
+		return new CorsResponse('Method not allowed', { status: 405 });
 	}
 	const rawContent = await request.text();
 	console.log(rawContent);
@@ -173,6 +174,6 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 		}
 
 		default:
-			return new Response('Not found', { status: 404 });
+			return new CorsResponse('Not found', { status: 404 });
 	}
 }

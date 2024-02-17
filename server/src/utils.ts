@@ -1,5 +1,8 @@
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
+
+import { CorsResponse } from './cors';
+
 // code but it is convenient when debugging and iterating.
 export async function handleErrors(request: Request, func: () => Promise<Response>): Promise<Response> {
 	try {
@@ -13,14 +16,14 @@ export async function handleErrors(request: Request, func: () => Promise<Respons
 			pair[1].accept();
 			pair[1].send(JSON.stringify({ error: err.stack }, null, 2));
 			pair[1].close(1011, 'Uncaught exception during session setup');
-			return new Response(null, { status: 101, webSocket: pair[0] });
+			return new CorsResponse(null, { status: 101, webSocket: pair[0] });
 		} else {
-			return new Response(err.stack, { status: 500 });
+			return new CorsResponse(err.stack, { status: 500 });
 		}
 	}
 }
 
 export async function toJSONResponse(object: object | Promise<object>): Promise<Response> {
 	object = await Promise.resolve(object);
-	return new Response(JSON.stringify(object, null, 2));
+	return new CorsResponse(JSON.stringify(object, null, 2));
 }
