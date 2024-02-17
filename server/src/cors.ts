@@ -31,7 +31,7 @@ export class CorsResponse extends Response {
 			if (init.headers) {
 				if (init.headers instanceof Headers) {
 					for (const h of Object.keys(corsHeaders)) {
-						init.headers.append(h, corsHeaders[h]);
+						init.headers.set(h, corsHeaders[h]);
 					}
 				} else {
 					init.headers = {
