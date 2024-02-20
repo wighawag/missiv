@@ -23,7 +23,7 @@ export type ResponseSendMessage = {
 export const SchemaActionAcceptConversation = object({
 	type: literal('acceptConversation'),
 	with: string0x(),
-	unacceptedID: string(),
+	unacceptedTimestampMS: number(),
 });
 export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
 export type ResponseAcceptConversation = {
@@ -37,7 +37,7 @@ export const SchemaActionGetConversations = object({
 export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
 export type ResponseGetConversations = Conversation[];
 
-export type ConversationRequest = { account: Address; timestampMS: number; id: string };
+export type ConversationRequest = { account: Address; timestampMS: number };
 export const SchemaActionGetConversationRequests = object({
 	type: literal('getConversationRequests'),
 });

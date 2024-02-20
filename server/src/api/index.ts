@@ -120,7 +120,7 @@ export async function acceptConversation(env: Env, account: Address, action: Act
 		await env.MESSAGES.put(conversationID, conversationID);
 	}
 
-	const unacceptedID = action.unacceptedID;
+	const unacceptedID = `account:${account}:010_unaccepted:${action.unacceptedTimestampMS}:${action.with}`;
 	const chatMessageID = await env.MESSAGES.get(unacceptedID);
 	if (chatMessageID) {
 		const splitted = chatMessageID.split(':');
@@ -136,7 +136,7 @@ export async function acceptConversation(env: Env, account: Address, action: Act
 
 export async function getConversationRequests(env: Env, account: Address): Promise<ConversationRequest[]> {
 	const list = await env.MESSAGES.list({ prefix: `account:${account}:010_unaccepted:` });
-	const accounts: { [account: Address]: { timestampMS: number; unacceptedID: string } } = {};
+	const accounts: { [account: Address]: { timestampMS: number } } = {};
 	const toRemove: { [key: string]: boolean } = {};
 	const accountsAlreadyAccepted: { [key: string]: boolean } = {};
 	for (const key of list.keys) {
@@ -154,7 +154,7 @@ export async function getConversationRequests(env: Env, account: Address): Promi
 				toRemove[key.name] = true;
 			} else {
 				if (!accounts[acccountFrom]) {
-					accounts[acccountFrom] = { timestampMS: messageTimestampMS, unacceptedID: key.name };
+					accounts[acccountFrom] = { timestampMS: messageTimestampMS };
 				} else {
 					toRemove[key.name] = true;
 				}
@@ -171,7 +171,6 @@ export async function getConversationRequests(env: Env, account: Address): Promi
 		const conversation = {
 			account: account,
 			timestampMS: data.timestampMS,
-			id: data.unacceptedID,
 		};
 		conversationRequests.push(conversation);
 	}

@@ -57,7 +57,7 @@ describe('Worker', () => {
 		);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
 		await api.acceptConversation(
-			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedID: conversationRequests[0].id },
+			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		const conversationRequestsAfter = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
@@ -76,7 +76,7 @@ describe('Worker', () => {
 		);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
 		await api.acceptConversation(
-			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedID: conversationRequests[0].id },
+			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		await api.sendMessage(
@@ -98,5 +98,40 @@ describe('Worker', () => {
 			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
 		);
 		expect(messagesA).to.toEqual(messagesB);
+	});
+
+	it('reply show up as unread', async () => {
+		await api.sendMessage(
+			{
+				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				message: 'Yo !',
+			},
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		await api.acceptConversation(
+			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
+			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+		);
+		await api.sendMessage(
+			{
+				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				message: 'how are you?',
+			},
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		await api.sendMessage(
+			{
+				to: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+				message: 'I am good thanks',
+			},
+			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+		);
+		const conversationsB = await api.getConversations({ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
+		expect(conversationsB.length).toBe(1);
+		expect(conversationsB[0].unread).toBe(true);
+		const conversationsA = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		expect(conversationsA.length).toBe(1);
+		expect(conversationsA[0].unread).toBe(false);
 	});
 });
