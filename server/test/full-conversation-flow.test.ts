@@ -65,4 +65,38 @@ describe('Worker', () => {
 		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
 		expect(conversations.length).toBe(1);
 	});
+
+	it('sending further message on an accepted conversation end up there', async () => {
+		await api.sendMessage(
+			{
+				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				message: 'Yo !',
+			},
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		await api.acceptConversation(
+			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedID: conversationRequests[0].id },
+			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+		);
+		await api.sendMessage(
+			{
+				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				message: 'Yo !',
+			},
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		expect(conversations.length).toBe(1);
+		const messagesA = await api.getMessages(
+			{ with: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+		);
+		expect(messagesA.length).toBe(2);
+		const messagesB = await api.getMessages(
+			{ with: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		expect(messagesA).to.toEqual(messagesB);
+	});
 });

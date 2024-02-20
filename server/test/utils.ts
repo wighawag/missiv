@@ -3,10 +3,12 @@ import {
 	Action,
 	ActionAcceptConversation,
 	ActionGetConversations,
+	ActionGetMessages,
 	ActionSendMessage,
 	ResponseAcceptConversation,
 	ResponseGetConversationRequests,
 	ResponseGetConversations,
+	ResponseGetMessages,
 	ResponseSendMessage,
 } from '../src/types';
 
@@ -66,6 +68,16 @@ export class WorkerAPI {
 			{
 				type: 'acceptConversation',
 				...conversation,
+			},
+			options,
+		);
+	}
+
+	async getMessages(chat: Omit<ActionGetMessages, 'type'>, options: APIOptions) {
+		return this.call<ResponseGetMessages>(
+			{
+				type: 'getMessages',
+				...chat,
 			},
 			options,
 		);
