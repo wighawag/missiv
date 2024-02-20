@@ -15,22 +15,57 @@ export const SchemaActionSendMessage = object({
 	to: string0x(),
 	message: string(),
 });
-
 export type ActionSendMessage = Output<typeof SchemaActionSendMessage>;
+export type ResponseSendMessage = {
+	timestampMS: number;
+};
+
+export const SchemaActionAcceptConversation = object({
+	type: literal('acceptConversation'),
+	with: string0x(),
+	unacceptedID: string(),
+});
+export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
+export type ResponseAcceptConversation = {
+	deleted: number;
+};
+
+export type Conversation = { account: Address; last: number; unread: boolean };
+export const SchemaActionGetConversations = object({
+	type: literal('getConversations'),
+});
+export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
+export type ResponseGetConversations = Conversation[];
+
+export type ConversationRequest = { account: Address; timestampMS: number; id: string };
+export const SchemaActionGetConversationRequests = object({
+	type: literal('getConversationRequests'),
+});
+export type ActionGetConversationRequests = Output<typeof SchemaActionGetConversationRequests>;
+export type ResponseGetConversationRequests = ConversationRequest[];
+
+export const SchemaActionMarkAsRead = object({
+	type: literal('markAsRead'),
+	lastMessageTimestampMS: number(),
+});
+export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
+export type ResponseMarkAsRead = { read: number };
+
+export type ComversationMessage = { message: string; from: `0x${string}` };
+export const SchemaActionGetMessages = object({
+	type: literal('getMessages'),
+	with: string0x(),
+});
+export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
+export type ResponseGetMessages = ComversationMessage[];
 
 export const SchemaAction = variant('type', [
 	SchemaActionSendMessage,
-	object({
-		type: literal('getConversations'),
-	}),
-	object({
-		type: literal('markAsRead'),
-		lastMessageTimestampMS: number(),
-	}),
-	object({
-		type: literal('getMessages'),
-		with: string0x(),
-	}),
+	SchemaActionGetConversations,
+	SchemaActionGetConversationRequests,
+	SchemaActionMarkAsRead,
+	SchemaActionGetMessages,
+	SchemaActionAcceptConversation,
 	object({
 		type: literal('kv:list'),
 	}),

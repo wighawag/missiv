@@ -2,9 +2,10 @@
   "name": "missiv-server",
   "version": "0.0.0",
   "private": true,
-  "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+  "dependencies": {
+    "@noble/curves": "^1.1.0",
+    "@noble/hashes": "^1.3.1",
+    "valibot": "^0.28.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230814.0",
@@ -12,9 +13,9 @@
     "vitest": "^1.3.0",
     "wrangler": "^3.5.1"
   },
-  "dependencies": {
-    "@noble/curves": "^1.1.0",
-    "@noble/hashes": "^1.3.1",
-    "valibot": "^0.28.1"
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "vitest"
   }
 }
