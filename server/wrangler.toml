@@ -17,3 +17,8 @@ compatibility_date = "2023-08-14"
 kv_namespaces = [
     { binding = "MESSAGES", id = "a6c1c2749ff94d3299f9518070081025", preview_id = "e11229da011a4fb2864d4bf307d416fc" }
 ]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "missiv-db"
+database_id = "accc2885-d412-447d-a1ed-daf6758cb8e4"
