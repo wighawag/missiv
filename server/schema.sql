@@ -1,8 +1,8 @@
-DROP TABLE IF EXISTS ConversationViews;
-CREATE TABLE IF NOT EXISTS ConversationViews (
+DROP TABLE IF EXISTS Conversations;
+CREATE TABLE IF NOT EXISTS Conversations (
     first         text        NOT NULL,
     second        text        NOT NULL,
-    conversation  text        NOT NULL,
+    conversationID  text        NOT NULL,
     lastMessage   timestamp   NOT NULL, 
     accepted      boolean     NOT NULL,
     read        boolean     NOT NULL,
@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS ConversationViews (
     FOREIGN KEY (first) REFERENCES Users (address),
     FOREIGN KEY (second) REFERENCES Users (address)
 );
-CREATE INDEX IF NOT EXISTS idx_read ON ConversationViews (first, accepted, read);
-CREATE INDEX IF NOT EXISTS idx_accepted ON ConversationViews (first, accepted);
+CREATE INDEX IF NOT EXISTS idx_read ON Conversations (first, accepted, read);
+CREATE INDEX IF NOT EXISTS idx_accepted ON Conversations (first, accepted);
 
 
 DROP TABLE IF EXISTS Messages;

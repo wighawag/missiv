@@ -4,17 +4,19 @@ import {
 	ActionAcceptConversation,
 	ActionGetConversations,
 	ActionGetMessages,
+	ActionGetUser,
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	ResponseAcceptConversation,
 	ResponseGetConversationRequests,
 	ResponseGetConversations,
 	ResponseGetMessages,
+	ResponseGetUser,
 	ResponseRegisterPublicKeys,
 	ResponseSendMessage,
 } from '../src/types';
 
-export type APIOptions = { signature: string } | { account: string };
+export type APIOptions = { signature: string } | { publicKey: string };
 
 export class WorkerAPI {
 	constructor(private worker: UnstableDevWorker) {}
@@ -24,7 +26,7 @@ export class WorkerAPI {
 			'content-type': 'application/json',
 		};
 		if (options) {
-			headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.account}`;
+			headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
 		}
 		const resp = await this.worker.fetch('api', {
 			method: 'POST',
@@ -41,10 +43,10 @@ export class WorkerAPI {
 		}
 	}
 
-	async registerPublicKeys(action: Omit<ActionRegisterPublicKeys, 'type'>, options: APIOptions) {
+	async register(action: Omit<ActionRegisterPublicKeys, 'type'>, options: APIOptions) {
 		return this.call<ResponseRegisterPublicKeys>(
 			{
-				type: 'registerPublicKeys',
+				type: 'register',
 				...action,
 			},
 			options,
@@ -70,10 +72,10 @@ export class WorkerAPI {
 		);
 	}
 
-	async getConversationRequests(options: APIOptions) {
+	async getUnacceptedConversations(options: APIOptions) {
 		return this.call<ResponseGetConversationRequests>(
 			{
-				type: 'getConversationRequests',
+				type: 'getUnacceptedConversations',
 			},
 			options,
 		);
@@ -96,6 +98,13 @@ export class WorkerAPI {
 			},
 			options,
 		);
+	}
+
+	async getUser(chat: Omit<ActionGetUser, 'type'>) {
+		return this.call<ResponseGetUser>({
+			type: 'getUser',
+			...chat,
+		});
 	}
 
 	async clear() {

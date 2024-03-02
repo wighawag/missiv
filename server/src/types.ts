@@ -7,6 +7,9 @@ const string0x = (...args: (BaseValidation<`0x${string}`> | BaseTransformation<`
 		...args,
 	]);
 
+export const SchemaPublicKey = string0x();
+export type PublicKey = Output<typeof SchemaPublicKey>;
+
 export const SchemaAddress = string0x();
 export type Address = Output<typeof SchemaAddress>;
 
@@ -14,6 +17,7 @@ export const SchemaActionSendMessage = object({
 	type: literal('sendMessage'),
 	to: string0x(),
 	message: string(),
+	signature: string0x(),
 });
 export type ActionSendMessage = Output<typeof SchemaActionSendMessage>;
 export type ResponseSendMessage = {
@@ -22,46 +26,54 @@ export type ResponseSendMessage = {
 
 export const SchemaActionAcceptConversation = object({
 	type: literal('acceptConversation'),
-	conversation: string(),
+	conversationID: string(),
 });
 export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
 export type ResponseAcceptConversation = {
 	timestampMS: number;
 };
 
-export type Conversation = { account: Address; last: number; read: boolean };
+export type Conversation = { read: boolean; conversationID: string };
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
 });
 export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
 export type ResponseGetConversations = Conversation[];
 
-export type ConversationRequest = { account: Address; timestampMS: number };
-export const SchemaActionGetConversationRequests = object({
-	type: literal('getConversationRequests'),
+export const SchemaActionGetUnacceptedConversations = object({
+	type: literal('getUnacceptedConversations'),
 });
-export type ActionGetConversationRequests = Output<typeof SchemaActionGetConversationRequests>;
-export type ResponseGetConversationRequests = ConversationRequest[];
+export type ActionGetUnacceptedConversations = Output<typeof SchemaActionGetUnacceptedConversations>;
+export type ResponseGetUnacceptedConversations = Conversation[];
 
 export const SchemaActionMarkAsRead = object({
 	type: literal('markAsRead'),
-	conversation: string(),
+	conversationID: string(),
 	lastMessageTimestampMS: number(),
 });
 export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
 export type ResponseMarkAsRead = { timestampMS: number };
 
-export type ComversationMessage = { message: string; from: `0x${string}` };
+export type ConversationMessage = { message: string; from: `0x${string}` };
 export const SchemaActionGetMessages = object({
 	type: literal('getMessages'),
-	with: string0x(),
+	conversationID: string(),
 });
 export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
-export type ResponseGetMessages = ComversationMessage[];
+export type ResponseGetMessages = ConversationMessage[];
+
+export type User = { address: Address; publicKey: PublicKey; signature: `0x${string}`; lastPresence: number; created: number };
+export const SchemaActionGetUser = object({
+	type: literal('getUser'),
+	address: string0x(),
+});
+export type ActionGetUser = Output<typeof SchemaActionGetUser>;
+export type ResponseGetUser = User | undefined;
 
 export const SchemaActionRegisterPublicKeys = object({
-	type: literal('registerPublicKeys'),
-	signingKey: string(),
+	type: literal('register'),
+	signature: string0x(),
+	address: string0x(),
 });
 export type ActionRegisterPublicKeys = Output<typeof SchemaActionRegisterPublicKeys>;
 export type ResponseRegisterPublicKeys = { timestampMS: number };
@@ -70,10 +82,11 @@ export const SchemaAction = variant('type', [
 	SchemaActionRegisterPublicKeys,
 	SchemaActionSendMessage,
 	SchemaActionGetConversations,
-	SchemaActionGetConversationRequests,
+	SchemaActionGetUnacceptedConversations,
 	SchemaActionMarkAsRead,
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
+	SchemaActionGetUser,
 
 	object({
 		type: literal('db:select'),

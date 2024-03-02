@@ -4,6 +4,16 @@ import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from
 import { WorkerAPI } from './utils';
 import { getConversationID } from '../src/api';
 
+const USER_A = {
+	publicKey: '0xFAKE_AA',
+	address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+} as const;
+
+const USER_B = {
+	publicKey: '0xFAKE_BB',
+	address: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+} as const;
+
 describe('Worker', () => {
 	let worker: UnstableDevWorker;
 	let api: WorkerAPI;
@@ -17,17 +27,19 @@ describe('Worker', () => {
 
 	beforeEach(async () => {
 		await api.clear();
-		await api.registerPublicKeys(
+		await api.register(
 			{
-				signingKey: '',
+				address: USER_B.address,
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
-		await api.registerPublicKeys(
+		await api.register(
 			{
-				signingKey: '',
+				address: USER_A.address,
+				signature: '0x',
 			},
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ publicKey: USER_A.publicKey },
 		);
 	});
 
@@ -47,112 +59,113 @@ describe('Worker', () => {
 		const time = Date.now();
 		const sent = await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'Yo !',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
 		expect(sent.timestampMS).to.toBeGreaterThan(time);
-		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		const conversations = await api.getConversations({ publicKey: USER_A.publicKey });
 		expect(conversations.length).toBe(0);
-		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		expect(conversationRequests.length).toBe(1);
+		const unacceptedConversations = await api.getUnacceptedConversations({ publicKey: USER_A.publicKey });
+		expect(unacceptedConversations.length).toBe(1);
 	});
 
-	it('accepting a conversation request make it end up in conmversations', async () => {
+	it('accepting a conversation request make it end up in conversations', async () => {
 		await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'Yo !',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
-		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		expect(conversationRequests.length).toBe(1);
+		const unacceptedConversations = await api.getUnacceptedConversations({ publicKey: USER_A.publicKey });
+		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
-				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+				conversationID: unacceptedConversations[0].conversationID,
 			},
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ publicKey: USER_A.publicKey },
 		);
-		const conversationRequestsAfter = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		expect(conversationRequestsAfter.length).toBe(0);
-		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		const unacceptedConversationsAfter = await api.getUnacceptedConversations({ publicKey: USER_A.publicKey });
+		expect(unacceptedConversationsAfter.length).toBe(0);
+		const conversations = await api.getConversations({ publicKey: USER_A.publicKey });
 		expect(conversations.length).toBe(1);
 	});
 
 	it('sending further message on an accepted conversation end up there', async () => {
 		await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'Yo !',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
-		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		expect(conversationRequests.length).toBe(1);
+		const unacceptedConversations = await api.getUnacceptedConversations({ publicKey: USER_A.publicKey });
+		expect(unacceptedConversations.length).toBe(1);
 
 		await api.acceptConversation(
 			{
-				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+				conversationID: unacceptedConversations[0].conversationID,
 			},
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ publicKey: USER_A.publicKey },
 		);
 		await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'Yo !',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
-		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		const conversations = await api.getConversations({ publicKey: USER_A.publicKey });
 		expect(conversations.length).toBe(1);
-		const messagesA = await api.getMessages(
-			{ with: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
-		);
+		const messagesA = await api.getMessages({ conversationID: conversations[0].conversationID }, { publicKey: USER_A.publicKey });
 		expect(messagesA.length).toBe(2);
-		const messagesB = await api.getMessages(
-			{ with: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
-		);
+		const messagesB = await api.getMessages({ conversationID: conversations[0].conversationID }, { publicKey: USER_B.publicKey });
 		expect(messagesA).to.toEqual(messagesB);
 	});
 
 	it('reply show up as unread', async () => {
 		await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'Yo !',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
-		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		expect(conversationRequests.length).toBe(1);
+		const unacceptedConversations = await api.getUnacceptedConversations({ publicKey: USER_A.publicKey });
+		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
-				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+				conversationID: unacceptedConversations[0].conversationID,
 			},
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ publicKey: USER_A.publicKey },
 		);
 		await api.sendMessage(
 			{
-				to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+				to: USER_A.address,
 				message: 'how are you?',
+				signature: '0x',
 			},
-			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+			{ publicKey: USER_B.publicKey },
 		);
 		await api.sendMessage(
 			{
-				to: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+				to: USER_B.address,
 				message: 'I am good thanks',
+				signature: '0x',
 			},
-			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+			{ publicKey: USER_A.publicKey },
 		);
-		const conversationsB = await api.getConversations({ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
+		const conversationsB = await api.getConversations({ publicKey: USER_B.publicKey });
 		expect(conversationsB.length).toBe(1);
 		expect(conversationsB[0].read).toBe(false);
-		const conversationsA = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		const conversationsA = await api.getConversations({ publicKey: USER_A.publicKey });
 		expect(conversationsA.length).toBe(1);
 		expect(conversationsA[0].read).toBe(true);
 	});

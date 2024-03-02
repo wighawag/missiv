@@ -6,30 +6,33 @@ import {
 	ActionMarkAsRead,
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
-	Address,
+	PublicKey,
 	Conversation,
-	ConversationRequest,
 	ResponseAcceptConversation,
 	ResponseGetConversations,
 	ResponseGetMessages,
 	ResponseSendMessage,
 	SchemaAction,
-	SchemaAddress,
+	SchemaPublicKey,
 	parse,
+	Address,
+	SchemaAddress,
+	ResponseGetUser,
+	User,
 } from '../types';
 import { toJSONResponse } from '../utils';
 
 const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
 
-type ConversationFromDB = { account: Address; last: number; read: 0 | 1 };
+type ConversationFromDB = { read: 0 | 1; conversationID: string };
 
 function formatConversation(v: ConversationFromDB): Conversation {
 	return { ...v, read: !!v.read };
 }
 
 export function getConversationID(accountA: Address, accountB: Address) {
-	accountA = accountA.toLowerCase() as Address;
-	accountB = accountB.toLowerCase() as Address;
+	accountA = accountA.toLowerCase() as PublicKey;
+	accountB = accountB.toLowerCase() as PublicKey;
 	if (accountA > accountB) {
 		return `${accountA}${accountB}`;
 	} else {
@@ -37,37 +40,46 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export async function registerPublicKeys(env: Env, account: Address, timestampMS: number, action: ActionRegisterPublicKeys) {
-	const statement = env.DB.prepare(`INSERT INTO Users(address,keys,created)
-		VALUES(?1,?2,?3)
-		ON CONFLICT(address) DO UPDATE SET keys=excluded.keys
+export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterPublicKeys) {
+	const statement = env.DB.prepare(`INSERT INTO Users(address,publicKey,signature,lastPresence,created)
+		VALUES(?1,?2,?3,?4,?5)
+		ON CONFLICT(address) DO UPDATE SET publicKey=excluded.publicKey
 	`);
-	const response = await statement.bind(account, action.signingKey, timestampMS).run();
+	const response = await statement.bind(action.address, publicKey, action.signature, timestampMS, timestampMS).run();
 	return response;
 }
 
-export async function getChatMessages(env: Env, accountA: Address, accountB: Address): Promise<ResponseGetMessages> {
+export async function getChatMessages(env: Env, conversationID: string): Promise<ResponseGetMessages> {
 	// TODO authenticate before
 	// encrypted means it should be fine, but still
-	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversation = ?1`);
-	const conversation = getConversationID(accountA, accountB);
-	const { results } = await statement.bind(conversation).all();
+	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversationID = ?1`);
+	const { results } = await statement.bind(conversationID).all();
 	return results as ResponseGetMessages;
 }
-export async function getConversations(env: Env, account: Address): Promise<ResponseGetConversations> {
+
+export async function getUser(env: Env, address: Address): Promise<ResponseGetUser> {
+	const response = await env.DB.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
+
+	if (response.results.length === 1) {
+		return response.results[0] as User;
+	}
+	return undefined;
+}
+
+export async function getConversations(env: Env, publicKey: PublicKey): Promise<ResponseGetConversations> {
 	// TODO authenticate before
-	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = TRUE`);
-	const { results } = await statement.bind(account).all<ConversationFromDB>();
+	const statement = env.DB.prepare(`SELECT * from Conversations WHERE first = ?1 AND accepted = TRUE`);
+	const { results } = await statement.bind(publicKey).all<ConversationFromDB>();
 	return results.map(formatConversation);
 }
 
-export async function markAsRead(env: Env, account: Address, action: ActionMarkAsRead) {
+export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
 	// TODO authenticate before
 
-	const statement = env.DB.prepare(`UPDATE ConversationViews SET read = 1 WHERE first = ?1 AND conversation = ?2`);
-	// TODO only if action.lastMessageTimestampMS >= ConversationViews.lastMessage
+	const statement = env.DB.prepare(`UPDATE Conversations SET read = 1 WHERE first = ?1 AND conversationID = ?2`);
+	// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
 
-	const response = await statement.bind(account, action.conversation).run();
+	const response = await statement.bind(publicKey, action.conversationID).run();
 	return response;
 }
 
@@ -77,19 +89,19 @@ export async function sendMessage(
 	timestampMS: number,
 	action: ActionSendMessage,
 ): Promise<ResponseSendMessage> {
-	const conversation = getConversationID(action.to, account);
-	const upsertComversation = env.DB.prepare(`INSERT INTO ConversationViews(first,second,conversation,lastMessage,accepted,read)
+	const conversationID = getConversationID(action.to, account);
+	const upsertConversation = env.DB.prepare(`INSERT INTO Conversations(first,second,conversationID,lastMessage,accepted,read)
 		VALUES(?1,?2,?3,?4,?5,?6)
-		ON CONFLICT(first,conversation) DO UPDATE SET 
+		ON CONFLICT(first,conversationID) DO UPDATE SET 
 			lastMessage=excluded.lastMessage,
 			read=excluded.read
 	`);
 
-	const insertMessage = env.DB.prepare(`INSERT INTO Messages(conversation,sender,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5)`);
+	const insertMessage = env.DB.prepare(`INSERT INTO Messages(conversationID,sender,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5)`);
 	const response = await env.DB.batch([
-		upsertComversation.bind(action.to, account, conversation, timestampMS, 0, 0),
-		upsertComversation.bind(account, action.to, conversation, timestampMS, 1, 1),
-		insertMessage.bind(conversation, account, timestampMS, action.message, `FAKE:${account}`),
+		upsertConversation.bind(action.to, account, conversationID, timestampMS, 0, 0),
+		upsertConversation.bind(account, action.to, conversationID, timestampMS, 1, 1),
+		insertMessage.bind(conversationID, account, timestampMS, action.message, action.signature),
 	]);
 	return {
 		timestampMS,
@@ -102,18 +114,18 @@ export async function acceptConversation(
 	timestampMS: number,
 	action: ActionAcceptConversation,
 ): Promise<ResponseAcceptConversation> {
-	const statement = env.DB.prepare(`UPDATE ConversationViews SET accepted = 1 WHERE first = ?1 AND conversation = ?2`);
-	const response = await statement.bind(account, action.conversation).run();
+	const statement = env.DB.prepare(`UPDATE Conversations SET accepted = 1 WHERE first = ?1 AND conversationID = ?2`);
+	const response = await statement.bind(account, action.conversationID).run();
 	return {
 		timestampMS,
 	};
 }
 
-export async function getConversationRequests(env: Env, account: Address): Promise<ConversationRequest[]> {
+export async function getUnacceptedConversations(env: Env, account: Address): Promise<Conversation[]> {
 	// TODO authenticate before
-	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = FALSE`);
+	const statement = env.DB.prepare(`SELECT * from Conversations WHERE first = ?1 AND accepted = FALSE`);
 	const { results } = await statement.bind(account).all();
-	return results as ConversationRequest[];
+	return results as Conversation[];
 }
 
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
@@ -124,34 +136,44 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 	const rawContent = await request.text();
 	const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 	const timestampMS = Date.now();
+	let publicKey: PublicKey | undefined;
 	let account: Address | undefined;
+
 	const authentication = request.headers.get('SIGNATURE');
 	if (authentication) {
 		if (authentication.startsWith('FAKE:')) {
 			if (env.WORKER_ENV !== 'dev') {
 				throw new Error(`FAKE authentication only allowed in dev mode`);
 			}
-			account = parse(SchemaAddress, authentication.split(':')[1]);
-			if (!account) {
-				throw new Error(`no account provided in FAKE mode`);
+			const splitted = authentication.split(':');
+			publicKey = parse(SchemaPublicKey, splitted[1]);
+			if (!publicKey) {
+				throw new Error(`no publicKey provided in FAKE mode`);
 			}
 		} else {
 			// TODO
 		}
+
+		const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
+
+		if (response.results.length === 1) {
+			const user = response.results[0];
+			account = parse(SchemaAddress, user.address);
+		}
 	}
 
 	switch (action.type) {
-		case 'registerPublicKeys': {
-			if (!account) {
-				throw new Error(`no account authenticated`);
+		case 'register': {
+			if (!publicKey) {
+				throw new Error(`no publicKey authenticated`);
 			}
 
-			return toJSONResponse(registerPublicKeys(env, account, timestampMS, action));
+			return toJSONResponse(register(env, publicKey, timestampMS, action));
 		}
 
 		case 'sendMessage': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 
 			return toJSONResponse(sendMessage(env, account, timestampMS, action));
@@ -159,36 +181,39 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 
 		case 'getConversations': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 			return toJSONResponse(getConversations(env, account));
 		}
 
-		case 'getConversationRequests': {
+		case 'getUnacceptedConversations': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 
-			return toJSONResponse(getConversationRequests(env, account));
+			return toJSONResponse(getUnacceptedConversations(env, account));
 		}
 
 		case 'markAsRead': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 
 			return toJSONResponse(markAsRead(env, account, action));
 		}
 		case 'getMessages': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 
-			return toJSONResponse(getChatMessages(env, account, action.with));
+			return toJSONResponse(getChatMessages(env, action.conversationID));
+		}
+		case 'getUser': {
+			return toJSONResponse(getUser(env, action.address));
 		}
 		case 'acceptConversation': {
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new Error(`no publicKey authenticated`);
 			}
 
 			return toJSONResponse(acceptConversation(env, account, timestampMS, action));
@@ -208,43 +233,47 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				throw new Error(`kv api not available unless in dev mode`);
 			}
 			const response = await env.DB.batch([
-				env.DB.prepare(`DROP TABLE IF EXISTS ConversationViews;`),
-				env.DB.prepare(`CREATE TABLE IF NOT EXISTS ConversationViews (
+				env.DB.prepare(`DROP TABLE IF EXISTS Conversations;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Conversations (
 					first         text        NOT NULL,
 					second        text        NOT NULL,
-					conversation  text        NOT NULL,
+					conversationID  text        NOT NULL,
 					lastMessage   timestamp   NOT NULL, 
 					accepted      boolean     NOT NULL,
 					read        boolean     NOT NULL,
-					PRIMARY KEY (first, conversation),
+					PRIMARY KEY (first, conversationID),
 					FOREIGN KEY (first) REFERENCES Users (address),
 					FOREIGN KEY (second) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_read ON ConversationViews (first, accepted, read);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_accepted ON ConversationViews (first, accepted);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_read ON Conversations (first, accepted, read);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_accepted ON Conversations (first, accepted);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
 				(
-				  conversation text      NOT NULL,
-				  sender       text      NOT NULL,
-				  timestamp    timestamp NOT NULL,
-				  message      text      NOT NULL,
-				  signature    text      NOT NULL,
-				  PRIMARY KEY (conversation, sender, timestamp),
+				  conversationID text      NOT NULL,
+				  sender         text      NOT NULL,
+				  timestamp      timestamp NOT NULL,
+				  message        text      NOT NULL,
+				  signature      text      NOT NULL,
+				  PRIMARY KEY (conversationID, sender, timestamp),
 				  FOREIGN KEY (sender) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (conversation);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (conversationID);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
 				(
-				  address text      NOT NULL,
-				  keys    text      NOT NULL,
-				  created timestamp NOT NULL,
+				  address text            NOT NULL,
+				  publicKey text            NOT NULL,
+				  signature text          NOT NULL,
+				  lastPresence timestmap  NOT NULL,
+				  created timestamp       NOT NULL,
 				  PRIMARY KEY (address)
 				);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (lastPresence);`),
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (address);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (publicKey);`),
 			]);
 			return toJSONResponse(response);
 		}
