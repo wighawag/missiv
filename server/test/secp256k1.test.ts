@@ -41,6 +41,8 @@ describe('@noble/secp256k1', () => {
 		const recoveredPubKey = signature.recoverPublicKey(msgHash); // Public key recovery
 		expect(recoveredPubKey.toRawBytes()).toEqual(bobPubKey);
 
+		// console.log(recoveredPubKey.toHex());
+
 		const alicesPrivKey = secp.utils.randomPrivateKey();
 		const alicesPubkey = secp.getPublicKey(alicesPrivKey);
 		const sharedKey = secp.getSharedSecret(bobPrivKey, alicesPubkey); // Elliptic curve diffie-hellman

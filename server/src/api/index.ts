@@ -1,3 +1,6 @@
+import { keccak_256 } from '@noble/hashes/sha3';
+import { Signature, verify as verifySignature } from '@noble/secp256k1';
+import { recoverMessageAddress } from 'viem';
 import { CorsResponse } from '../cors';
 import type { Env } from '../env';
 import {
@@ -41,17 +44,31 @@ export function getConversationID(accountA: Address, accountB: Address) {
 }
 
 export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterPublicKeys) {
+	let address: Address;
+	if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
+		if (env.WORKER_ENV !== 'dev') {
+			throw new Error(`FAKE authentication only allowed in dev mode`);
+		}
+		address = action.address;
+	} else {
+		address = await recoverMessageAddress({
+			message: `Hello`,
+			signature: action.signature,
+		});
+		if (address != action.address) {
+			throw new Error(`no matching address from signature`);
+		}
+	}
+
 	const statement = env.DB.prepare(`INSERT INTO Users(address,publicKey,signature,lastPresence,created)
 		VALUES(?1,?2,?3,?4,?5)
 		ON CONFLICT(address) DO UPDATE SET publicKey=excluded.publicKey
 	`);
-	const response = await statement.bind(action.address, publicKey, action.signature, timestampMS, timestampMS).run();
+	const response = await statement.bind(address, publicKey, action.signature, timestampMS, timestampMS).run();
 	return response;
 }
 
 export async function getChatMessages(env: Env, conversationID: string): Promise<ResponseGetMessages> {
-	// TODO authenticate before
-	// encrypted means it should be fine, but still
 	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversationID = ?1`);
 	const { results } = await statement.bind(conversationID).all();
 	return results as ResponseGetMessages;
@@ -67,15 +84,12 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetUs
 }
 
 export async function getConversations(env: Env, publicKey: PublicKey): Promise<ResponseGetConversations> {
-	// TODO authenticate before
 	const statement = env.DB.prepare(`SELECT * from Conversations WHERE first = ?1 AND accepted = TRUE`);
 	const { results } = await statement.bind(publicKey).all<ConversationFromDB>();
 	return results.map(formatConversation);
 }
 
 export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
-	// TODO authenticate before
-
 	const statement = env.DB.prepare(`UPDATE Conversations SET read = 1 WHERE first = ?1 AND conversationID = ?2`);
 	// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
 
@@ -122,7 +136,6 @@ export async function acceptConversation(
 }
 
 export async function getUnacceptedConversations(env: Env, account: Address): Promise<Conversation[]> {
-	// TODO authenticate before
 	const statement = env.DB.prepare(`SELECT * from Conversations WHERE first = ?1 AND accepted = FALSE`);
 	const { results } = await statement.bind(account).all();
 	return results as Conversation[];
@@ -151,7 +164,13 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				throw new Error(`no publicKey provided in FAKE mode`);
 			}
 		} else {
-			// TODO
+			const signatureString = authentication;
+			const splitted = signatureString.split(':');
+			const recoveryBit = Number(splitted[1]);
+			const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
+			const msgHash = keccak_256(rawContent);
+			const recoveredPubKey = signature.recoverPublicKey(msgHash);
+			publicKey = `0x${recoveredPubKey.toHex()}`;
 		}
 
 		const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
@@ -173,7 +192,7 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 
 		case 'sendMessage': {
 			if (!account) {
-				throw new Error(`no publicKey authenticated`);
+				throw new Error(`no account authenticated`);
 			}
 
 			return toJSONResponse(sendMessage(env, account, timestampMS, action));
@@ -181,14 +200,14 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 
 		case 'getConversations': {
 			if (!account) {
-				throw new Error(`no publicKey authenticated`);
+				throw new Error(`no account authenticated`);
 			}
 			return toJSONResponse(getConversations(env, account));
 		}
 
 		case 'getUnacceptedConversations': {
 			if (!account) {
-				throw new Error(`no publicKey authenticated`);
+				throw new Error(`no account authenticated`);
 			}
 
 			return toJSONResponse(getUnacceptedConversations(env, account));
@@ -196,16 +215,12 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 
 		case 'markAsRead': {
 			if (!account) {
-				throw new Error(`no publicKey authenticated`);
+				throw new Error(`no account authenticated`);
 			}
 
 			return toJSONResponse(markAsRead(env, account, action));
 		}
 		case 'getMessages': {
-			if (!account) {
-				throw new Error(`no publicKey authenticated`);
-			}
-
 			return toJSONResponse(getChatMessages(env, action.conversationID));
 		}
 		case 'getUser': {
@@ -213,9 +228,8 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 		}
 		case 'acceptConversation': {
 			if (!account) {
-				throw new Error(`no publicKey authenticated`);
+				throw new Error(`no account authenticated`);
 			}
-
 			return toJSONResponse(acceptConversation(env, account, timestampMS, action));
 		}
 		case 'db:select': {

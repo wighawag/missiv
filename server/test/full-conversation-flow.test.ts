@@ -2,16 +2,23 @@ import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { WorkerAPI } from './utils';
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { getConversationID } from '../src/api';
 
+const userAPrivateKey = generatePrivateKey();
+const userAAccount = privateKeyToAccount(userAPrivateKey);
 const USER_A = {
 	publicKey: '0xFAKE_AA',
 	address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+	signature: '0x',
 } as const;
 
+const userBPrivateKey = generatePrivateKey();
+const userBAccount = privateKeyToAccount(userBPrivateKey);
 const USER_B = {
 	publicKey: '0xFAKE_BB',
 	address: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+	signature: '0x',
 } as const;
 
 describe('Worker', () => {
