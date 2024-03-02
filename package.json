@@ -20,6 +20,7 @@
     "---------------------- TEST ----------------------": "",
     "client:test": "pnpm --filter ./client test",
     "server:test": "pnpm --filter ./server test",
+    "test": "pnpm -r test run",
     "---------------------- DEV ----------------------": "",
     "client:dev": "pnpm --filter ./client dev",
     "server:dev": "pnpm --filter ./server dev",
