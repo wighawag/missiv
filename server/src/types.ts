@@ -16,6 +16,7 @@ export type Address = Output<typeof SchemaAddress>;
 export const SchemaActionSendMessage = object({
 	type: literal('sendMessage'),
 	to: string0x(),
+	toPublicKey: string0x(),
 	message: string(),
 	signature: string0x(),
 });

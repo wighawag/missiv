@@ -98,6 +98,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'Yo !',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -114,6 +115,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'Yo !',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -137,6 +139,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'Yo !',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -154,6 +157,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'Yo !',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -171,6 +175,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'Yo !',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -187,6 +192,7 @@ describe('Worker', () => {
 				to: USER_A.address,
 				message: 'how are you?',
 				signature: '0x',
+				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -195,6 +201,7 @@ describe('Worker', () => {
 				to: USER_B.address,
 				message: 'I am good thanks',
 				signature: '0x',
+				toPublicKey: USER_B.publicKey,
 			},
 			{ publicKey: USER_A.publicKey },
 		);

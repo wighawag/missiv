@@ -106,6 +106,7 @@ export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionM
 
 export async function sendMessage(
 	env: Env,
+	publicKey: PublicKey,
 	account: Address,
 	timestampMS: number,
 	action: ActionSendMessage,
@@ -118,11 +119,14 @@ export async function sendMessage(
 			read=excluded.read
 	`);
 
-	const insertMessage = env.DB.prepare(`INSERT INTO Messages(conversationID,sender,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5)`);
+	const insertMessage = env.DB.prepare(
+		`INSERT INTO Messages(conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)`,
+	);
+
 	const response = await env.DB.batch([
 		upsertConversation.bind(action.to, account, conversationID, timestampMS, 0, 0),
 		upsertConversation.bind(account, action.to, conversationID, timestampMS, 1, 1),
-		insertMessage.bind(conversationID, account, timestampMS, action.message, action.signature),
+		insertMessage.bind(conversationID, account, publicKey, action.to, action.toPublicKey, timestampMS, action.message, action.signature),
 	]);
 	return {
 		timestampMS,
@@ -201,8 +205,11 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
+			if (!publicKey) {
+				throw new Error(`no publicKey authenticated`);
+			}
 
-			return toJSONResponse(sendMessage(env, account, timestampMS, action));
+			return toJSONResponse(sendMessage(env, publicKey, account, timestampMS, action));
 		}
 
 		case 'getConversations': {
@@ -256,12 +263,12 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 			const response = await env.DB.batch([
 				env.DB.prepare(`DROP TABLE IF EXISTS Conversations;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Conversations (
-					first         text        NOT NULL,
-					second        text        NOT NULL,
-					conversationID  text        NOT NULL,
-					lastMessage   timestamp   NOT NULL, 
-					accepted      boolean     NOT NULL,
-					read        boolean     NOT NULL,
+					first           text       NOT NULL,
+					second          text       NOT NULL,
+					conversationID  text       NOT NULL,
+					lastMessage     timestamp  NOT NULL, 
+					accepted        boolean    NOT NULL,
+					read            boolean    NOT NULL,
 					PRIMARY KEY (first, conversationID),
 					FOREIGN KEY (first) REFERENCES Users (address),
 					FOREIGN KEY (second) REFERENCES Users (address)
@@ -272,11 +279,14 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
 				(
-				  conversationID text      NOT NULL,
-				  sender         text      NOT NULL,
-				  timestamp      timestamp NOT NULL,
-				  message        text      NOT NULL,
-				  signature      text      NOT NULL,
+				  conversationID      text       NOT NULL,
+				  sender              text       NOT NULL,
+				  senderPublicKey     text       NOT NULL,
+				  recipient           text       NOT NULL,
+				  recipientPublicKey  text       NOT NULL,
+				  timestamp           timestamp  NOT NULL,
+				  message             text       NOT NULL,
+				  signature           text       NOT NULL,
 				  PRIMARY KEY (conversationID, sender, timestamp),
 				  FOREIGN KEY (sender) REFERENCES Users (address)
 				);`),
@@ -285,11 +295,11 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
 				(
-				  address text            NOT NULL,
-				  publicKey text            NOT NULL,
-				  signature text          NOT NULL,
-				  lastPresence timestmap  NOT NULL,
-				  created timestamp       NOT NULL,
+				  address       text       NOT NULL,
+				  publicKey     text       NOT NULL,
+				  signature     text       NOT NULL,
+				  lastPresence  timestmap  NOT NULL,
+				  created       timestamp  NOT NULL,
 				  PRIMARY KEY (address)
 				);`),
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (lastPresence);`),
