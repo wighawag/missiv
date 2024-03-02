@@ -18,7 +18,7 @@ export async function handleErrors(request: Request, func: () => Promise<Respons
 			pair[1].close(1011, 'Uncaught exception during session setup');
 			return new CorsResponse(null, { status: 101, webSocket: pair[0] });
 		} else {
-			return new CorsResponse(err.stack, { status: 500 });
+			return new CorsResponse(JSON.stringify({ stack: err.stack }), { status: 500 });
 		}
 	}
 }

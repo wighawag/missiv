@@ -22,15 +22,14 @@ export type ResponseSendMessage = {
 
 export const SchemaActionAcceptConversation = object({
 	type: literal('acceptConversation'),
-	with: string0x(),
-	unacceptedTimestampMS: number(),
+	conversation: string(),
 });
 export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
 export type ResponseAcceptConversation = {
-	deleted: number;
+	ok: boolean;
 };
 
-export type Conversation = { account: Address; last: number; unread: boolean };
+export type Conversation = { account: Address; last: number; read: 0 | 1 };
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
 });
@@ -46,6 +45,7 @@ export type ResponseGetConversationRequests = ConversationRequest[];
 
 export const SchemaActionMarkAsRead = object({
 	type: literal('markAsRead'),
+	conversation: string(),
 	lastMessageTimestampMS: number(),
 });
 export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
@@ -59,18 +59,28 @@ export const SchemaActionGetMessages = object({
 export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
 export type ResponseGetMessages = ComversationMessage[];
 
+export const SchemaActionRegisterPublicKeys = object({
+	type: literal('registerPublicKeys'),
+	signingKey: string(),
+});
+export type ActionRegisterPublicKeys = Output<typeof SchemaActionRegisterPublicKeys>;
+export type ResponseRegisterPublicKeys = { ok: boolean };
+
 export const SchemaAction = variant('type', [
+	SchemaActionRegisterPublicKeys,
 	SchemaActionSendMessage,
 	SchemaActionGetConversations,
 	SchemaActionGetConversationRequests,
 	SchemaActionMarkAsRead,
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
+
 	object({
-		type: literal('kv:list'),
+		type: literal('db:select'),
+		table: string(),
 	}),
 	object({
-		type: literal('kv:delete'),
+		type: literal('db:reset'),
 	}),
 ]);
 

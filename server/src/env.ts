@@ -1,4 +1,4 @@
 export interface Env {
-	MESSAGES: KVNamespace;
 	WORKER_ENV?: 'dev';
+	DB: D1Database;
 }

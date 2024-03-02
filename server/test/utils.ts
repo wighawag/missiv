@@ -4,11 +4,13 @@ import {
 	ActionAcceptConversation,
 	ActionGetConversations,
 	ActionGetMessages,
+	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	ResponseAcceptConversation,
 	ResponseGetConversationRequests,
 	ResponseGetConversations,
 	ResponseGetMessages,
+	ResponseRegisterPublicKeys,
 	ResponseSendMessage,
 } from '../src/types';
 
@@ -29,11 +31,24 @@ export class WorkerAPI {
 			body: JSON.stringify(action),
 			headers,
 		});
+		if (resp.status !== 200) {
+			throw new Error(await resp.text());
+		}
 		if (resp) {
 			return (await resp.json()) as T;
 		} else {
 			throw new Error(`no response`);
 		}
+	}
+
+	async registerPublicKeys(action: Omit<ActionRegisterPublicKeys, 'type'>, options: APIOptions) {
+		return this.call<ResponseRegisterPublicKeys>(
+			{
+				type: 'registerPublicKeys',
+				...action,
+			},
+			options,
+		);
 	}
 
 	async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {
@@ -85,7 +100,7 @@ export class WorkerAPI {
 
 	async clear() {
 		return this.call<ResponseAcceptConversation>({
-			type: 'kv:delete',
+			type: 'db:reset',
 		});
 	}
 }

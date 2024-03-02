@@ -1,8 +1,8 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
-import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { ResponseGetConversations, ResponseSendMessage } from '../src/types';
+import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { WorkerAPI } from './utils';
+import { getConversationID } from '../src/api';
 
 describe('Worker', () => {
 	let worker: UnstableDevWorker;
@@ -15,8 +15,20 @@ describe('Worker', () => {
 		api = new WorkerAPI(worker);
 	});
 
-	afterEach(async () => {
+	beforeEach(async () => {
 		await api.clear();
+		await api.registerPublicKeys(
+			{
+				signingKey: '',
+			},
+			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+		);
+		await api.registerPublicKeys(
+			{
+				signingKey: '',
+			},
+			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+		);
 	});
 
 	afterAll(async () => {
@@ -42,6 +54,7 @@ describe('Worker', () => {
 		);
 		expect(sent.timestampMS).to.toBeGreaterThan(time);
 		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		console.log(conversations);
 		expect(conversations.length).toBe(0);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
 		expect(conversationRequests.length).toBe(1);
@@ -56,8 +69,11 @@ describe('Worker', () => {
 			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
 		);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		expect(conversationRequests.length).toBe(1);
 		await api.acceptConversation(
-			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
+			{
+				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+			},
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		const conversationRequestsAfter = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
@@ -75,8 +91,12 @@ describe('Worker', () => {
 			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
 		);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		expect(conversationRequests.length).toBe(1);
+
 		await api.acceptConversation(
-			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
+			{
+				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+			},
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		await api.sendMessage(
@@ -109,8 +129,11 @@ describe('Worker', () => {
 			{ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
 		);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		expect(conversationRequests.length).toBe(1);
 		await api.acceptConversation(
-			{ with: `0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, unacceptedTimestampMS: conversationRequests[0].timestampMS },
+			{
+				conversation: getConversationID(`0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+			},
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		await api.sendMessage(
@@ -128,10 +151,12 @@ describe('Worker', () => {
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		const conversationsB = await api.getConversations({ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
+		console.log({ conversationsB });
 		expect(conversationsB.length).toBe(1);
-		expect(conversationsB[0].unread).toBe(true);
+		expect(conversationsB[0].read).toBe(0);
 		const conversationsA = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
+		console.log({ conversationsA });
 		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].unread).toBe(false);
+		expect(conversationsA[0].read).toBe(1);
 	});
 });

@@ -3,13 +3,19 @@ import type { Env } from '../env';
 import {
 	Action,
 	ActionAcceptConversation,
+	ActionMarkAsRead,
+	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	Address,
 	ComversationMessage,
 	Conversation,
 	ConversationRequest,
+	ResponseAcceptConversation,
 	ResponseGetConversations,
 	ResponseGetMessages,
+	ResponseMarkAsRead,
+	ResponseRegisterPublicKeys,
+	ResponseSendMessage,
 	SchemaAction,
 	SchemaAddress,
 	parse,
@@ -18,7 +24,9 @@ import { toJSONResponse } from '../utils';
 
 const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
 
-export function getChatID(accountA: Address, accountB: Address) {
+export function getConversationID(accountA: Address, accountB: Address) {
+	accountA = accountA.toLowerCase() as Address;
+	accountB = accountB.toLowerCase() as Address;
 	if (accountA > accountB) {
 		return `${accountA}${accountB}`;
 	} else {
@@ -26,155 +34,75 @@ export function getChatID(accountA: Address, accountB: Address) {
 	}
 }
 
+export async function registerPublicKeys(
+	env: Env,
+	account: Address,
+	timestampMS: number,
+	action: ActionRegisterPublicKeys,
+): Promise<ResponseRegisterPublicKeys> {
+	const statement = env.DB.prepare(`INSERT INTO Users(address,keys,created)
+		VALUES(?1,?2,?3)
+		ON CONFLICT(address) DO UPDATE SET keys=excluded.keys
+	`);
+	const response = await statement.bind(account, action.signingKey, timestampMS).run();
+	return response as unknown as ResponseRegisterPublicKeys; // TODO
+}
+
 export async function getChatMessages(env: Env, accountA: Address, accountB: Address): Promise<ResponseGetMessages> {
 	// TODO authenticate before
 	// encrypted means it should be fine, but still
-	const list = await env.MESSAGES.list({ prefix: `message:${getChatID(accountA, accountB)}:` });
-	const values: ComversationMessage[] = [];
-	for (const key of list.keys) {
-		const value = await env.MESSAGES.get(key.name, 'json');
-		values.push(value as ComversationMessage);
-	}
-
-	return values;
+	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversation = ?1`);
+	const conversation = getConversationID(accountA, accountB);
+	const { results } = await statement.bind(conversation).all();
+	return results as ResponseGetMessages; // TODO check
 }
 export async function getConversations(env: Env, account: Address): Promise<ResponseGetConversations> {
-	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:000_unread:` });
-	const unreadAccounts: { [account: Address]: number } = {};
-	for (const key of unreadList.keys) {
-		const splitted = key.name.split(':');
-		const acccountFrom = splitted[splitted.length - 1] as Address;
-		const messageTimestampMS = Number(splitted[splitted.length - 2]);
-		unreadAccounts[acccountFrom] = messageTimestampMS;
-	}
-	const list = await env.MESSAGES.list({ prefix: `account:${account}:100_last:` });
-	const accounts: { [account: Address]: { timestampMS: number; unread: boolean } } = {};
-	const toRemove: { [key: string]: boolean } = {};
-	for (const key of list.keys) {
-		const splitted = key.name.split(':');
-		const acccountFrom = splitted[splitted.length - 1] as Address;
-		const messageTimestampMS = Number(splitted[splitted.length - 2]);
-		if (!accounts[acccountFrom]) {
-			const unread = unreadAccounts[acccountFrom];
-			accounts[acccountFrom] = { timestampMS: unread ? Math.max(messageTimestampMS, unread) : messageTimestampMS, unread: !!unread };
-		} else {
-			toRemove[key.name] = true;
-		}
-	}
-
-	for (const keyName of Object.keys(toRemove)) {
-		await env.MESSAGES.delete(keyName);
-	}
-	const conversations: Conversation[] = [];
-	for (const account of Object.keys(accounts) as Address[]) {
-		const data = accounts[account];
-		const conversation = {
-			account: account,
-			last: data.timestampMS,
-			unread: data.unread,
-		};
-		conversations.push(conversation);
-	}
-	return conversations;
+	// TODO authenticate before
+	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = 1`);
+	const { results } = await statement.bind(account).all();
+	return results as ResponseGetConversations; // TODO check
 }
 
-export async function markAsRead(env: Env, account: Address, lastMessageTimestampMS: number) {
-	const unreadList = await env.MESSAGES.list({ prefix: `account:${account}:000_unread:` });
-	let read = 0;
-	for (const unreadKey of unreadList.keys) {
-		const splitted = unreadKey.name.split(':');
-		const timestamp = Number(splitted[splitted.length - 2]);
-		if (timestamp <= lastMessageTimestampMS) {
-			await env.MESSAGES.delete(unreadKey.name);
-			read++;
-		}
-	}
-	return { read };
+export async function markAsRead(env: Env, account: Address, action: ActionMarkAsRead) {
+	// TODO authenticate before
+
+	const statement = env.DB.prepare(`UPDATE ConversationViews SET read = 1 WHERE first = ?1 AND conversation = ?2`);
+	// TODO only if action.lastMessageTimestampMS >= ConversationViews.lastMessage
+
+	const response = await statement.bind(account, action.conversation).run();
+	return response as unknown as ResponseMarkAsRead; // TODO
 }
 
 export async function recordSentMessage(env: Env, account: Address, timestampMS: number, action: ActionSendMessage) {
-	const conversationID = `conversation:${getChatID(action.to, account)}`;
-	const existingConversation = await env.MESSAGES.get(conversationID);
+	const conversation = getConversationID(action.to, account);
+	const upsertComversation = env.DB.prepare(`INSERT INTO ConversationViews(first,second,conversation,lastMessage,accepted,read)
+		VALUES(?1,?2,?3,?4,?5,?6)
+		ON CONFLICT(first,conversation) DO UPDATE SET 
+			lastMessage=excluded.lastMessage,
+			read=excluded.read
+	`);
 
-	const chatMessageID = `message:${getChatID(action.to, account)}:${timestampMS}`;
-	await env.MESSAGES.put(chatMessageID, JSON.stringify({ message: action.message, from: account }));
-
-	if (!existingConversation) {
-		await env.MESSAGES.put(`account:${action.to}:010_unaccepted:${timestampMS}:${account}`, chatMessageID);
-	} else {
-		await env.MESSAGES.put(`account:${action.to}:000_unread:${timestampMS}:${account}`, chatMessageID);
-		await env.MESSAGES.put(`account:${action.to}:100_last:${timestampMS}:${account}`, chatMessageID);
-	}
-
-	// we also give the message to ourselves
-	// TODO mark all as read before hand ?
-	// + delete duplicate last
-	await env.MESSAGES.put(`account:${account}:100_last:${timestampMS}:${action.to}`, chatMessageID);
+	const insertMessage = env.DB.prepare(`INSERT INTO Messages(conversation,sender,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5)`);
+	const response = await env.DB.batch([
+		upsertComversation.bind(action.to, account, conversation, timestampMS, 0, 0),
+		upsertComversation.bind(account, action.to, conversation, timestampMS, 1, 1),
+		insertMessage.bind(conversation, account, timestampMS, action.message, `FAKE:${account}`),
+	]);
+	console.log({ batch: response });
+	return response as unknown as ResponseSendMessage;
 }
 
 export async function acceptConversation(env: Env, account: Address, action: ActionAcceptConversation) {
-	const conversationID = `conversation:${getChatID(action.with, account)}`;
-	const existingConversation = await env.MESSAGES.get(conversationID);
-
-	if (!existingConversation) {
-		await env.MESSAGES.put(conversationID, conversationID);
-	}
-
-	const unacceptedID = `account:${account}:010_unaccepted:${action.unacceptedTimestampMS}:${action.with}`;
-	const chatMessageID = await env.MESSAGES.get(unacceptedID);
-	if (chatMessageID) {
-		const splitted = chatMessageID.split(':');
-		const messageTimestampMS = Number(splitted[splitted.length - 1]);
-		await env.MESSAGES.delete(unacceptedID);
-		// await env.MESSAGES.put(`account:${account}:000_unread:${messageTimestampMS}:${action.with}`, chatMessageID);
-		await env.MESSAGES.put(`account:${account}:100_last:${messageTimestampMS}:${action.with}`, chatMessageID);
-
-		return { deleted: 1 };
-	}
-	return { deleted: 0 };
+	const statement = env.DB.prepare(`UPDATE ConversationViews SET accepted = 1 WHERE first = ?1 AND conversation = ?2`);
+	const response = await statement.bind(account, action.conversation).run();
+	return response as unknown as ResponseAcceptConversation; // TODO
 }
 
 export async function getConversationRequests(env: Env, account: Address): Promise<ConversationRequest[]> {
-	const list = await env.MESSAGES.list({ prefix: `account:${account}:010_unaccepted:` });
-	const accounts: { [account: Address]: { timestampMS: number } } = {};
-	const toRemove: { [key: string]: boolean } = {};
-	const accountsAlreadyAccepted: { [key: string]: boolean } = {};
-	for (const key of list.keys) {
-		const splitted = key.name.split(':');
-		const acccountFrom = splitted[splitted.length - 1] as Address;
-		const messageTimestampMS = Number(splitted[splitted.length - 2]);
-		const conversationID = `conversation:${getChatID(acccountFrom, account)}`;
-
-		if (accountsAlreadyAccepted[acccountFrom]) {
-			toRemove[key.name] = true;
-		} else {
-			const existingConversation = await env.MESSAGES.get(conversationID);
-			if (existingConversation) {
-				accountsAlreadyAccepted[acccountFrom] = true;
-				toRemove[key.name] = true;
-			} else {
-				if (!accounts[acccountFrom]) {
-					accounts[acccountFrom] = { timestampMS: messageTimestampMS };
-				} else {
-					toRemove[key.name] = true;
-				}
-			}
-		}
-	}
-
-	for (const keyName of Object.keys(toRemove)) {
-		await env.MESSAGES.delete(keyName);
-	}
-	const conversationRequests: ConversationRequest[] = [];
-	for (const account of Object.keys(accounts) as Address[]) {
-		const data = accounts[account];
-		const conversation = {
-			account: account,
-			timestampMS: data.timestampMS,
-		};
-		conversationRequests.push(conversation);
-	}
-	return conversationRequests;
+	// TODO authenticate before
+	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = 0`);
+	const { results } = await statement.bind(account).all();
+	return results as ConversationRequest[]; // TODO check
 }
 
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
@@ -203,6 +131,18 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 	}
 
 	switch (action.type) {
+		case 'registerPublicKeys': {
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+
+			await registerPublicKeys(env, account, timestampMS, action);
+
+			return toJSONResponse({
+				timestampMS,
+			});
+		}
+
 		case 'sendMessage': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
@@ -237,7 +177,7 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			const { read } = await markAsRead(env, account, action.lastMessageTimestampMS);
+			const { read } = await markAsRead(env, account, action);
 
 			return toJSONResponse({ timestampMS, read });
 		}
@@ -255,29 +195,60 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 
 			return toJSONResponse(acceptConversation(env, account, action));
 		}
-		case 'kv:list': {
+		case 'db:select': {
 			if (env.WORKER_ENV !== 'dev') {
 				throw new Error(`kv api not available unless in dev mode`);
 			}
-			const list = await env.MESSAGES.list();
-			const values: { [key: string]: any } = {};
-			for (const key of list.keys) {
-				const value = await env.MESSAGES.get(key.name);
-				values[key.name] = value;
-			}
-
-			return toJSONResponse(values);
+			const table = action.table;
+			const SQL_SELECT = env.DB.prepare('SELECT * FROM ?1');
+			const { results } = await SQL_SELECT.bind(table).all();
+			return toJSONResponse(results);
 		}
 
-		case 'kv:delete': {
+		case 'db:reset': {
 			if (env.WORKER_ENV !== 'dev') {
 				throw new Error(`kv api not available unless in dev mode`);
 			}
-			const list = await env.MESSAGES.list();
-			for (const key of list.keys) {
-				await env.MESSAGES.delete(key.name);
-			}
-			return toJSONResponse({ deleted: list.keys.length });
+			const response = await env.DB.batch([
+				env.DB.prepare(`DROP TABLE IF EXISTS ConversationViews;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS ConversationViews (
+					first         text        NOT NULL,
+					second        text        NOT NULL,
+					conversation  text        NOT NULL,
+					lastMessage   timestamp   NOT NULL, 
+					accepted      boolean     NOT NULL,
+					read        boolean     NOT NULL,
+					PRIMARY KEY (first, conversation),
+					FOREIGN KEY (first) REFERENCES Users (address),
+					FOREIGN KEY (second) REFERENCES Users (address)
+				);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_read ON ConversationViews (first, accepted, read);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_accepted ON ConversationViews (first, accepted);`),
+
+				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
+				(
+				  conversation text      NOT NULL,
+				  sender       text      NOT NULL,
+				  timestamp    timestamp NOT NULL,
+				  message      text      NOT NULL,
+				  signature    text      NOT NULL,
+				  PRIMARY KEY (conversation, sender, timestamp),
+				  FOREIGN KEY (sender) REFERENCES Users (address)
+				);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (conversation);`),
+
+				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
+				(
+				  address text      NOT NULL,
+				  keys    text      NOT NULL,
+				  created timestamp NOT NULL,
+				  PRIMARY KEY (address)
+				);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (address);`),
+			]);
+			return toJSONResponse(response);
 		}
 
 		default:
