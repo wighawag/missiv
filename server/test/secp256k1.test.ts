@@ -29,7 +29,12 @@ describe('@noble/secp256k1', () => {
 		const bobPubKey = secp.getPublicKey(bobPrivKey);
 
 		const msgHash = keccak_256(utf8ToBytes('hello'));
-		const signature = await secp.signAsync(msgHash, bobPrivKey); // Sync methods below
+		const signatureObject = await secp.signAsync(msgHash, bobPrivKey); // Sync methods below
+		const signatureString = `${signatureObject.toCompactHex()}:${signatureObject.recovery}`;
+
+		const splitted = signatureString.split(':');
+		const recoveryBit = Number(splitted[1]);
+		const signature = secp.Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
 
 		const isValid = secp.verify(signature, msgHash, bobPubKey);
 		expect(isValid).toBe(true);
