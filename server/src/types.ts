@@ -26,10 +26,10 @@ export const SchemaActionAcceptConversation = object({
 });
 export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
 export type ResponseAcceptConversation = {
-	ok: boolean;
+	timestampMS: number;
 };
 
-export type Conversation = { account: Address; last: number; read: 0 | 1 };
+export type Conversation = { account: Address; last: number; read: boolean };
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
 });
@@ -49,7 +49,7 @@ export const SchemaActionMarkAsRead = object({
 	lastMessageTimestampMS: number(),
 });
 export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
-export type ResponseMarkAsRead = { read: number };
+export type ResponseMarkAsRead = { timestampMS: number };
 
 export type ComversationMessage = { message: string; from: `0x${string}` };
 export const SchemaActionGetMessages = object({
@@ -64,7 +64,7 @@ export const SchemaActionRegisterPublicKeys = object({
 	signingKey: string(),
 });
 export type ActionRegisterPublicKeys = Output<typeof SchemaActionRegisterPublicKeys>;
-export type ResponseRegisterPublicKeys = { ok: boolean };
+export type ResponseRegisterPublicKeys = { timestampMS: number };
 
 export const SchemaAction = variant('type', [
 	SchemaActionRegisterPublicKeys,

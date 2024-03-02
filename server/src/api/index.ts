@@ -7,14 +7,11 @@ import {
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	Address,
-	ComversationMessage,
 	Conversation,
 	ConversationRequest,
 	ResponseAcceptConversation,
 	ResponseGetConversations,
 	ResponseGetMessages,
-	ResponseMarkAsRead,
-	ResponseRegisterPublicKeys,
 	ResponseSendMessage,
 	SchemaAction,
 	SchemaAddress,
@@ -23,6 +20,12 @@ import {
 import { toJSONResponse } from '../utils';
 
 const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
+
+type ConversationFromDB = { account: Address; last: number; read: 0 | 1 };
+
+function formatConversation(v: ConversationFromDB): Conversation {
+	return { ...v, read: !!v.read };
+}
 
 export function getConversationID(accountA: Address, accountB: Address) {
 	accountA = accountA.toLowerCase() as Address;
@@ -34,18 +37,13 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export async function registerPublicKeys(
-	env: Env,
-	account: Address,
-	timestampMS: number,
-	action: ActionRegisterPublicKeys,
-): Promise<ResponseRegisterPublicKeys> {
+export async function registerPublicKeys(env: Env, account: Address, timestampMS: number, action: ActionRegisterPublicKeys) {
 	const statement = env.DB.prepare(`INSERT INTO Users(address,keys,created)
 		VALUES(?1,?2,?3)
 		ON CONFLICT(address) DO UPDATE SET keys=excluded.keys
 	`);
 	const response = await statement.bind(account, action.signingKey, timestampMS).run();
-	return response as unknown as ResponseRegisterPublicKeys; // TODO
+	return response;
 }
 
 export async function getChatMessages(env: Env, accountA: Address, accountB: Address): Promise<ResponseGetMessages> {
@@ -54,13 +52,13 @@ export async function getChatMessages(env: Env, accountA: Address, accountB: Add
 	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversation = ?1`);
 	const conversation = getConversationID(accountA, accountB);
 	const { results } = await statement.bind(conversation).all();
-	return results as ResponseGetMessages; // TODO check
+	return results as ResponseGetMessages;
 }
 export async function getConversations(env: Env, account: Address): Promise<ResponseGetConversations> {
 	// TODO authenticate before
-	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = 1`);
-	const { results } = await statement.bind(account).all();
-	return results as ResponseGetConversations; // TODO check
+	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = TRUE`);
+	const { results } = await statement.bind(account).all<ConversationFromDB>();
+	return results.map(formatConversation);
 }
 
 export async function markAsRead(env: Env, account: Address, action: ActionMarkAsRead) {
@@ -70,10 +68,15 @@ export async function markAsRead(env: Env, account: Address, action: ActionMarkA
 	// TODO only if action.lastMessageTimestampMS >= ConversationViews.lastMessage
 
 	const response = await statement.bind(account, action.conversation).run();
-	return response as unknown as ResponseMarkAsRead; // TODO
+	return response;
 }
 
-export async function recordSentMessage(env: Env, account: Address, timestampMS: number, action: ActionSendMessage) {
+export async function sendMessage(
+	env: Env,
+	account: Address,
+	timestampMS: number,
+	action: ActionSendMessage,
+): Promise<ResponseSendMessage> {
 	const conversation = getConversationID(action.to, account);
 	const upsertComversation = env.DB.prepare(`INSERT INTO ConversationViews(first,second,conversation,lastMessage,accepted,read)
 		VALUES(?1,?2,?3,?4,?5,?6)
@@ -88,21 +91,29 @@ export async function recordSentMessage(env: Env, account: Address, timestampMS:
 		upsertComversation.bind(account, action.to, conversation, timestampMS, 1, 1),
 		insertMessage.bind(conversation, account, timestampMS, action.message, `FAKE:${account}`),
 	]);
-	console.log({ batch: response });
-	return response as unknown as ResponseSendMessage;
+	return {
+		timestampMS,
+	};
 }
 
-export async function acceptConversation(env: Env, account: Address, action: ActionAcceptConversation) {
+export async function acceptConversation(
+	env: Env,
+	account: Address,
+	timestampMS: number,
+	action: ActionAcceptConversation,
+): Promise<ResponseAcceptConversation> {
 	const statement = env.DB.prepare(`UPDATE ConversationViews SET accepted = 1 WHERE first = ?1 AND conversation = ?2`);
 	const response = await statement.bind(account, action.conversation).run();
-	return response as unknown as ResponseAcceptConversation; // TODO
+	return {
+		timestampMS,
+	};
 }
 
 export async function getConversationRequests(env: Env, account: Address): Promise<ConversationRequest[]> {
 	// TODO authenticate before
-	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = 0`);
+	const statement = env.DB.prepare(`SELECT * from ConversationViews WHERE first = ?1 AND accepted = FALSE`);
 	const { results } = await statement.bind(account).all();
-	return results as ConversationRequest[]; // TODO check
+	return results as ConversationRequest[];
 }
 
 export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
@@ -111,7 +122,6 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 		return new CorsResponse('Method not allowed', { status: 405 });
 	}
 	const rawContent = await request.text();
-	console.log(rawContent);
 	const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 	const timestampMS = Date.now();
 	let account: Address | undefined;
@@ -136,11 +146,7 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				throw new Error(`no account authenticated`);
 			}
 
-			await registerPublicKeys(env, account, timestampMS, action);
-
-			return toJSONResponse({
-				timestampMS,
-			});
+			return toJSONResponse(registerPublicKeys(env, account, timestampMS, action));
 		}
 
 		case 'sendMessage': {
@@ -148,38 +154,30 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				throw new Error(`no account authenticated`);
 			}
 
-			await recordSentMessage(env, account, timestampMS, action);
-
-			return toJSONResponse({
-				timestampMS,
-			});
+			return toJSONResponse(sendMessage(env, account, timestampMS, action));
 		}
 
 		case 'getConversations': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			const conversations = await getConversations(env, account);
-
-			return toJSONResponse(conversations);
+			return toJSONResponse(getConversations(env, account));
 		}
 
 		case 'getConversationRequests': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			const conversationRequests = await getConversationRequests(env, account);
 
-			return toJSONResponse(conversationRequests);
+			return toJSONResponse(getConversationRequests(env, account));
 		}
 
 		case 'markAsRead': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			const { read } = await markAsRead(env, account, action);
 
-			return toJSONResponse({ timestampMS, read });
+			return toJSONResponse(markAsRead(env, account, action));
 		}
 		case 'getMessages': {
 			if (!account) {
@@ -193,7 +191,7 @@ export async function handleApiRequest(path: string[], request: Request, env: En
 				throw new Error(`no account authenticated`);
 			}
 
-			return toJSONResponse(acceptConversation(env, account, action));
+			return toJSONResponse(acceptConversation(env, account, timestampMS, action));
 		}
 		case 'db:select': {
 			if (env.WORKER_ENV !== 'dev') {

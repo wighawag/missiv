@@ -54,7 +54,6 @@ describe('Worker', () => {
 		);
 		expect(sent.timestampMS).to.toBeGreaterThan(time);
 		const conversations = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		console.log(conversations);
 		expect(conversations.length).toBe(0);
 		const conversationRequests = await api.getConversationRequests({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
 		expect(conversationRequests.length).toBe(1);
@@ -151,12 +150,10 @@ describe('Worker', () => {
 			{ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
 		);
 		const conversationsB = await api.getConversations({ account: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' });
-		console.log({ conversationsB });
 		expect(conversationsB.length).toBe(1);
-		expect(conversationsB[0].read).toBe(0);
+		expect(conversationsB[0].read).toBe(false);
 		const conversationsA = await api.getConversations({ account: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
-		console.log({ conversationsA });
 		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].read).toBe(1);
+		expect(conversationsA[0].read).toBe(true);
 	});
 });
