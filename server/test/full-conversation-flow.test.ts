@@ -4,29 +4,43 @@ import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from
 import { WorkerAPI } from './utils';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { getConversationID, publicKeyAuthorizationMessage } from '../src/api';
+import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
+import { webcrypto } from 'node:crypto';
+// @ts-ignore
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
+function toHex(arr: Uint8Array): `0x${string}` {
+	let str = `0x`;
+	for (const element of arr) {
+		str += element.toString(16).padStart(2, '0');
+	}
+	return str as `0x${string}`;
+}
 
 const userAPrivateKey = generatePrivateKey();
 const userAAccount = privateKeyToAccount(userAPrivateKey);
-const userADelegateAccount = privateKeyToAccount(generatePrivateKey());
+const userADelegatePrivateKey = secpUtils.randomPrivateKey();
+const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
 const userAMessage = publicKeyAuthorizationMessage({
 	address: userAAccount.address,
-	publicKey: userADelegateAccount.publicKey,
+	publicKey: userADelegatePublicKey,
 });
 const USER_A = {
-	publicKey: userADelegateAccount.publicKey,
+	publicKey: userADelegatePublicKey,
 	address: userAAccount.address,
 	signature: await userAAccount.signMessage({ message: userAMessage }),
 } as const;
 
 const userBPrivateKey = generatePrivateKey();
 const userBAccount = privateKeyToAccount(userBPrivateKey);
-const userBDelegateAccount = privateKeyToAccount(generatePrivateKey());
+const userBDelegatePrivateKey = secpUtils.randomPrivateKey();
+const userBDelegatePublicKey = toHex(getPublicKey(userBDelegatePrivateKey));
 const userBMessage = publicKeyAuthorizationMessage({
 	address: userBAccount.address,
-	publicKey: userBDelegateAccount.publicKey,
+	publicKey: userBDelegatePublicKey,
 });
 const USER_B = {
-	publicKey: userBDelegateAccount.publicKey,
+	publicKey: userBDelegatePublicKey,
 	address: userBAccount.address,
 	signature: await userBAccount.signMessage({ message: userBMessage }),
 } as const;
@@ -54,14 +68,14 @@ describe('Worker', () => {
 				address: USER_B.address,
 				signature: USER_B.signature,
 			},
-			{ publicKey: USER_B.publicKey },
+			{ privateKey: userBDelegatePrivateKey },
 		);
 		await api.register(
 			{
 				address: USER_A.address,
 				signature: USER_A.signature,
 			},
-			{ publicKey: USER_A.publicKey },
+			{ privateKey: userADelegatePrivateKey },
 		);
 	});
 

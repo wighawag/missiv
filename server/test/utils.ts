@@ -14,8 +14,10 @@ import {
 	ResponseRegisterPublicKeys,
 	ResponseSendMessage,
 } from '../src/types';
+import { signAsync } from '@noble/secp256k1';
+import { keccak_256 } from '@noble/hashes/sha3';
 
-export type APIOptions = { signature: string } | { publicKey: string };
+export type APIOptions = { signature: string } | { publicKey: string } | { privateKey: Uint8Array };
 
 export class WorkerAPI {
 	constructor(private worker: UnstableDevWorker) {}
@@ -24,12 +26,18 @@ export class WorkerAPI {
 		const headers: { [header: string]: string } = {
 			'content-type': 'application/json',
 		};
+		const body = JSON.stringify(action);
 		if (options) {
-			headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
+			if ('privateKey' in options) {
+				const signature = await signAsync(keccak_256(body), options.privateKey); // Sync methods below
+				headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
+			} else {
+				headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
+			}
 		}
 		const resp = await this.worker.fetch('api', {
 			method: 'POST',
-			body: JSON.stringify(action),
+			body,
 			headers,
 		});
 		if (resp.status !== 200) {
