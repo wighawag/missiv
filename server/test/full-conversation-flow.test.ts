@@ -3,12 +3,15 @@ import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { WorkerAPI } from './utils';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
-import { getConversationID } from '../src/api';
+import { getConversationID, publicKeyAuthorizationMessage } from '../src/api';
 
 const userAPrivateKey = generatePrivateKey();
 const userAAccount = privateKeyToAccount(userAPrivateKey);
 const userADelegateAccount = privateKeyToAccount(generatePrivateKey());
-const userAMessage = `I authorize ${userADelegateAccount.publicKey}`;
+const userAMessage = publicKeyAuthorizationMessage({
+	address: userAAccount.address,
+	publicKey: userADelegateAccount.publicKey,
+});
 const USER_A = {
 	publicKey: userADelegateAccount.publicKey,
 	address: userAAccount.address,
@@ -18,7 +21,10 @@ const USER_A = {
 const userBPrivateKey = generatePrivateKey();
 const userBAccount = privateKeyToAccount(userBPrivateKey);
 const userBDelegateAccount = privateKeyToAccount(generatePrivateKey());
-const userBMessage = `I authorize ${userBDelegateAccount.publicKey}`;
+const userBMessage = publicKeyAuthorizationMessage({
+	address: userBAccount.address,
+	publicKey: userBDelegateAccount.publicKey,
+});
 const USER_B = {
 	publicKey: userBDelegateAccount.publicKey,
 	address: userBAccount.address,

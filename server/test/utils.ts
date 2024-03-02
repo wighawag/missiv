@@ -2,15 +2,14 @@ import { UnstableDevWorker } from 'wrangler';
 import {
 	Action,
 	ActionAcceptConversation,
-	ActionGetConversations,
 	ActionGetMessages,
 	ActionGetUser,
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	ResponseAcceptConversation,
-	ResponseGetConversationRequests,
 	ResponseGetConversations,
 	ResponseGetMessages,
+	ResponseGetUnacceptedConversations,
 	ResponseGetUser,
 	ResponseRegisterPublicKeys,
 	ResponseSendMessage,
@@ -73,7 +72,7 @@ export class WorkerAPI {
 	}
 
 	async getUnacceptedConversations(options: APIOptions) {
-		return this.call<ResponseGetConversationRequests>(
+		return this.call<ResponseGetUnacceptedConversations>(
 			{
 				type: 'getUnacceptedConversations',
 			},

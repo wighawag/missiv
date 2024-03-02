@@ -25,6 +25,10 @@ import {
 } from '../types';
 import { toJSONResponse } from '../utils';
 
+export function publicKeyAuthorizationMessage({ address, publicKey }: { address: `0x${string}`; publicKey: `0x${string}` }): string {
+	return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
+}
+
 const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
 
 type ConversationFromDB = { read: 0 | 1; conversationID: string };
@@ -51,7 +55,7 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 		}
 		address = action.address;
 	} else {
-		const message = `I authorize ${publicKey}`;
+		const message = publicKeyAuthorizationMessage({ address: action.address, publicKey });
 		address = await recoverMessageAddress({
 			message,
 			signature: action.signature,
