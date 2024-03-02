@@ -7,19 +7,28 @@ import { getConversationID } from '../src/api';
 
 const userAPrivateKey = generatePrivateKey();
 const userAAccount = privateKeyToAccount(userAPrivateKey);
+const userADelegateAccount = privateKeyToAccount(generatePrivateKey());
+const userAMessage = `I authorize ${userADelegateAccount.publicKey}`;
 const USER_A = {
-	publicKey: '0xFAKE_AA',
-	address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-	signature: '0x',
+	publicKey: userADelegateAccount.publicKey,
+	address: userAAccount.address,
+	signature: await userAAccount.signMessage({ message: userAMessage }),
 } as const;
 
 const userBPrivateKey = generatePrivateKey();
 const userBAccount = privateKeyToAccount(userBPrivateKey);
+const userBDelegateAccount = privateKeyToAccount(generatePrivateKey());
+const userBMessage = `I authorize ${userBDelegateAccount.publicKey}`;
 const USER_B = {
-	publicKey: '0xFAKE_BB',
-	address: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
-	signature: '0x',
+	publicKey: userBDelegateAccount.publicKey,
+	address: userBAccount.address,
+	signature: await userBAccount.signMessage({ message: userBMessage }),
 } as const;
+
+console.log({
+	userAMessage,
+	userBMessage,
+});
 
 describe('Worker', () => {
 	let worker: UnstableDevWorker;
@@ -37,14 +46,14 @@ describe('Worker', () => {
 		await api.register(
 			{
 				address: USER_B.address,
-				signature: '0x',
+				signature: USER_B.signature,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
 		await api.register(
 			{
 				address: USER_A.address,
-				signature: '0x',
+				signature: USER_A.signature,
 			},
 			{ publicKey: USER_A.publicKey },
 		);

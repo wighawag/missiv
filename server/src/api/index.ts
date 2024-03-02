@@ -51,14 +51,17 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 		}
 		address = action.address;
 	} else {
+		const message = `I authorize ${publicKey}`;
 		address = await recoverMessageAddress({
-			message: `Hello`,
+			message,
 			signature: action.signature,
 		});
-		if (address != action.address) {
-			throw new Error(`no matching address from signature`);
+		if (address.toLowerCase() != action.address.toLowerCase()) {
+			throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
 		}
 	}
+
+	address = address.toLowerCase() as Address;
 
 	const statement = env.DB.prepare(`INSERT INTO Users(address,publicKey,signature,lastPresence,created)
 		VALUES(?1,?2,?3,?4,?5)
