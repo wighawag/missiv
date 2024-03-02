@@ -35,7 +35,7 @@ export class WorkerAPI {
 				headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
 			}
 		}
-		const resp = await this.worker.fetch('api', {
+		const resp = await this.worker.fetch('api/conversations', {
 			method: 'POST',
 			body,
 			headers,

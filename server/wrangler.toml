@@ -18,3 +18,9 @@ compatibility_date = "2023-08-14"
 binding = "DB"
 database_name = "missiv-db"
 database_id = "accc2885-d412-447d-a1ed-daf6758cb8e4"
+
+[durable_objects]
+bindings = [
+  { name = "ROOMS", class_name = "ChatRoom" },
+  { name = "LIMITERS", class_name = "RateLimiter" }
+]

@@ -152,7 +152,7 @@ export async function getUnacceptedConversations(env: Env, account: Address): Pr
 	return results as Conversation[];
 }
 
-export async function handleApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
+export async function handleComversationsApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
 	if (request.method == 'POST') {
 	} else {
 		return new CorsResponse('Method not allowed', { status: 405 });

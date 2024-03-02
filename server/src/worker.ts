@@ -1,10 +1,13 @@
 import type { Env } from './env';
 import { handleErrors } from './utils';
-import { handleApiRequest } from './api';
+import { handleComversationsApiRequest } from './api';
 
 //@ts-ignore
 import INDEX_HTML from './index.html';
 import { CorsResponse, handleOptions } from './cors';
+import { handleRoomsApiRequest } from './ChatRoom/api';
+
+export { ChatRoom, RateLimiter } from './ChatRoom';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -22,7 +25,13 @@ export default {
 
 			switch (path[0]) {
 				case 'api':
-					return handleApiRequest(path.slice(1), request, env);
+					switch (path[1]) {
+						case 'rooms':
+							return handleRoomsApiRequest(path.slice(2), request, env);
+						case 'conversations':
+							return handleComversationsApiRequest(path.slice(2), request, env);
+					}
+
 				default:
 					return new CorsResponse('Not found', { status: 404 });
 			}
