@@ -31,10 +31,10 @@ export function publicKeyAuthorizationMessage({ address, publicKey }: { address:
 
 const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
 
-type ConversationFromDB = Omit<Conversation, 'state'> & { state: 0 | 1 | 2 };
+type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & { read: 0 | 1; accepted: 0 | 1 };
 
 function formatConversation(v: ConversationFromDB): Conversation {
-	return { ...v, state: v.state == 0 ? 'unaccepted' : v.state === 1 ? 'unread' : 'read' };
+	return { ...v, state: v.accepted == 0 ? 'unaccepted' : v.read === 0 ? 'unread' : 'read' };
 }
 
 export function getConversationID(accountA: Address, accountB: Address) {
@@ -100,7 +100,9 @@ export async function getUserByPublicKey(env: Env, publicKey: PublicKey): Promis
 }
 
 export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
-	const statement = env.DB.prepare(`UPDATE Conversations SET read = 1 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`);
+	const statement = env.DB.prepare(
+		`UPDATE Conversations SET read = 1, accepted = 1 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`,
+	);
 	// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
 
 	const response = await statement.bind(action.namespace, publicKey, action.conversationID).run();
@@ -115,11 +117,12 @@ export async function sendMessage(
 	action: ActionSendMessage,
 ): Promise<ResponseSendMessage> {
 	const conversationID = getConversationID(action.to, account);
-	const upsertConversation = env.DB.prepare(`INSERT INTO Conversations(namespace,first,second,conversationID,lastMessage,state)
-		VALUES(?1,?2,?3,?4,?5,?6)
+	const upsertConversation = env.DB.prepare(`INSERT INTO Conversations(namespace,first,second,conversationID,lastMessage,accepted,read)
+		VALUES(?1,?2,?3,?4,?5,?6,?7)
 		ON CONFLICT(namespace,first,conversationID) DO UPDATE SET 
 			lastMessage=excluded.lastMessage,
-			state=1
+			accepted=1,
+			read=excluded.read
 	`);
 
 	const insertMessage = env.DB.prepare(
@@ -127,8 +130,8 @@ export async function sendMessage(
 	);
 
 	const response = await env.DB.batch([
-		upsertConversation.bind(action.namespace, action.to, account, conversationID, timestampMS, 0),
-		upsertConversation.bind(action.namespace, account, action.to, conversationID, timestampMS, 2),
+		upsertConversation.bind(action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
+		upsertConversation.bind(action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
 		insertMessage.bind(
 			action.namespace,
 			conversationID,
@@ -152,7 +155,7 @@ export async function acceptConversation(
 	timestampMS: number,
 	action: ActionAcceptConversation,
 ): Promise<ResponseAcceptConversation> {
-	const statement = env.DB.prepare(`UPDATE Conversations SET state = 2 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`);
+	const statement = env.DB.prepare(`UPDATE Conversations SET accepted = 1 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`);
 	const response = await statement.bind(action.namespace, account, action.conversationID).run();
 	return {
 		timestampMS,
@@ -160,14 +163,16 @@ export async function acceptConversation(
 }
 
 export async function getConversations(env: Env, namespace: string, publicKey: PublicKey): Promise<ResponseGetConversations> {
-	const statement = env.DB.prepare(`SELECT * from Conversations WHERE namespace = ?1 AND first = ?2 ORDER BY state ASC, lastMessage DESC`);
+	const statement = env.DB.prepare(
+		`SELECT * from Conversations WHERE namespace = ?1 AND first = ?2 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
+	);
 	const { results } = await statement.bind(namespace, publicKey).all<ConversationFromDB>();
 	return results.map(formatConversation);
 }
 
 export async function getUnacceptedConversations(env: Env, namespace: string, account: Address): Promise<Conversation[]> {
 	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND state = 0 ORDER BY state ASC, lastMessage DESC`,
+		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 0 ORDER BY lastMessage DESC`,
 	);
 	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
 	return results.map(formatConversation);
@@ -175,7 +180,7 @@ export async function getUnacceptedConversations(env: Env, namespace: string, ac
 
 export async function getAcceptedConversations(env: Env, namespace: string, account: Address): Promise<Conversation[]> {
 	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND state != 0 ORDER BY state ASC, lastMessage DESC`,
+		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
 	);
 	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
 	return results.map(formatConversation);
@@ -303,13 +308,16 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 					first           text       NOT NULL,
 					second          text       NOT NULL,
 					conversationID  text       NOT NULL,
-					lastMessage     timestamp  NOT NULL, 
-					state           integer    NOT NULL, 
+					lastMessage     timestamp  NOT NULL,
+					accepted        boolean    NOT NULL,
+					read            boolean    NOT NULL,
 					PRIMARY KEY (namespace, first, conversationID),
 					FOREIGN KEY (first) REFERENCES Users (address),
 					FOREIGN KEY (second) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_state ON Conversations (namespace, first, state, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_all_conversations ON Conversations (namespace, first, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_accepted ON Conversations (namespace, first, accepted, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_read ON Conversations (namespace, first, read, lastMessage);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
