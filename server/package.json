@@ -1,7 +1,14 @@
 {
   "name": "missiv-server",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "files": [
+    "src",
+    "tsconfig.json"
+  ],
   "dependencies": {
     "@noble/ciphers": "^0.5.1",
     "@noble/curves": "^1.1.0",
