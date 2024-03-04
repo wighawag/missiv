@@ -24,6 +24,7 @@
     "test": "pnpm -r test run",
     "---------------------- DEV ----------------------": "",
     "client:dev": "pnpm --filter ./client dev",
+    "client:dev:build": "pnpm --filter ./client dev:build",
     "server:dev": "pnpm --filter ./server dev",
     "types:dev": "pnpm --filter ./types dev",
     "---------------------- DEPLOY ----------------------": "",

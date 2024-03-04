@@ -32,6 +32,7 @@
 		"@sveltejs/kit": "^2.0.0",
 		"@sveltejs/package": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^3.0.0",
+		"as-soon": "^0.0.8",
 		"missiv": "workspace:*",
 		"prettier": "^3.1.1",
 		"prettier-plugin-svelte": "^3.1.2",
@@ -44,6 +45,8 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
+		"dev:build": "as-soon -w src/lib pnpm run dev:package",
+		"dev:package": "svelte-package -o dist-tmp && cp -R dist-tmp/* dist/",
 		"build": "vite build && npm run package",
 		"preview": "vite preview",
 		"package": "svelte-kit sync && svelte-package && publint",

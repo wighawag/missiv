@@ -6,8 +6,14 @@ layout {
 		pane command="bash"  {
 			args "-c" "pnpm server:dev; cd server; ${SHELL-bash}"
 		}
+		
+	}
+	pane split_direction="vertical" {
 		pane command="bash"  {
 			args "-c" "pnpm client:dev; cd client; ${SHELL-bash}"
+		}
+		pane command="bash"  {
+			args "-c" "pnpm client:dev:build; cd client; ${SHELL-bash}"
 		}
 	}
 
