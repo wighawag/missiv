@@ -1,5 +1,16 @@
 # missiv-server
 
+## 0.0.3
+
+### Patch Changes
+
+- missiv-client API
+- first release
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - missiv@0.0.3
+
 ## 0.0.2
 
 ### Patch Changes
