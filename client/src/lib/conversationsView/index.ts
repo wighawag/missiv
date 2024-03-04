@@ -1,39 +1,44 @@
 import { writable } from 'svelte/store';
 import type { ActionGetConversations, Conversation } from 'missiv';
 import { API } from '$lib/utils/API.js';
+import type { User, APIConfig } from '../types.js';
 
 export type ConversationsViewState = {
 	conversations: Conversation[];
 	numUnread: number;
 	numUnaccepted: number;
+	loading: boolean;
 };
 
-export function openComversationsView(config: {
-	privateKey: `0x${string}`;
-	endpoint: string;
-	namespace: string;
-	pollingInterval?: number;
-}) {
+export function openComversationsView(config: APIConfig) {
+	function defaultState(): ConversationsViewState {
+		return {
+			conversations: [],
+			numUnread: 0,
+			numUnaccepted: 0,
+			loading: false
+		};
+	}
+	function reset(fields?: { loading?: boolean }) {
+		$store = defaultState();
+		$store.loading = fields?.loading || false;
+		store.set($store);
+	}
+
+	let user: User | undefined;
 	const pollingInterval = config.pollingInterval || 20000;
 	const api = new API(config.endpoint);
-	const $store: ConversationsViewState = {
-		conversations: [],
-		numUnread: 0,
-		numUnaccepted: 0
-	};
-	const store = writable<ConversationsViewState>($store, (set, update) => {
-		let timeout: 'first' | NodeJS.Timeout | undefined;
-		async function fetchConversations() {
-			const action: ActionGetConversations = {
-				type: 'getConversations',
-				namespace: config.namespace
-			};
+	let $store: ConversationsViewState = defaultState();
+
+	let timeout: 'first' | NodeJS.Timeout | undefined;
+	async function fetchConversations() {
+		if (user) {
 			const conversations = await api.getConversations(
 				{
 					namespace: config.namespace
 				},
 				{
-					privateKey: config.privateKey
+					privateKey: user.delegatePrivateKey
 				}
 			);
 			let numUnread = 0;
@@ -46,21 +51,40 @@ export function openComversationsView(config: {
 					// we do not count unaccepted as unread here
 				}
 			}
-			if (timeout) {
-				$store.conversations = conversations;
-				set($store);
-				timeout = setTimeout(fetchConversations, pollingInterval * 1000);
-			}
-			// else we stop as we cleared the timeout
+			$store.conversations = conversations;
+			store.set($store);
 		}
-		fetchConversations();
+	}
+
+	async function fetchConversationsAgainAndAgain() {
+		await fetchConversations();
+		if (timeout) {
+			timeout = setTimeout(fetchConversationsAgainAndAgain, pollingInterval * 1000);
+		} // else we stop as we cleared the timeout
+	}
+
+	const store = writable<ConversationsViewState>($store, () => {
+		fetchConversationsAgainAndAgain();
 		return () => timeout && timeout != 'first' && clearTimeout(timeout);
 	});
 
-	function setAccount(account: `0x${string}`) {}
+	function setCurrentUser(newUser: User | undefined) {
+		if (newUser) {
+			user = { ...newUser };
+
+			store.set($store);
+			if (newUser.address !== user?.address) {
+				reset({ loading: true });
+				fetchConversations();
+			}
+		} else {
+			reset();
+			user = undefined;
+		}
+	}
 
 	return {
 		subscribe: store.subscribe,
-		setAccount
+		setCurrentUser
 	};
 }
