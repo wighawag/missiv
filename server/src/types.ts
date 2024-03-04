@@ -15,6 +15,7 @@ export type Address = Output<typeof SchemaAddress>;
 
 export const SchemaActionSendMessage = object({
 	type: literal('sendMessage'),
+	namespace: string(),
 	to: string0x(),
 	toPublicKey: string0x(),
 	message: string(),
@@ -27,6 +28,7 @@ export type ResponseSendMessage = {
 
 export const SchemaActionAcceptConversation = object({
 	type: literal('acceptConversation'),
+	namespace: string(),
 	conversationID: string(),
 });
 export type ActionAcceptConversation = Output<typeof SchemaActionAcceptConversation>;
@@ -37,18 +39,28 @@ export type ResponseAcceptConversation = {
 export type Conversation = { read: boolean; conversationID: string };
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
+	namespace: string(),
 });
 export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
 export type ResponseGetConversations = Conversation[];
 
 export const SchemaActionGetUnacceptedConversations = object({
 	type: literal('getUnacceptedConversations'),
+	namespace: string(),
 });
 export type ActionGetUnacceptedConversations = Output<typeof SchemaActionGetUnacceptedConversations>;
 export type ResponseGetUnacceptedConversations = Conversation[];
 
+export const SchemaActionGetAcceptedConversations = object({
+	type: literal('getAcceptedConversations'),
+	namespace: string(),
+});
+export type ActionGetAcceptedConversations = Output<typeof SchemaActionGetAcceptedConversations>;
+export type ResponseGetAcceptedConversations = Conversation[];
+
 export const SchemaActionMarkAsRead = object({
 	type: literal('markAsRead'),
+	namespace: string(),
 	conversationID: string(),
 	lastMessageTimestampMS: number(),
 });
@@ -57,6 +69,7 @@ export type ResponseMarkAsRead = { timestampMS: number };
 
 export type ConversationMessage = { message: string; from: `0x${string}` };
 export const SchemaActionGetMessages = object({
+	namespace: string(),
 	type: literal('getMessages'),
 	conversationID: string(),
 });
@@ -84,6 +97,7 @@ export const SchemaAction = variant('type', [
 	SchemaActionSendMessage,
 	SchemaActionGetConversations,
 	SchemaActionGetUnacceptedConversations,
+	SchemaActionGetAcceptedConversations,
 	SchemaActionMarkAsRead,
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,

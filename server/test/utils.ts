@@ -2,11 +2,15 @@ import { UnstableDevWorker } from 'wrangler';
 import {
 	Action,
 	ActionAcceptConversation,
+	ActionGetAcceptedConversations,
+	ActionGetConversations,
 	ActionGetMessages,
+	ActionGetUnacceptedConversations,
 	ActionGetUser,
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	ResponseAcceptConversation,
+	ResponseGetAcceptedConversations,
 	ResponseGetConversations,
 	ResponseGetMessages,
 	ResponseGetUnacceptedConversations,
@@ -70,19 +74,31 @@ export class WorkerAPI {
 		);
 	}
 
-	async getConversations(options: APIOptions) {
+	async getConversations(action: Omit<ActionGetConversations, 'type'>, options: APIOptions) {
 		return this.call<ResponseGetConversations>(
 			{
 				type: 'getConversations',
+				...action,
 			},
 			options,
 		);
 	}
 
-	async getUnacceptedConversations(options: APIOptions) {
+	async getAcceptedConversations(action: Omit<ActionGetAcceptedConversations, 'type'>, options: APIOptions) {
+		return this.call<ResponseGetAcceptedConversations>(
+			{
+				type: 'getAcceptedConversations',
+				...action,
+			},
+			options,
+		);
+	}
+
+	async getUnacceptedConversations(action: Omit<ActionGetUnacceptedConversations, 'type'>, options: APIOptions) {
 		return this.call<ResponseGetUnacceptedConversations>(
 			{
 				type: 'getUnacceptedConversations',
+				...action,
 			},
 			options,
 		);
