@@ -4,12 +4,15 @@ import { Env } from '../env';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { bytesToHex as toHex } from '@noble/hashes/utils';
+import { Signature } from '@noble/secp256k1';
+import { getUser, getUserByPublicKey } from '../api';
+import { Address } from '../types';
 
-type JoinMessage = { type: 'join'; address: string; signature: string };
+type JoinMessage = { type: 'join'; address: Address; signature: string };
 type ContentMessage = { type: 'message'; content: string };
 export type Message = JoinMessage | ContentMessage;
 
-export type Session = { address?: string; pub?: string; webSocket: WebSocket; blockedMessages: string[]; quit?: boolean };
+export type Session = { address?: string; publicKey?: string; webSocket: WebSocket; blockedMessages: string[]; quit?: boolean };
 
 function pubToAddress(pub: string): string {
 	return toHex(keccak_256(pub).slice(-40));
@@ -145,7 +148,7 @@ export class ChatRoom {
 				}
 
 				const rawMessage = msg.data.toString();
-				const [sigCompacted, dataString] = rawMessage.split(/\.(.*)/s);
+				const [signatureString, dataString] = rawMessage.split(/\.(.*)/s);
 				if (!dataString) {
 					webSocket.send(
 						JSON.stringify({
@@ -166,17 +169,14 @@ export class ChatRoom {
 						return;
 					}
 
-					console.log({ dataString, sigCompacted });
-					const msgHash = toHex(keccak_256(dataString));
-					const sig = secp256k1.Signature.fromCompact(sigCompacted);
-					let pub: string | undefined;
-					for (let recoveryBit = 1; recoveryBit < 5; recoveryBit++) {
-						try {
-							pub = toHex(sig.addRecoveryBit(recoveryBit).recoverPublicKey(msgHash).toRawBytes());
-						} catch (e) {}
-					}
+					console.log({ dataString, signatureString });
+					const splitted = signatureString.split(':');
+					const recoveryBit = Number(splitted[1]);
+					const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
+					const msgHash = keccak_256(dataString);
+					const publicKey = signature.recoverPublicKey(msgHash).toHex() as `0x${string}`;
 
-					if (!pub) {
+					if (!publicKey) {
 						webSocket.send(
 							JSON.stringify({
 								error: 'Invalid Message, cannot recover',
@@ -185,14 +185,18 @@ export class ChatRoom {
 						return;
 					}
 
-					// TODO
-					// const signatureFromEthereumAccount = secp256k1.Signature.fromCompact(message.signature);
-					// const ethereumAccountMessageHash = toHex(keccak_256(`I (${message.address}) agree to delegate my message to ${pub} `));
-					// const ethereumPubKeyRecovered = toHex(signatureFromEthereumAccount.recoverPublicKey(ethereumAccountMessageHash).toRawBytes());
-					// const address = pubToAddress(ethereumPubKeyRecovered);
-					const address = message.address;
+					const user = await getUserByPublicKey(this.env, publicKey);
 
-					if (address.toLowerCase() !== message.address.toLowerCase()) {
+					if (!user) {
+						webSocket.send(
+							JSON.stringify({
+								error: `No User found with publicKey: ${publicKey}`,
+							}),
+						);
+						return;
+					}
+
+					if (user.address.toLowerCase() !== message.address.toLowerCase()) {
 						webSocket.send(
 							JSON.stringify({
 								error: 'Invalid Message, addresses mismatch',
@@ -201,8 +205,8 @@ export class ChatRoom {
 						return;
 					}
 
-					session.address = address;
-					session.pub = pub;
+					session.address = user.address;
+					session.publicKey = publicKey;
 
 					// Deliver all the messages we queued up since the user connected.
 					session.blockedMessages.forEach((queued) => {
@@ -212,7 +216,7 @@ export class ChatRoom {
 
 					// Broadcast to all other connections that this user has joined.
 					// this.broadcast({joined: session.address});
-					this.broadcast({ joined: address, pub, rawMessage }); // client need to check for themselves
+					this.broadcast({ joined: user.address, publicKey, rawMessage }); // client need to check for themselves
 
 					// we tell the client it is ready to send message
 					webSocket.send(JSON.stringify({ ready: true }));
@@ -223,19 +227,13 @@ export class ChatRoom {
 					return;
 				}
 
-				const msgHash = toHex(keccak_256(dataString));
-				const sig = secp256k1.Signature.fromCompact(sigCompacted);
-				let pub: string | undefined;
-				for (let recoveryBit = 1; recoveryBit < 5; recoveryBit++) {
-					try {
-						pub = toHex(sig.addRecoveryBit(recoveryBit).recoverPublicKey(msgHash).toRawBytes());
-					} catch (e) {}
-					if (session.pub == pub) {
-						break;
-					}
-				}
+				const splitted = signatureString.split(':');
+				const recoveryBit = Number(splitted[1]);
+				const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
+				const msgHash = keccak_256(dataString);
+				const publicKey = signature.recoverPublicKey(msgHash).toHex();
 
-				if (!pub) {
+				if (!publicKey) {
 					webSocket.send(
 						JSON.stringify({
 							error: 'Invalid Message, cannot recover',
@@ -244,10 +242,10 @@ export class ChatRoom {
 					return;
 				}
 
-				if (session.pub != pub) {
+				if (session.publicKey != publicKey) {
 					webSocket.send(
 						JSON.stringify({
-							error: `Invalid Message, different public key (session: ${session.pub} vs ${pub})`,
+							error: `Invalid Message, different public key (session: ${session.publicKey} vs ${publicKey})`,
 						}),
 					);
 					return;
@@ -262,7 +260,7 @@ export class ChatRoom {
 					return;
 				}
 
-				if (!session.pub) {
+				if (!session.publicKey) {
 					webSocket.send(
 						JSON.stringify({
 							error: 'Invalid Message, session has no associated public key',

@@ -90,6 +90,15 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetUs
 	return undefined;
 }
 
+export async function getUserByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetUser> {
+	const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
+
+	if (response.results.length === 1) {
+		return response.results[0] as User;
+	}
+	return undefined;
+}
+
 export async function getConversations(env: Env, publicKey: PublicKey): Promise<ResponseGetConversations> {
 	const statement = env.DB.prepare(`SELECT * from Conversations WHERE first = ?1 AND accepted = TRUE`);
 	const { results } = await statement.bind(publicKey).all<ConversationFromDB>();
