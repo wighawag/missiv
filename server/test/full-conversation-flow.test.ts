@@ -226,6 +226,6 @@ describe('Worker', () => {
 		expect(conversationsB[0].state).toBe('unread');
 		const conversationsA = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].state).toBe('read');
+		expect(conversationsA[0].state).toBe('read'); // read because by replying to B, we automatically consider A reading B message
 	});
 });
