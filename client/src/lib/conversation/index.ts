@@ -1,6 +1,6 @@
 import type { ActionGetMessages, ConversationMessage, PublicKey } from 'missiv';
 import { writable } from 'svelte/store';
-import { API } from '$lib/utils/API.js';
+import { API } from '../API.js';
 import type { User, APIConfig } from '../types.js';
 
 export type ConversationState = {

@@ -97,6 +97,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20230814.0
         version: 4.20240208.0
+      missiv-client:
+        specifier: workspace:*
+        version: link:../client
       typescript:
         specifier: ^5.0.4
         version: 5.3.3

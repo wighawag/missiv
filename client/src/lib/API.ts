@@ -1,4 +1,3 @@
-import { UnstableDevWorker } from 'wrangler';
 import type {
 	Action,
 	ActionAcceptConversation,
@@ -16,19 +15,33 @@ import type {
 	ResponseGetUnacceptedConversations,
 	ResponseGetUser,
 	ResponseRegisterPublicKeys,
-	ResponseSendMessage,
+	ResponseSendMessage
 } from 'missiv';
-import { signAsync } from '@noble/secp256k1';
+import { signAsync, utils as secpUtils } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 
-export type APIOptions = { signature: string } | { publicKey: string } | { privateKey: Uint8Array };
+export type FetchFunction = typeof fetch;
 
-export class WorkerAPI {
-	constructor(private worker: UnstableDevWorker) {}
+export type APIOptions =
+	| { signature: string }
+	| { publicKey: string }
+	| { privateKey: Uint8Array | string };
+
+export class API {
+	protected fetchFunction: FetchFunction;
+
+	constructor(
+		private endpoint: string,
+		options?: {
+			fetch: FetchFunction;
+		}
+	) {
+		this.fetchFunction = options?.fetch || fetch;
+	}
 
 	async call<T>(action: Action, options?: APIOptions): Promise<T> {
 		const headers: { [header: string]: string } = {
-			'content-type': 'application/json',
+			'content-type': 'application/json'
 		};
 		const body = JSON.stringify(action);
 		if (options) {
@@ -36,13 +49,14 @@ export class WorkerAPI {
 				const signature = await signAsync(keccak_256(body), options.privateKey); // Sync methods below
 				headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
 			} else {
-				headers.SIGNATURE = 'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
+				headers.SIGNATURE =
+					'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
 			}
 		}
-		const resp = await this.worker.fetch('api/conversations', {
+		const resp = await this.fetchFunction(this.endpoint, {
 			method: 'POST',
 			body,
-			headers,
+			headers
 		});
 		if (resp.status !== 200) {
 			throw new Error(await resp.text());
@@ -58,9 +72,9 @@ export class WorkerAPI {
 		return this.call<ResponseRegisterPublicKeys>(
 			{
 				type: 'register',
-				...action,
+				...action
 			},
-			options,
+			options
 		);
 	}
 
@@ -68,9 +82,9 @@ export class WorkerAPI {
 		return this.call<ResponseSendMessage>(
 			{
 				type: 'sendMessage',
-				...action,
+				...action
 			},
-			options,
+			options
 		);
 	}
 
@@ -78,38 +92,47 @@ export class WorkerAPI {
 		return this.call<ResponseGetConversations>(
 			{
 				type: 'getConversations',
-				...action,
+				...action
 			},
-			options,
+			options
 		);
 	}
 
-	async getAcceptedConversations(action: Omit<ActionGetAcceptedConversations, 'type'>, options: APIOptions) {
+	async getAcceptedConversations(
+		action: Omit<ActionGetAcceptedConversations, 'type'>,
+		options: APIOptions
+	) {
 		return this.call<ResponseGetAcceptedConversations>(
 			{
 				type: 'getAcceptedConversations',
-				...action,
+				...action
 			},
-			options,
+			options
 		);
 	}
 
-	async getUnacceptedConversations(action: Omit<ActionGetUnacceptedConversations, 'type'>, options: APIOptions) {
+	async getUnacceptedConversations(
+		action: Omit<ActionGetUnacceptedConversations, 'type'>,
+		options: APIOptions
+	) {
 		return this.call<ResponseGetUnacceptedConversations>(
 			{
 				type: 'getUnacceptedConversations',
-				...action,
+				...action
 			},
-			options,
+			options
 		);
 	}
-	async acceptConversation(conversation: Omit<ActionAcceptConversation, 'type'>, options: APIOptions) {
+	async acceptConversation(
+		conversation: Omit<ActionAcceptConversation, 'type'>,
+		options: APIOptions
+	) {
 		return this.call<ResponseAcceptConversation>(
 			{
 				type: 'acceptConversation',
-				...conversation,
+				...conversation
 			},
-			options,
+			options
 		);
 	}
 
@@ -117,22 +140,22 @@ export class WorkerAPI {
 		return this.call<ResponseGetMessages>(
 			{
 				type: 'getMessages',
-				...chat,
+				...chat
 			},
-			options,
+			options
 		);
 	}
 
 	async getUser(chat: Omit<ActionGetUser, 'type'>) {
 		return this.call<ResponseGetUser>({
 			type: 'getUser',
-			...chat,
+			...chat
 		});
 	}
 
 	async clear() {
 		return this.call<ResponseAcceptConversation>({
-			type: 'db:reset',
+			type: 'db:reset'
 		});
 	}
 }

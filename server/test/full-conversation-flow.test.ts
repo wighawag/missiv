@@ -1,7 +1,7 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { WorkerAPI } from './utils';
+import { API, FetchFunction } from 'missiv-client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { getConversationID, publicKeyAuthorizationMessage } from '../src/api';
 import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
@@ -52,13 +52,15 @@ console.log({
 
 describe('Worker', () => {
 	let worker: UnstableDevWorker;
-	let api: WorkerAPI;
+	let api: API;
 
 	beforeAll(async () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new WorkerAPI(worker);
+		api = new API('http://localhost/api/conversations', {
+			fetch: worker.fetch.bind(worker) as FetchFunction,
+		});
 	});
 
 	beforeEach(async () => {
