@@ -1,5 +1,17 @@
-import { object, string, literal, Output, special, variant, number, toLowerCase, BaseTransformation, BaseValidation, Pipe } from 'valibot';
-export { parse } from 'valibot';
+import {
+	object,
+	string,
+	literal,
+	Output,
+	special,
+	variant,
+	number,
+	toLowerCase,
+	BaseTransformation,
+	BaseValidation,
+	Pipe,
+} from 'valibot';
+export {parse} from 'valibot';
 
 const string0x = (...args: (BaseValidation<`0x${string}`> | BaseTransformation<`0x${string}`>)[]) =>
 	special<`0x${string}`>((val) => (typeof val === 'string' ? val.startsWith('0x') : false), 'do not start with 0x', [
@@ -36,7 +48,14 @@ export type ResponseAcceptConversation = {
 	timestampMS: number;
 };
 
-export type Conversation = { read: boolean; conversationID: string };
+export type Conversation = {
+	namespace: string;
+	first: Address;
+	second: Address;
+	conversationID: string;
+	lastMessage: number;
+	state: 'unaccepted' | 'unread' | 'read';
+};
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
 	namespace: string(),
@@ -65,9 +84,19 @@ export const SchemaActionMarkAsRead = object({
 	lastMessageTimestampMS: number(),
 });
 export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
-export type ResponseMarkAsRead = { timestampMS: number };
+export type ResponseMarkAsRead = {timestampMS: number};
 
-export type ConversationMessage = { message: string; from: `0x${string}` };
+export type ConversationMessage = {
+	namespace: string;
+	conversationID: string;
+	sender: Address;
+	senderPublicKey: PublicKey;
+	recipient: Address;
+	recipientPublicKey: PublicKey;
+	timestamp: number;
+	message: string;
+	signature: string;
+};
 export const SchemaActionGetMessages = object({
 	namespace: string(),
 	type: literal('getMessages'),
@@ -76,7 +105,13 @@ export const SchemaActionGetMessages = object({
 export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
 export type ResponseGetMessages = ConversationMessage[];
 
-export type User = { address: Address; publicKey: PublicKey; signature: `0x${string}`; lastPresence: number; created: number };
+export type User = {
+	address: Address;
+	publicKey: PublicKey;
+	signature: `0x${string}`;
+	lastPresence: number;
+	created: number;
+};
 export const SchemaActionGetUser = object({
 	type: literal('getUser'),
 	address: string0x(),
@@ -90,7 +125,7 @@ export const SchemaActionRegisterPublicKeys = object({
 	address: string0x(),
 });
 export type ActionRegisterPublicKeys = Output<typeof SchemaActionRegisterPublicKeys>;
-export type ResponseRegisterPublicKeys = { timestampMS: number };
+export type ResponseRegisterPublicKeys = {timestampMS: number};
 
 export const SchemaAction = variant('type', [
 	SchemaActionRegisterPublicKeys,

@@ -223,9 +223,9 @@ describe('Worker', () => {
 		);
 		const conversationsB = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_B.publicKey });
 		expect(conversationsB.length).toBe(1);
-		expect(conversationsB[0].read).toBe(false);
+		expect(conversationsB[0].state).toBe('unread');
 		const conversationsA = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].read).toBe(true);
+		expect(conversationsA[0].state).toBe('unread');
 	});
 });

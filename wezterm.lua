@@ -20,6 +20,11 @@ wezterm.on('gui-startup', function(cmd)
     direction = 'Right'
   }
 
+  local pane_client = pane_server:split {
+    args = {'bash', '-i', '-c', 'cd '.. cmd.args[1] .. '; sleep 1; pnpm types:dev; bash'},
+    direction = 'Right'
+  }
+
 
 end)
 
