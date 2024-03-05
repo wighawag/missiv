@@ -39,6 +39,7 @@ describe('Registration of keys', () => {
 			{
 				address: USER_B.address,
 				signature: '0x',
+				namespace: 'test',
 			},
 			{ publicKey: USER_B.publicKey },
 		);
@@ -46,7 +47,11 @@ describe('Registration of keys', () => {
 		const user = await api.getUser({
 			address: USER_B.address,
 		});
+		const userPublicKey = await api.getUserPublicKey({
+			address: USER_B.address,
+			namespace: 'test',
+		});
 		expect(user?.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
-		expect(user?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
+		expect(userPublicKey?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
 	});
 });

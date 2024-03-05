@@ -22,6 +22,8 @@ import {
 	SchemaAddress,
 	ResponseGetMissivUser,
 	MissivUser,
+	ResponseGetUserPublicKey,
+	UserPublicKey,
 } from 'missiv';
 import { toJSONResponse } from '../utils';
 
@@ -67,11 +69,21 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 
 	address = address.toLowerCase() as Address;
 
-	const statement = env.DB.prepare(`INSERT INTO Users(address,publicKey,signature,lastPresence,created)
-		VALUES(?1,?2,?3,?4,?5)
-		ON CONFLICT(address) DO UPDATE SET publicKey=excluded.publicKey
+	const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,lastPresence,created)
+		VALUES(?1,?2,?3)
 	`);
-	const response = await statement.bind(address, publicKey, action.signature, timestampMS, timestampMS).run();
+	const insertPublicKey = env.DB.prepare(`INSERT INTO PublicKeys(user,namespace,publicKey,signature,added)
+		VALUES(?1,?2,?3,?4,?5)
+		ON CONFLICT(user,namespace) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added
+	`);
+
+	const response = await env.DB.batch([
+		insertUser.bind(address, timestampMS, timestampMS),
+		insertPublicKey.bind(address, action.namespace, publicKey, action.signature, timestampMS),
+	]);
+	// await insertUser.bind(address, timestampMS, timestampMS).run();
+	// const response = insertPublicKey.bind(address, action.namespace, publicKey, action.signature, timestampMS).run();
+
 	return response;
 }
 
@@ -90,11 +102,20 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetMi
 	return undefined;
 }
 
-export async function getUserByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetMissivUser> {
-	const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
+export async function getUserPublicKey(env: Env, namespace: string, address: Address): Promise<ResponseGetUserPublicKey> {
+	const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE user = ?1 AND namespace = ?2`).bind(address, namespace).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as MissivUser;
+		return response.results[0] as UserPublicKey;
+	}
+	return undefined;
+}
+
+export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetUserPublicKey> {
+	const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE publicKey = ?1`).bind(publicKey).all();
+
+	if (response.results.length === 1) {
+		return response.results[0] as UserPublicKey;
 	}
 	return undefined;
 }
@@ -162,11 +183,11 @@ export async function acceptConversation(
 	};
 }
 
-export async function getConversations(env: Env, namespace: string, publicKey: PublicKey): Promise<ResponseGetConversations> {
+export async function getConversations(env: Env, namespace: string, address: Address): Promise<ResponseGetConversations> {
 	const statement = env.DB.prepare(
 		`SELECT * from Conversations WHERE namespace = ?1 AND first = ?2 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
 	);
-	const { results } = await statement.bind(namespace, publicKey).all<ConversationFromDB>();
+	const { results } = await statement.bind(namespace, address).all<ConversationFromDB>();
 	return results.map(formatConversation);
 }
 
@@ -218,11 +239,11 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			publicKey = `0x${recoveredPubKey.toHex()}`;
 		}
 
-		const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
+		const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE publicKey = ?1`).bind(publicKey).all();
 
-		if (response.results.length === 1) {
-			const user = response.results[0];
-			account = parse(SchemaAddress, user.address);
+		if (response.results.length >= 1) {
+			const userPublicKey = response.results[0];
+			account = parse(SchemaAddress, userPublicKey.user);
 		}
 	}
 
@@ -281,6 +302,9 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 		case 'getUser': {
 			return toJSONResponse(getUser(env, action.address));
 		}
+		case 'getUserPublicKey': {
+			return toJSONResponse(getUserPublicKey(env, action.namespace, action.address));
+		}
 		case 'acceptConversation': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
@@ -315,9 +339,9 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 					FOREIGN KEY (first) REFERENCES Users (address),
 					FOREIGN KEY (second) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_all_conversations ON Conversations (namespace, first, lastMessage);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_accepted ON Conversations (namespace, first, accepted, lastMessage);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_read ON Conversations (namespace, first, read, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (namespace, first, accepted, lastMessage);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (namespace, first, read, lastMessage);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
@@ -334,21 +358,30 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				  PRIMARY KEY (namespace, conversationID, sender, timestamp),
 				  FOREIGN KEY (sender) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (namespace, conversationID, timestamp);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (namespace, conversationID, timestamp);`),
+
+				env.DB.prepare(`DROP TABLE IF EXISTS PublicKeys;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS PublicKeys
+				(
+				  user          text       NOT NULL,
+				  namespace     text       NOT NULL,
+				  publicKey     text       NOT NULL,
+				  signature     text       NOT NULL,
+				  added         timestamp  NOT NULL,
+				  PRIMARY KEY (user, namespace),
+				  FOREIGN KEY (user) REFERENCES Users (address)
+				);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_PublicKeys_publicKey ON PublicKeys (publicKey);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
 				(
 				  address       text       NOT NULL,
-				  publicKey     text       NOT NULL,
-				  signature     text       NOT NULL,
 				  lastPresence  timestmap  NOT NULL,
 				  created       timestamp  NOT NULL,
 				  PRIMARY KEY (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (lastPresence);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Users (address);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_messsages ON Messages (publicKey);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Users_lastPresence ON Users (lastPresence);`),
 			]);
 			return toJSONResponse(response);
 		}

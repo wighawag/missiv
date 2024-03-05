@@ -107,8 +107,6 @@ export type ResponseGetMessages = ConversationMessage[];
 
 export type MissivUser = {
 	address: Address;
-	publicKey: PublicKey;
-	signature: `0x${string}`;
 	lastPresence: number;
 	created: number;
 };
@@ -119,8 +117,23 @@ export const SchemaActionGetMissivUser = object({
 export type ActionGetMissivUser = Output<typeof SchemaActionGetMissivUser>;
 export type ResponseGetMissivUser = MissivUser | undefined;
 
+export type UserPublicKey = {
+	address: Address;
+	namespace: string;
+	publicKey: PublicKey;
+	signature: `0x${string}`;
+};
+export const SchemaActionGetUserPublicKey = object({
+	type: literal('getUserPublicKey'),
+	namespace: string(),
+	address: string0x(),
+});
+export type ActionGetUserPublicKey = Output<typeof SchemaActionGetUserPublicKey>;
+export type ResponseGetUserPublicKey = UserPublicKey | undefined;
+
 export const SchemaActionRegisterPublicKeys = object({
 	type: literal('register'),
+	namespace: string(),
 	signature: string0x(),
 	address: string0x(),
 });
@@ -137,6 +150,7 @@ export const SchemaAction = variant('type', [
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
 	SchemaActionGetMissivUser,
+	SchemaActionGetUserPublicKey,
 
 	object({
 		type: literal('db:select'),

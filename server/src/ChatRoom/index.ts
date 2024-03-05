@@ -1,12 +1,11 @@
 import { handleErrors } from '../utils';
 import { Env } from '../env';
 
-import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { bytesToHex as toHex } from '@noble/hashes/utils';
 import { Signature } from '@noble/secp256k1';
-import { getUser, getUserByPublicKey } from '../api';
-import { Address } from '../types';
+import { getUserAddressByPublicKey } from '../api';
+import { Address } from 'missiv';
 
 type JoinMessage = { type: 'join'; address: Address; signature: string };
 type ContentMessage = { type: 'message'; content: string };
@@ -185,7 +184,7 @@ export class ChatRoom {
 						return;
 					}
 
-					const user = await getUserByPublicKey(this.env, publicKey);
+					const user = await getUserAddressByPublicKey(this.env, publicKey);
 
 					if (!user) {
 						webSocket.send(

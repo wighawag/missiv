@@ -69,6 +69,7 @@ describe('Worker', () => {
 			{
 				address: USER_B.address,
 				signature: USER_B.signature,
+				namespace: 'test',
 			},
 			{ privateKey: userBDelegatePrivateKey },
 		);
@@ -76,6 +77,7 @@ describe('Worker', () => {
 			{
 				address: USER_A.address,
 				signature: USER_A.signature,
+				namespace: 'test',
 			},
 			{ privateKey: userADelegatePrivateKey },
 		);

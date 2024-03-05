@@ -15,7 +15,9 @@ import type {
 	ResponseGetUnacceptedConversations,
 	ResponseGetMissivUser,
 	ResponseRegisterPublicKeys,
-	ResponseSendMessage
+	ResponseSendMessage,
+	ActionGetUserPublicKey,
+	ResponseGetUserPublicKey
 } from 'missiv';
 import { signAsync, utils as secpUtils } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -146,10 +148,17 @@ export class API {
 		);
 	}
 
-	async getUser(chat: Omit<ActionGetMissivUser, 'type'>) {
+	async getUser(action: Omit<ActionGetMissivUser, 'type'>) {
 		return this.call<ResponseGetMissivUser>({
 			type: 'getUser',
-			...chat
+			...action
+		});
+	}
+
+	async getUserPublicKey(action: Omit<ActionGetUserPublicKey, 'type'>) {
+		return this.call<ResponseGetUserPublicKey>({
+			type: 'getUserPublicKey',
+			...action
 		});
 	}
 
