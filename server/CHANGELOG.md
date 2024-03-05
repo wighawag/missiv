@@ -1,5 +1,11 @@
 # missiv-server
 
+## 0.0.5
+
+### Patch Changes
+
+- use store for comversations opening state
+
 ## 0.0.4
 
 ### Patch Changes

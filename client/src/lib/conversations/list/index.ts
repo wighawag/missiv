@@ -1,7 +1,7 @@
-import { writable } from 'svelte/store';
-import type { ActionGetConversations, Conversation } from 'missiv';
-import { API } from '../API.js';
-import type { User, APIConfig } from '../types.js';
+import { writable, type Readable } from 'svelte/store';
+import type { Conversation } from 'missiv';
+import { API } from '../../API.js';
+import type { User, APIConfig } from '../../types.js';
 
 export type ConversationsViewState = {
 	conversations: Conversation[];
@@ -10,7 +10,11 @@ export type ConversationsViewState = {
 	loading: boolean;
 };
 
-export function openConversationsView(config: APIConfig) {
+export type ConversationViews = Readable<ConversationsViewState> & {
+	setCurrentUser(user: User | undefined): void;
+};
+
+export function openConversationsView(config: APIConfig): ConversationViews {
 	function defaultState(): ConversationsViewState {
 		return {
 			conversations: [],

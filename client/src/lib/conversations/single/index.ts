@@ -1,7 +1,7 @@
-import type { ActionGetMessages, ConversationMessage, PublicKey } from 'missiv';
-import { writable } from 'svelte/store';
-import { API } from '../API.js';
-import type { User, APIConfig } from '../types.js';
+import type { ActionGetMessages, Conversation, ConversationMessage, PublicKey } from 'missiv';
+import { writable, type Readable } from 'svelte/store';
+import { API } from '$lib/API.js';
+import type { User, APIConfig } from '$lib/types.js';
 
 export type ConversationState = {
 	invalidUser: boolean;
@@ -19,12 +19,16 @@ export type OtherUser = {
 	address: `0x${string}`;
 };
 
-export function openConversation(
+export type CurrentConversation = Readable<ConversationState> & {
+	setCurrentUser(user: User | undefined): void;
+};
+
+export function openOneConversation(
 	config: APIConfig,
 	conversationID: string,
 	user: User,
 	otherUser: OtherUser
-) {
+): CurrentConversation {
 	function defaultState(): ConversationState {
 		return {
 			invalidUser: false,
