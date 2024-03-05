@@ -1,5 +1,12 @@
 # missiv
 
+## 0.0.5
+
+### Patch Changes
+
+- 480a8c2: publicKey per namespace
+- c8ed114: use namespace user with lastpresence
+
 ## 0.0.4
 
 ### Patch Changes

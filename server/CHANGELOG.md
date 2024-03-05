@@ -1,5 +1,15 @@
 # missiv-server
 
+## 0.0.6
+
+### Patch Changes
+
+- 480a8c2: publicKey per namespace
+- c8ed114: use namespace user with lastpresence
+- Updated dependencies [480a8c2]
+- Updated dependencies [c8ed114]
+  - missiv@0.0.5
+
 ## 0.0.5
 
 ### Patch Changes

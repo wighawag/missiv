@@ -1,5 +1,13 @@
 # missiv-client
 
+## 0.0.7
+
+### Patch Changes
+
+- 480a8c2: publicKey per namespace
+- 139efd2: use setup function
+- c8ed114: use namespace user with lastpresence
+
 ## 0.0.6
 
 ### Patch Changes
