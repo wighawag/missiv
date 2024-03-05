@@ -1,5 +1,11 @@
 # missiv
 
+## 0.0.4
+
+### Patch Changes
+
+- MissivUser + types export for client
+
 ## 0.0.3
 
 ### Patch Changes

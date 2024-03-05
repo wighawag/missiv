@@ -20,8 +20,8 @@ import {
 	parse,
 	Address,
 	SchemaAddress,
-	ResponseGetUser,
-	User,
+	ResponseGetMissivUser,
+	MissivUser,
 } from 'missiv';
 import { toJSONResponse } from '../utils';
 
@@ -81,20 +81,20 @@ export async function getChatMessages(env: Env, conversationID: string): Promise
 	return results as ResponseGetMessages;
 }
 
-export async function getUser(env: Env, address: Address): Promise<ResponseGetUser> {
+export async function getUser(env: Env, address: Address): Promise<ResponseGetMissivUser> {
 	const response = await env.DB.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as User;
+		return response.results[0] as MissivUser;
 	}
 	return undefined;
 }
 
-export async function getUserByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetUser> {
+export async function getUserByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetMissivUser> {
 	const response = await env.DB.prepare(`SELECT * from Users WHERE publicKey = ?1`).bind(publicKey).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as User;
+		return response.results[0] as MissivUser;
 	}
 	return undefined;
 }

@@ -10,7 +10,7 @@ export type ConversationsViewState = {
 	loading: boolean;
 };
 
-export function openComversationsView(config: APIConfig) {
+export function openConversationsView(config: APIConfig) {
 	function defaultState(): ConversationsViewState {
 		return {
 			conversations: [],

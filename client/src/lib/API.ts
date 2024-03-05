@@ -5,7 +5,7 @@ import type {
 	ActionGetConversations,
 	ActionGetMessages,
 	ActionGetUnacceptedConversations,
-	ActionGetUser,
+	ActionGetMissivUser,
 	ActionRegisterPublicKeys,
 	ActionSendMessage,
 	ResponseAcceptConversation,
@@ -13,7 +13,7 @@ import type {
 	ResponseGetConversations,
 	ResponseGetMessages,
 	ResponseGetUnacceptedConversations,
-	ResponseGetUser,
+	ResponseGetMissivUser,
 	ResponseRegisterPublicKeys,
 	ResponseSendMessage
 } from 'missiv';
@@ -146,8 +146,8 @@ export class API {
 		);
 	}
 
-	async getUser(chat: Omit<ActionGetUser, 'type'>) {
-		return this.call<ResponseGetUser>({
+	async getUser(chat: Omit<ActionGetMissivUser, 'type'>) {
+		return this.call<ResponseGetMissivUser>({
 			type: 'getUser',
 			...chat
 		});

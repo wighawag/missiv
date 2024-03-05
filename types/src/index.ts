@@ -105,19 +105,19 @@ export const SchemaActionGetMessages = object({
 export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
 export type ResponseGetMessages = ConversationMessage[];
 
-export type User = {
+export type MissivUser = {
 	address: Address;
 	publicKey: PublicKey;
 	signature: `0x${string}`;
 	lastPresence: number;
 	created: number;
 };
-export const SchemaActionGetUser = object({
+export const SchemaActionGetMissivUser = object({
 	type: literal('getUser'),
 	address: string0x(),
 });
-export type ActionGetUser = Output<typeof SchemaActionGetUser>;
-export type ResponseGetUser = User | undefined;
+export type ActionGetMissivUser = Output<typeof SchemaActionGetMissivUser>;
+export type ResponseGetMissivUser = MissivUser | undefined;
 
 export const SchemaActionRegisterPublicKeys = object({
 	type: literal('register'),
@@ -136,7 +136,7 @@ export const SchemaAction = variant('type', [
 	SchemaActionMarkAsRead,
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
-	SchemaActionGetUser,
+	SchemaActionGetMissivUser,
 
 	object({
 		type: literal('db:select'),
