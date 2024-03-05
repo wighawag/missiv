@@ -36,9 +36,12 @@ function setCurrentUser(newUser: User | undefined) {
 	}
 }
 
-export const conversations = {
-	subscribe: store.subscribe,
-	setCurrentUser,
-	openConversationsList,
-	openConversation
-};
+export function setup(config: APIConfig) {
+	openConversationsList(config);
+	return {
+		subscribe: store.subscribe,
+		setCurrentUser,
+		openConversation: (conversationID: string, user: User, otherUser: OtherUser) =>
+			openConversation(config, conversationID, user, otherUser)
+	};
+}
