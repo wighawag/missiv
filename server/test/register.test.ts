@@ -47,7 +47,7 @@ describe('Registration of keys', () => {
 		const user = await api.getUser({
 			address: USER_B.address,
 		});
-		const userPublicKey = await api.getUserPublicKey({
+		const userPublicKey = await api.getNamespacedUser({
 			address: USER_B.address,
 			namespace: 'test',
 		});

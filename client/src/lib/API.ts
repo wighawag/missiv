@@ -6,7 +6,7 @@ import type {
 	ActionGetMessages,
 	ActionGetUnacceptedConversations,
 	ActionGetMissivUser,
-	ActionRegisterPublicKeys,
+	ActionRegisterNamespacedUser,
 	ActionSendMessage,
 	ResponseAcceptConversation,
 	ResponseGetAcceptedConversations,
@@ -14,10 +14,10 @@ import type {
 	ResponseGetMessages,
 	ResponseGetUnacceptedConversations,
 	ResponseGetMissivUser,
-	ResponseRegisterPublicKeys,
+	ResponseRegisterNamespacedUser,
 	ResponseSendMessage,
-	ActionGetUserPublicKey,
-	ResponseGetUserPublicKey
+	ActionGetNamespacedUser,
+	ResponseGetNamespacedUser
 } from 'missiv';
 import { signAsync, utils as secpUtils } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -70,8 +70,8 @@ export class API {
 		}
 	}
 
-	async register(action: Omit<ActionRegisterPublicKeys, 'type'>, options: APIOptions) {
-		return this.call<ResponseRegisterPublicKeys>(
+	async register(action: Omit<ActionRegisterNamespacedUser, 'type'>, options: APIOptions) {
+		return this.call<ResponseRegisterNamespacedUser>(
 			{
 				type: 'register',
 				...action
@@ -155,9 +155,9 @@ export class API {
 		});
 	}
 
-	async getUserPublicKey(action: Omit<ActionGetUserPublicKey, 'type'>) {
-		return this.call<ResponseGetUserPublicKey>({
-			type: 'getUserPublicKey',
+	async getNamespacedUser(action: Omit<ActionGetNamespacedUser, 'type'>) {
+		return this.call<ResponseGetNamespacedUser>({
+			type: 'getNamespacedUser',
 			...action
 		});
 	}

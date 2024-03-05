@@ -7,7 +7,7 @@ import {
 	Action,
 	ActionAcceptConversation,
 	ActionMarkAsRead,
-	ActionRegisterPublicKeys,
+	ActionRegisterNamespacedUser,
 	ActionSendMessage,
 	PublicKey,
 	Conversation,
@@ -22,8 +22,8 @@ import {
 	SchemaAddress,
 	ResponseGetMissivUser,
 	MissivUser,
-	ResponseGetUserPublicKey,
-	UserPublicKey,
+	ResponseGetNamespacedUser,
+	NamespacedUser,
 } from 'missiv';
 import { toJSONResponse } from '../utils';
 
@@ -49,7 +49,7 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterPublicKeys) {
+export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterNamespacedUser) {
 	let address: Address;
 	if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
 		if (env.WORKER_ENV !== 'dev') {
@@ -69,17 +69,17 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 
 	address = address.toLowerCase() as Address;
 
-	const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,lastPresence,created)
-		VALUES(?1,?2,?3)
+	const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,created)
+		VALUES(?1,?2)
 	`);
-	const insertPublicKey = env.DB.prepare(`INSERT INTO PublicKeys(user,namespace,publicKey,signature,added)
-		VALUES(?1,?2,?3,?4,?5)
-		ON CONFLICT(user,namespace) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added
+	const insertNamespacedUser = env.DB.prepare(`INSERT INTO NamespacedUsers(user,namespace,publicKey,signature,added,lastPresence)
+		VALUES(?1,?2,?3,?4,?5,?6)
+		ON CONFLICT(user,namespace) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added, lastPresence=excluded.lastPresence
 	`);
 
 	const response = await env.DB.batch([
-		insertUser.bind(address, timestampMS, timestampMS),
-		insertPublicKey.bind(address, action.namespace, publicKey, action.signature, timestampMS),
+		insertUser.bind(address, timestampMS),
+		insertNamespacedUser.bind(address, action.namespace, publicKey, action.signature, timestampMS, timestampMS),
 	]);
 	// await insertUser.bind(address, timestampMS, timestampMS).run();
 	// const response = insertPublicKey.bind(address, action.namespace, publicKey, action.signature, timestampMS).run();
@@ -102,20 +102,20 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetMi
 	return undefined;
 }
 
-export async function getUserPublicKey(env: Env, namespace: string, address: Address): Promise<ResponseGetUserPublicKey> {
-	const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE user = ?1 AND namespace = ?2`).bind(address, namespace).all();
+export async function getNamespacedUser(env: Env, namespace: string, address: Address): Promise<ResponseGetNamespacedUser> {
+	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE user = ?1 AND namespace = ?2`).bind(address, namespace).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as UserPublicKey;
+		return response.results[0] as NamespacedUser;
 	}
 	return undefined;
 }
 
-export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetUserPublicKey> {
-	const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE publicKey = ?1`).bind(publicKey).all();
+export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetNamespacedUser> {
+	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as UserPublicKey;
+		return response.results[0] as NamespacedUser;
 	}
 	return undefined;
 }
@@ -239,7 +239,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			publicKey = `0x${recoveredPubKey.toHex()}`;
 		}
 
-		const response = await env.DB.prepare(`SELECT * from PublicKeys WHERE publicKey = ?1`).bind(publicKey).all();
+		const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
 		if (response.results.length >= 1) {
 			const userPublicKey = response.results[0];
@@ -302,8 +302,8 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 		case 'getUser': {
 			return toJSONResponse(getUser(env, action.address));
 		}
-		case 'getUserPublicKey': {
-			return toJSONResponse(getUserPublicKey(env, action.namespace, action.address));
+		case 'getNamespacedUser': {
+			return toJSONResponse(getNamespacedUser(env, action.namespace, action.address));
 		}
 		case 'acceptConversation': {
 			if (!account) {
@@ -360,28 +360,29 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				);`),
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (namespace, conversationID, timestamp);`),
 
-				env.DB.prepare(`DROP TABLE IF EXISTS PublicKeys;`),
-				env.DB.prepare(`CREATE TABLE IF NOT EXISTS PublicKeys
+				env.DB.prepare(`DROP TABLE IF EXISTS NamespacedUsers;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS NamespacedUsers
 				(
 				  user          text       NOT NULL,
 				  namespace     text       NOT NULL,
 				  publicKey     text       NOT NULL,
 				  signature     text       NOT NULL,
 				  added         timestamp  NOT NULL,
+				  lastPresence  timestamp  NOT NULL,
 				  PRIMARY KEY (user, namespace),
 				  FOREIGN KEY (user) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_PublicKeys_publicKey ON PublicKeys (publicKey);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_NamespacedUsers_publicKey ON NamespacedUsers (publicKey);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_NamespacedUsers_lastPresence ON NamespacedUsers (lastPresence);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
 				(
 				  address       text       NOT NULL,
-				  lastPresence  timestmap  NOT NULL,
 				  created       timestamp  NOT NULL,
 				  PRIMARY KEY (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Users_lastPresence ON Users (lastPresence);`),
+				// env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Users ON Users (address);`),
 			]);
 			return toJSONResponse(response);
 		}
