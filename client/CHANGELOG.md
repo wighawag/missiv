@@ -1,5 +1,11 @@
 # missiv-client
 
+## 0.0.9
+
+### Patch Changes
+
+- b187b06: wrong default poll interval
+
 ## 0.0.8
 
 ### Patch Changes
