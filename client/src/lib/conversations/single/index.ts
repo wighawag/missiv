@@ -28,7 +28,7 @@ export function openOneConversation(
 		};
 	}
 
-	const pollingInterval = config.pollingInterval || 20000;
+	const pollingInterval = config.pollingInterval || 2;
 	const api = new API(config.endpoint);
 	let $store: ConversationState = defaultState();
 

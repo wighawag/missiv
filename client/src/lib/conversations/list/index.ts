@@ -19,7 +19,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 		store.set($store);
 	}
 
-	const pollingInterval = config.pollingInterval || 20000;
+	const pollingInterval = config.pollingInterval || 20;
 	const api = new API(config.endpoint);
 	let $store: ConversationsViewState = defaultState();
 
