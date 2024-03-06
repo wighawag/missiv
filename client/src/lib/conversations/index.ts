@@ -3,12 +3,12 @@ import { openOneConversation, type CurrentConversation, type OtherUser } from '.
 import { openConversationsView, type ConversationViews } from './list/index.js';
 import type { APIConfig, User } from '$lib/types.js';
 
-const $store: ConversationsState = {};
-
 export type ConversationsState = {
 	currentConversation?: CurrentConversation;
 	conversations?: ConversationViews;
 };
+
+const $store: ConversationsState = {};
 
 const store = writable<ConversationsState>($store);
 
@@ -36,12 +36,19 @@ function setCurrentUser(newUser: User | undefined) {
 	}
 }
 
-export function setup(config: APIConfig) {
-	openConversationsList(config);
+export function setup(config?: APIConfig) {
+	if (config) {
+		openConversationsList(config);
+	}
+
 	return {
 		subscribe: store.subscribe,
 		setCurrentUser,
-		openConversation: (conversationID: string, user: User, otherUser: OtherUser) =>
-			openConversation(config, conversationID, user, otherUser)
+		openConversation: (conversationID: string, user: User, otherUser: OtherUser) => {
+			if (!config) {
+				throw new Error(`no config provided`);
+			}
+			return openConversation(config, conversationID, user, otherUser);
+		}
 	};
 }

@@ -25,11 +25,15 @@ export default {
 
 			switch (path[0]) {
 				case 'api':
-					switch (path[1]) {
-						case 'rooms':
-							return handleRoomsApiRequest(path.slice(2), request, env);
-						case 'conversations':
-							return handleComversationsApiRequest(path.slice(2), request, env);
+					if (path.length > 1) {
+						switch (path[1]) {
+							case 'rooms':
+								return handleRoomsApiRequest(path.slice(2), request, env);
+							default:
+								return new CorsResponse('Not found', { status: 404 });
+						}
+					} else {
+						return handleComversationsApiRequest(path.slice(2), request, env);
 					}
 
 				default:
