@@ -1,48 +1,31 @@
-import type { ActionGetMessages, Conversation, ConversationMessage, PublicKey } from 'missiv';
 import { writable, type Readable } from 'svelte/store';
 import { API } from '$lib/API.js';
 import type { User, APIConfig } from '$lib/types.js';
-
-export type ConversationState = {
-	invalidUser: boolean;
-	user: User;
-	otherUser: OtherUser;
-	conversationID: string;
-	// unread: boolean;
-	// unaccepted: boolean;
-	messages: ConversationMessage[];
-	loading: boolean;
-};
-
-export type OtherUser = {
-	publicKey?: PublicKey;
-	address: `0x${string}`;
-};
-
-export type CurrentConversation = Readable<ConversationState> & {
-	setCurrentUser(user: User | undefined): void;
-};
+import type {
+	ConversationState,
+	ConversationsState,
+	CurrentConversation,
+	OtherUser
+} from '../types.js';
+import { getConversationID, type Address } from 'missiv';
 
 export function openOneConversation(
 	config: APIConfig,
-	conversationID: string,
 	user: User,
-	otherUser: OtherUser
+	otherUser: OtherUser,
+	conversationsStore: Readable<ConversationsState>
 ): CurrentConversation {
+	const conversationID = getConversationID(user.address, otherUser.address);
+
 	function defaultState(): ConversationState {
 		return {
-			invalidUser: false,
 			conversationID,
+			loading: 'idle',
 			user,
 			otherUser,
-			messages: [],
-			loading: false
+			invalidUser: false,
+			messages: undefined
 		};
-	}
-	function reset(fields?: { loading?: boolean }) {
-		$store = defaultState();
-		$store.loading = fields?.loading || false;
-		store.set($store);
 	}
 
 	const pollingInterval = config.pollingInterval || 20000;
@@ -51,7 +34,16 @@ export function openOneConversation(
 
 	let timeout: 'first' | NodeJS.Timeout | undefined;
 	async function fetchMessages() {
-		if (user) {
+		if ($store.user) {
+			if (!$store.otherUser.publicKey) {
+				const { namespacedUser } = await api.getNamespacedUser({
+					address: otherUser.address,
+					namespace: config.namespace
+				});
+				if (namespacedUser?.publicKey) {
+					$store.otherUser.publicKey = namespacedUser.publicKey;
+				}
+			}
 			const { messages } = await api.getMessages(
 				{
 					namespace: config.namespace,
@@ -62,6 +54,7 @@ export function openOneConversation(
 				}
 			);
 
+			$store.loading = 'done';
 			$store.messages = messages;
 			store.set($store);
 		}
@@ -75,13 +68,21 @@ export function openOneConversation(
 	}
 
 	const store = writable<ConversationState>($store, () => {
+		const unsubscribeFromConversationsState = conversationsStore.subscribe(
+			onConversationsStateUpdated
+		);
 		fetchMessagesgainAndAgain();
-		return () => timeout && timeout != 'first' && clearTimeout(timeout);
+		return () => {
+			unsubscribeFromConversationsState();
+			if (timeout && timeout != 'first') {
+				clearTimeout(timeout);
+			}
+		};
 	});
 
-	function setCurrentUser(newuser: User | undefined) {
-		if (newuser) {
-			if (newuser.address == user.address) {
+	function onConversationsStateUpdated(newState: ConversationsState) {
+		if (newState.currentUser) {
+			if (newState.currentUser.address == user.address) {
 				$store.invalidUser = false;
 				store.set($store);
 				fetchMessages();
@@ -92,8 +93,33 @@ export function openOneConversation(
 		}
 	}
 
+	async function sendMessage(text: string) {
+		if (!$store.otherUser.publicKey) {
+			throw new Error(`cannot send message to player who did not share its public key`);
+		}
+		if (!$store.user) {
+			throw new Error(`no user setup`);
+		}
+
+		if ($store.invalidUser) {
+			throw new Error(`invalid user`);
+		}
+		await api.sendMessage(
+			{
+				message: text,
+				namespace: config.namespace,
+				signature: '0x',
+				to: $store.otherUser.address,
+				toPublicKey: $store.otherUser.publicKey
+			},
+			{
+				privateKey: $store.user.delegatePrivateKey
+			}
+		);
+	}
+
 	return {
 		subscribe: store.subscribe,
-		setCurrentUser
+		sendMessage
 	};
 }

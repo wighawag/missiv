@@ -1,18 +1,7 @@
-import { writable, type Readable } from 'svelte/store';
-import type { Conversation } from 'missiv';
+import { writable } from 'svelte/store';
 import { API } from '../../API.js';
 import type { User, APIConfig } from '../../types.js';
-
-export type ConversationsViewState = {
-	conversations: Conversation[];
-	numUnread: number;
-	numUnaccepted: number;
-	loading: boolean;
-};
-
-export type ConversationViews = Readable<ConversationsViewState> & {
-	setCurrentUser(user: User | undefined): void;
-};
+import type { ConversationViews, ConversationsViewState } from '../types.js';
 
 export function openConversationsView(config: APIConfig): ConversationViews {
 	function defaultState(): ConversationsViewState {
@@ -23,26 +12,26 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 			loading: false
 		};
 	}
-	function reset(fields?: { loading?: boolean }) {
+	function reset(fields?: { loading?: boolean; currentUser: User | undefined }) {
 		$store = defaultState();
+		$store.currentUser = fields?.currentUser;
 		$store.loading = fields?.loading || false;
 		store.set($store);
 	}
 
-	let user: User | undefined;
 	const pollingInterval = config.pollingInterval || 20000;
 	const api = new API(config.endpoint);
 	let $store: ConversationsViewState = defaultState();
 
 	let timeout: 'first' | NodeJS.Timeout | undefined;
 	async function fetchConversations() {
-		if (user) {
+		if ($store.currentUser) {
 			const { conversations } = await api.getConversations(
 				{
 					namespace: config.namespace
 				},
 				{
-					privateKey: user.delegatePrivateKey
+					privateKey: $store.currentUser.delegatePrivateKey
 				}
 			);
 			let numUnread = 0;
@@ -74,16 +63,12 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 
 	function setCurrentUser(newUser: User | undefined) {
 		if (newUser) {
-			user = { ...newUser };
-
-			store.set($store);
-			if (newUser.address !== user?.address) {
-				reset({ loading: true });
+			if (newUser.address !== $store.currentUser?.address) {
+				reset({ loading: true, currentUser: { ...newUser } });
 				fetchConversations();
 			}
 		} else {
 			reset();
-			user = undefined;
 		}
 	}
 

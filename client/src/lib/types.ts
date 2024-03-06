@@ -1,5 +1,5 @@
 export type User = {
-	delegatePrivateKey: `0x${string}`;
+	delegatePrivateKey: string;
 	address: `0x${string}`;
 };
 

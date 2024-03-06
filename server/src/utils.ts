@@ -25,5 +25,6 @@ export async function handleErrors(request: Request, func: () => Promise<Respons
 
 export async function toJSONResponse(object: object | Promise<object>): Promise<Response> {
 	object = await Promise.resolve(object);
+	console.log(object);
 	return new CorsResponse(JSON.stringify(object, null, 2));
 }
