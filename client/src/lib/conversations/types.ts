@@ -50,4 +50,9 @@ export type ConversationViews = Readable<ConversationsViewState> & {
 export type ConversationsState = {
 	conversations?: ConversationViews;
 	currentUser?: User;
+	registered:
+		| { state: 'idle' }
+		| { state: 'loading' }
+		| { state: 'ready'; confirmed: boolean }
+		| { state: 'registering' };
 };

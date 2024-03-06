@@ -1,16 +1,31 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction } from 'missiv-client';
+import { API, FetchFunction, getPublicKey, publicKeyAuthorizationMessage } from 'missiv-client';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { toHex } from 'viem';
+import { utils as secpUtils } from '@noble/secp256k1';
+import { webcrypto } from 'node:crypto';
+// @ts-ignore
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
+const userAPrivateKey = generatePrivateKey();
+const userAAccount = privateKeyToAccount(userAPrivateKey);
+const userADelegatePrivateKey = secpUtils.randomPrivateKey();
+const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
 const USER_A = {
-	publicKey: '0xFAKE_AA',
-	address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+	publicKey: userADelegatePublicKey,
+	address: userAAccount.address,
 } as const;
 
+const userBPrivateKey = generatePrivateKey();
+const userBAccount = privateKeyToAccount(userBPrivateKey);
+const userBDelegatePrivateKey = secpUtils.randomPrivateKey();
+const userBDelegatePublicKey = toHex(getPublicKey(userBDelegatePrivateKey));
+
 const USER_B = {
-	publicKey: '0xFAKE_BB',
-	address: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+	publicKey: userBDelegatePublicKey,
+	address: userBAccount.address,
 } as const;
 
 describe('Registration of keys', () => {
@@ -35,10 +50,15 @@ describe('Registration of keys', () => {
 	});
 
 	it('should be able to register', async () => {
+		const userBMessage = publicKeyAuthorizationMessage({
+			address: userBAccount.address,
+			publicKey: userBDelegatePublicKey,
+		});
+		const signature = await userBAccount.signMessage({ message: userBMessage });
 		await api.register(
 			{
 				address: USER_B.address,
-				signature: '0x',
+				signature: signature,
 				namespace: 'test',
 			},
 			{ publicKey: USER_B.publicKey },

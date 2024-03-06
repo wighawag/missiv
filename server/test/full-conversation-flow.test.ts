@@ -1,9 +1,8 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction } from 'missiv-client';
+import { API, FetchFunction, publicKeyAuthorizationMessage } from 'missiv-client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
-import { publicKeyAuthorizationMessage } from '../src/api';
 import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
 // @ts-ignore

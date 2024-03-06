@@ -29,6 +29,8 @@ export type APIOptions =
 	| { publicKey: string }
 	| { privateKey: Uint8Array | string };
 
+export { getPublicKey } from '@noble/secp256k1';
+
 export class API {
 	protected fetchFunction: FetchFunction;
 
