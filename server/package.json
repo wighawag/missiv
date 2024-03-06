@@ -28,7 +28,7 @@
   },
   "scripts": {
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port 33333",
     "test": "vitest --minWorkers 1 --maxWorkers 1"
   }
 }
