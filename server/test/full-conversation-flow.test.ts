@@ -3,7 +3,7 @@ import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { API, FetchFunction } from 'missiv-client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
-import { getConversationID, publicKeyAuthorizationMessage } from '../src/api';
+import { publicKeyAuthorizationMessage } from '../src/api';
 import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
 // @ts-ignore
@@ -108,9 +108,9 @@ describe('Worker', () => {
 			{ publicKey: USER_B.publicKey },
 		);
 		expect(sent.timestampMS).to.toBeGreaterThan(time);
-		const conversations = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
-		expect(conversations.length).toBe(0);
-		const unacceptedConversations = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { acceptedConversations } = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		expect(acceptedConversations.length).toBe(0);
+		const { unacceptedConversations } = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(unacceptedConversations.length).toBe(1);
 	});
 
@@ -125,7 +125,7 @@ describe('Worker', () => {
 			},
 			{ publicKey: USER_B.publicKey },
 		);
-		const unacceptedConversations = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { unacceptedConversations } = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
@@ -134,10 +134,13 @@ describe('Worker', () => {
 			},
 			{ publicKey: USER_A.publicKey },
 		);
-		const unacceptedConversationsAfter = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { unacceptedConversations: unacceptedConversationsAfter } = await api.getUnacceptedConversations(
+			{ namespace: 'test' },
+			{ publicKey: USER_A.publicKey },
+		);
 		expect(unacceptedConversationsAfter.length).toBe(0);
-		const conversations = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
-		expect(conversations.length).toBe(1);
+		const { acceptedConversations } = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		expect(acceptedConversations.length).toBe(1);
 	});
 
 	it('sending further message on an accepted conversation end up there', async () => {
@@ -151,7 +154,7 @@ describe('Worker', () => {
 			},
 			{ publicKey: USER_B.publicKey },
 		);
-		const unacceptedConversations = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { unacceptedConversations } = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(unacceptedConversations.length).toBe(1);
 
 		await api.acceptConversation(
@@ -165,21 +168,21 @@ describe('Worker', () => {
 			{
 				namespace: 'test',
 				to: USER_A.address,
-				message: 'Yo !',
+				message: 'Yo again!',
 				signature: '0x',
 				toPublicKey: USER_A.publicKey,
 			},
 			{ publicKey: USER_B.publicKey },
 		);
-		const conversations = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
-		expect(conversations.length).toBe(1);
-		const messagesA = await api.getMessages(
-			{ namespace: 'test', conversationID: conversations[0].conversationID },
+		const { acceptedConversations } = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		expect(acceptedConversations.length).toBe(1);
+		const { messages: messagesA } = await api.getMessages(
+			{ namespace: 'test', conversationID: acceptedConversations[0].conversationID },
 			{ publicKey: USER_A.publicKey },
 		);
 		expect(messagesA.length).toBe(2);
-		const messagesB = await api.getMessages(
-			{ namespace: 'test', conversationID: conversations[0].conversationID },
+		const { messages: messagesB } = await api.getMessages(
+			{ namespace: 'test', conversationID: acceptedConversations[0].conversationID },
 			{ publicKey: USER_B.publicKey },
 		);
 		expect(messagesA).to.toEqual(messagesB);
@@ -196,7 +199,7 @@ describe('Worker', () => {
 			},
 			{ publicKey: USER_B.publicKey },
 		);
-		const unacceptedConversations = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { unacceptedConversations } = await api.getUnacceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
 		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
@@ -225,10 +228,16 @@ describe('Worker', () => {
 			},
 			{ publicKey: USER_A.publicKey },
 		);
-		const conversationsB = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_B.publicKey });
+		const { acceptedConversations: conversationsB } = await api.getAcceptedConversations(
+			{ namespace: 'test' },
+			{ publicKey: USER_B.publicKey },
+		);
 		expect(conversationsB.length).toBe(1);
 		expect(conversationsB[0].state).toBe('unread');
-		const conversationsA = await api.getAcceptedConversations({ namespace: 'test' }, { publicKey: USER_A.publicKey });
+		const { acceptedConversations: conversationsA } = await api.getAcceptedConversations(
+			{ namespace: 'test' },
+			{ publicKey: USER_A.publicKey },
+		);
 		expect(conversationsA.length).toBe(1);
 		expect(conversationsA[0].state).toBe('read'); // read because by replying to B, we automatically consider A reading B message
 	});

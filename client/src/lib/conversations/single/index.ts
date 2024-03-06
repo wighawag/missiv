@@ -15,7 +15,7 @@ export type ConversationState = {
 };
 
 export type OtherUser = {
-	publicKey: PublicKey;
+	publicKey?: PublicKey;
 	address: `0x${string}`;
 };
 
@@ -52,7 +52,7 @@ export function openOneConversation(
 	let timeout: 'first' | NodeJS.Timeout | undefined;
 	async function fetchMessages() {
 		if (user) {
-			const messages = await api.getMessages(
+			const { messages } = await api.getMessages(
 				{
 					namespace: config.namespace,
 					conversationID

@@ -61,21 +61,21 @@ export const SchemaActionGetConversations = object({
 	namespace: string(),
 });
 export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
-export type ResponseGetConversations = Conversation[];
+export type ResponseGetConversations = {conversations: Conversation[]};
 
 export const SchemaActionGetUnacceptedConversations = object({
 	type: literal('getUnacceptedConversations'),
 	namespace: string(),
 });
 export type ActionGetUnacceptedConversations = Output<typeof SchemaActionGetUnacceptedConversations>;
-export type ResponseGetUnacceptedConversations = Conversation[];
+export type ResponseGetUnacceptedConversations = {unacceptedConversations: Conversation[]};
 
 export const SchemaActionGetAcceptedConversations = object({
 	type: literal('getAcceptedConversations'),
 	namespace: string(),
 });
 export type ActionGetAcceptedConversations = Output<typeof SchemaActionGetAcceptedConversations>;
-export type ResponseGetAcceptedConversations = Conversation[];
+export type ResponseGetAcceptedConversations = {acceptedConversations: Conversation[]};
 
 export const SchemaActionMarkAsRead = object({
 	type: literal('markAsRead'),
@@ -103,7 +103,7 @@ export const SchemaActionGetMessages = object({
 	conversationID: string(),
 });
 export type ActionGetMessages = Output<typeof SchemaActionGetMessages>;
-export type ResponseGetMessages = ConversationMessage[];
+export type ResponseGetMessages = {messages: ConversationMessage[]};
 
 export type MissivUser = {
 	address: Address;
@@ -115,7 +115,7 @@ export const SchemaActionGetMissivUser = object({
 	address: string0x(),
 });
 export type ActionGetMissivUser = Output<typeof SchemaActionGetMissivUser>;
-export type ResponseGetMissivUser = MissivUser | undefined;
+export type ResponseGetMissivUser = {user: MissivUser | undefined};
 
 export type NamespacedUser = {
 	address: Address;
@@ -131,7 +131,7 @@ export const SchemaActionGetNamespacedUser = object({
 	address: string0x(),
 });
 export type ActionGetNamespacedUser = Output<typeof SchemaActionGetNamespacedUser>;
-export type ResponseGetNamespacedUser = NamespacedUser | undefined;
+export type ResponseGetNamespacedUser = {namespacedUser: NamespacedUser | undefined};
 
 export const SchemaActionRegisterNamespacedUser = object({
 	type: literal('register'),
@@ -164,3 +164,13 @@ export const SchemaAction = variant('type', [
 ]);
 
 export type Action = Output<typeof SchemaAction>;
+
+export function getConversationID(accountA: Address, accountB: Address) {
+	accountA = accountA.toLowerCase() as PublicKey;
+	accountB = accountB.toLowerCase() as PublicKey;
+	if (accountA > accountB) {
+		return `${accountA}${accountB}`;
+	} else {
+		return `${accountB}${accountA}`;
+	}
+}

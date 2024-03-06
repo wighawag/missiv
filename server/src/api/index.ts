@@ -24,6 +24,9 @@ import {
 	MissivUser,
 	ResponseGetNamespacedUser,
 	NamespacedUser,
+	getConversationID,
+	ResponseGetUnacceptedConversations,
+	ResponseGetAcceptedConversations,
 } from 'missiv';
 import { toJSONResponse } from '../utils';
 
@@ -37,16 +40,6 @@ type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & { read: 0 | 
 
 function formatConversation(v: ConversationFromDB): Conversation {
 	return { ...v, state: v.accepted == 0 ? 'unaccepted' : v.read === 0 ? 'unread' : 'read' };
-}
-
-export function getConversationID(accountA: Address, accountB: Address) {
-	accountA = accountA.toLowerCase() as PublicKey;
-	accountB = accountB.toLowerCase() as PublicKey;
-	if (accountA > accountB) {
-		return `${accountA}${accountB}`;
-	} else {
-		return `${accountB}${accountA}`;
-	}
 }
 
 export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterNamespacedUser) {
@@ -90,34 +83,34 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 export async function getChatMessages(env: Env, conversationID: string): Promise<ResponseGetMessages> {
 	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversationID = ?1 ORDER BY timestamp DESC`);
 	const { results } = await statement.bind(conversationID).all();
-	return results as ResponseGetMessages;
+	return { messages: results } as ResponseGetMessages;
 }
 
 export async function getUser(env: Env, address: Address): Promise<ResponseGetMissivUser> {
 	const response = await env.DB.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as MissivUser;
+		return { user: response.results[0] as MissivUser };
 	}
-	return undefined;
+	return { user: undefined };
 }
 
 export async function getNamespacedUser(env: Env, namespace: string, address: Address): Promise<ResponseGetNamespacedUser> {
 	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE user = ?1 AND namespace = ?2`).bind(address, namespace).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as NamespacedUser;
+		return { namespacedUser: response.results[0] as NamespacedUser };
 	}
-	return undefined;
+	return { namespacedUser: undefined };
 }
 
 export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetNamespacedUser> {
 	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
 	if (response.results.length === 1) {
-		return response.results[0] as NamespacedUser;
+		return { namespacedUser: response.results[0] as NamespacedUser };
 	}
-	return undefined;
+	return { namespacedUser: undefined };
 }
 
 export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
@@ -188,23 +181,27 @@ export async function getConversations(env: Env, namespace: string, address: Add
 		`SELECT * from Conversations WHERE namespace = ?1 AND first = ?2 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
 	);
 	const { results } = await statement.bind(namespace, address).all<ConversationFromDB>();
-	return results.map(formatConversation);
+	return { conversations: results.map(formatConversation) };
 }
 
-export async function getUnacceptedConversations(env: Env, namespace: string, account: Address): Promise<Conversation[]> {
+export async function getUnacceptedConversations(
+	env: Env,
+	namespace: string,
+	account: Address,
+): Promise<ResponseGetUnacceptedConversations> {
 	const statement = env.DB.prepare(
 		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 0 ORDER BY lastMessage DESC`,
 	);
 	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
-	return results.map(formatConversation);
+	return { unacceptedConversations: results.map(formatConversation) };
 }
 
-export async function getAcceptedConversations(env: Env, namespace: string, account: Address): Promise<Conversation[]> {
+export async function getAcceptedConversations(env: Env, namespace: string, account: Address): Promise<ResponseGetAcceptedConversations> {
 	const statement = env.DB.prepare(
 		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
 	);
 	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
-	return results.map(formatConversation);
+	return { acceptedConversations: results.map(formatConversation) };
 }
 
 export async function handleComversationsApiRequest(path: string[], request: Request, env: Env): Promise<Response> {

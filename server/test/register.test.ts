@@ -44,14 +44,14 @@ describe('Registration of keys', () => {
 			{ publicKey: USER_B.publicKey },
 		);
 
-		const user = await api.getUser({
+		const { user } = await api.getUser({
 			address: USER_B.address,
 		});
-		const userPublicKey = await api.getNamespacedUser({
+		const { namespacedUser } = await api.getNamespacedUser({
 			address: USER_B.address,
 			namespace: 'test',
 		});
 		expect(user?.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
-		expect(userPublicKey?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
+		expect(namespacedUser?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
 	});
 });

@@ -184,7 +184,7 @@ export class ChatRoom {
 						return;
 					}
 
-					const user = await getUserAddressByPublicKey(this.env, publicKey);
+					const { namespacedUser: user } = await getUserAddressByPublicKey(this.env, publicKey);
 
 					if (!user) {
 						webSocket.send(

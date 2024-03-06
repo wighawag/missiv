@@ -37,7 +37,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 	let timeout: 'first' | NodeJS.Timeout | undefined;
 	async function fetchConversations() {
 		if (user) {
-			const conversations = await api.getConversations(
+			const { conversations } = await api.getConversations(
 				{
 					namespace: config.namespace
 				},
