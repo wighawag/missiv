@@ -1,5 +1,17 @@
 # missiv-server
 
+## 0.0.7
+
+### Patch Changes
+
+- fd3fae6: rework for better use in frontend
+- 2bb20f8: better response type
+- e010e29: optional config to not have it setup
+- c840c92: tweaks + better register tests
+- Updated dependencies [2bb20f8]
+- Updated dependencies [c840c92]
+  - missiv@0.0.6
+
 ## 0.0.6
 
 ### Patch Changes

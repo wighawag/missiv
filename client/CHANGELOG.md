@@ -1,5 +1,14 @@
 # missiv-client
 
+## 0.0.8
+
+### Patch Changes
+
+- fd3fae6: rework for better use in frontend
+- 2bb20f8: better response type
+- e010e29: optional config to not have it setup
+- c840c92: tweaks + better register tests
+
 ## 0.0.7
 
 ### Patch Changes

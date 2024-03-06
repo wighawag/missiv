@@ -1,5 +1,12 @@
 # missiv
 
+## 0.0.6
+
+### Patch Changes
+
+- 2bb20f8: better response type
+- c840c92: tweaks + better register tests
+
 ## 0.0.5
 
 ### Patch Changes
