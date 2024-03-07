@@ -33,7 +33,7 @@ export default {
 								return new CorsResponse('Not found', { status: 404 });
 						}
 					} else {
-						return handleComversationsApiRequest(path.slice(2), request, env);
+						return handleComversationsApiRequest(path.slice(1), request, env);
 					}
 
 				default:

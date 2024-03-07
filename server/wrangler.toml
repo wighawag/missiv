@@ -24,3 +24,7 @@ bindings = [
   { name = "ROOMS", class_name = "ChatRoom" },
   { name = "LIMITERS", class_name = "RateLimiter" }
 ]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom", "RateLimiter"]
