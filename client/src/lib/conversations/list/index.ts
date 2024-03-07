@@ -45,6 +45,8 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 					// we do not count unaccepted as unread here
 				}
 			}
+			$store.numUnread = numUnread;
+			$store.numUnaccepted = numUnaccepted;
 			$store.conversations = conversations;
 			$store.loading = false;
 			store.set($store);
