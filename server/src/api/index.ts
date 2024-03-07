@@ -348,10 +348,13 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 					lastMessage     timestamp  NOT NULL,
 					accepted        boolean    NOT NULL,
 					read            boolean    NOT NULL,
-					PRIMARY KEY (domain, namespace, first, conversationID),
-					FOREIGN KEY (first) REFERENCES Users (address),
-					FOREIGN KEY (second) REFERENCES Users (address)
+					PRIMARY KEY (domain, namespace, first, conversationID)
 				);`),
+
+				// we do not set these foreign key as we want to be able to send message to unregistered users
+				// FOREIGN KEY (first) REFERENCES Users (address),
+				// FOREIGN KEY (second) REFERENCES Users (address)
+
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);`),
 				env.DB.prepare(
 					`CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (domain, namespace, first, accepted, lastMessage);`,
@@ -372,9 +375,12 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				  message             text       NOT NULL,
 				  type				  text       NOT NULL,
 				  signature           text       NOT NULL,
-				  PRIMARY KEY (domain, namespace, conversationID, sender, timestamp),
-				  FOREIGN KEY (sender) REFERENCES Users (address)
+				  PRIMARY KEY (domain, namespace, conversationID, sender, timestamp)
 				);`),
+				// we do not set these foreign key as we want to be able to send message to unregistered users
+				// FOREIGN KEY (sender) REFERENCES Users (address)
+				// FOREIGN KEY (recipient) REFERENCES Users (address),
+
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (domain, namespace, conversationID, timestamp);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS DomainUsers;`),

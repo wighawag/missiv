@@ -96,9 +96,6 @@ export function openOneConversation(
 	}
 
 	async function sendMessage(text: string) {
-		if (!$store.otherUser.publicKey) {
-			throw new Error(`cannot send message to player who did not share its public key`);
-		}
 		if (!$store.user) {
 			throw new Error(`no user setup`);
 		}
@@ -106,20 +103,39 @@ export function openOneConversation(
 		if ($store.invalidUser) {
 			throw new Error(`invalid user`);
 		}
-		await api.sendMessage(
-			{
-				message: text,
-				messageType: 'clear',
-				domain: config.domain,
-				namespace: config.namespace,
-				signature: '0x',
-				to: $store.otherUser.address
-				// toPublicKey: $store.otherUser.publicKey
-			},
-			{
-				privateKey: $store.user.delegatePrivateKey
-			}
-		);
+
+		if (!$store.otherUser.publicKey) {
+			await api.sendMessage(
+				{
+					message: text,
+					messageType: 'clear',
+					domain: config.domain,
+					namespace: config.namespace,
+					signature: '0x',
+					to: $store.otherUser.address
+					// toPublicKey: $store.otherUser.publicKey
+				},
+				{
+					privateKey: $store.user.delegatePrivateKey
+				}
+			);
+		} else {
+			const encryptedPayload = ''; // TODO
+			await api.sendMessage(
+				{
+					message: text,
+					messageType: 'encrypted',
+					domain: config.domain,
+					namespace: config.namespace,
+					signature: '0x',
+					to: $store.otherUser.address,
+					toPublicKey: $store.otherUser.publicKey
+				},
+				{
+					privateKey: $store.user.delegatePrivateKey
+				}
+			);
+		}
 	}
 
 	return {
