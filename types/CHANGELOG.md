@@ -1,5 +1,11 @@
 # missiv
 
+## 0.0.8
+
+### Patch Changes
+
+- 237dbd6: add names + auto accept for now
+
 ## 0.0.7
 
 ### Patch Changes

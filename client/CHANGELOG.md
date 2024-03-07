@@ -1,5 +1,13 @@
 # missiv-client
 
+## 0.0.11
+
+### Patch Changes
+
+- 237dbd6: add names + auto accept for now
+- 63011bd: allow to send message to non-registered users
+- e2b6237: fix numUnread/numUnaccepted
+
 ## 0.0.10
 
 ### Patch Changes
