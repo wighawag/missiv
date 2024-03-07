@@ -212,6 +212,7 @@ describe('Worker', () => {
 			{ domain: 'test.com', namespace: 'test', conversationID: acceptedConversations[0].conversationID },
 			{ publicKey: USER_B.publicKey },
 		);
+		// console.log({ messagesA });
 		expect(messagesA).to.toEqual(messagesB);
 	});
 

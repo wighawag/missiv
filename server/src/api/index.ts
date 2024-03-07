@@ -376,6 +376,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
 				(
+				  id                  integer    PRIMARY KEY,
 				  domain              text       NOT NULL,
 				  namespace           text       NOT NULL,
 				  conversationID      text       NOT NULL,
@@ -386,14 +387,14 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				  timestamp           timestamp  NOT NULL,
 				  message             text       NOT NULL,
 				  type				  text       NOT NULL,
-				  signature           text       NOT NULL,
-				  PRIMARY KEY (domain, namespace, conversationID, sender, timestamp)
+				  signature           text       NOT NULL
 				);`),
 				// we do not set these foreign key as we want to be able to send message to unregistered users
 				// FOREIGN KEY (sender) REFERENCES Users (address)
 				// FOREIGN KEY (recipient) REFERENCES Users (address),
 
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (domain, namespace, conversationID, timestamp);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages_list ON Messages (domain, namespace, conversationID, timestamp);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages_id ON Messages (id, timestamp);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS DomainUsers;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS DomainUsers
