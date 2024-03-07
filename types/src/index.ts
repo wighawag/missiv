@@ -112,6 +112,7 @@ export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
 export type ResponseMarkAsRead = {timestampMS: number};
 
 export type ConversationMessage = {
+	id: number;
 	donmain: string;
 	namespace: string;
 	conversationID: string;
