@@ -45,6 +45,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 				}
 			}
 			$store.conversations = conversations;
+			$store.loading = false;
 			store.set($store);
 		}
 	}
