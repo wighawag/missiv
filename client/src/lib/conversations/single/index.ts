@@ -71,6 +71,7 @@ export function openOneConversation(
 		const unsubscribeFromConversationsState = conversationsStore.subscribe(
 			onConversationsStateUpdated
 		);
+		timeout = 'first';
 		fetchMessagesgainAndAgain();
 		return () => {
 			unsubscribeFromConversationsState();

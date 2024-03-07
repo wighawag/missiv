@@ -57,6 +57,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 	}
 
 	const store = writable<ConversationsViewState>($store, () => {
+		timeout = 'first';
 		fetchConversationsAgainAndAgain();
 		return () => timeout && timeout != 'first' && clearTimeout(timeout);
 	});
