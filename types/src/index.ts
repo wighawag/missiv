@@ -134,7 +134,7 @@ export type ResponseGetMessages = {messages: ConversationMessage[]};
 
 export type MissivUser = {
 	address: Address;
-	lastPresence: number;
+	name: string;
 	created: number;
 };
 export const SchemaActionGetMissivUser = object({
@@ -147,6 +147,7 @@ export type ResponseGetMissivUser = {user: MissivUser | undefined};
 export type DomainUser = {
 	address: Address;
 	domain: string;
+	domainUsername: string;
 	publicKey: PublicKey;
 	signature: `0x${string}`;
 	lastPresence: number;
@@ -158,13 +159,15 @@ export const SchemaActionGetDomainUser = object({
 	address: string0x(),
 });
 export type ActionGetDomainUser = Output<typeof SchemaActionGetDomainUser>;
-export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
+export type ResponseGetDomainUser = {domainUser: (DomainUser & MissivUser) | undefined};
 
 export const SchemaActionRegisterDomainUser = object({
 	type: literal('register'),
 	domain: string(),
 	signature: string0x(),
 	address: string0x(),
+	name: optional(string()),
+	domainUsername: optional(string()),
 });
 export type ActionRegisterDomainUser = Output<typeof SchemaActionRegisterDomainUser>;
 export type ResponseRegisterDomainUser = {timestampMS: number};

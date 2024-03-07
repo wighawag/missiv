@@ -55,7 +55,10 @@ export function setup(config?: APIConfig) {
 		}
 	}
 
-	async function register(signature: `0x${string}`) {
+	async function register(
+		signature: `0x${string}`,
+		options?: { name?: string; domainUsername?: string }
+	) {
 		if (api && config && $store.currentUser) {
 			const user = $store.currentUser;
 			$store.registered = { state: 'registering' };
@@ -65,7 +68,9 @@ export function setup(config?: APIConfig) {
 				{
 					address: user.address,
 					domain: config.domain,
-					signature
+					signature,
+					domainUsername: options?.domainUsername,
+					name: options?.name
 				},
 				{
 					privateKey: user.delegatePrivateKey
@@ -92,7 +97,9 @@ export function setup(config?: APIConfig) {
 		subscribe: store.subscribe,
 		register,
 		setCurrentUser,
-		openConversation: (other: Address) => {
+		// TODO remove: markAsAcceptedAndRead
+		//   once we handle accepted/naccepted conversation in the UI we do it automatically here
+		openConversation: (other: Address, markAsAcceptedAndRead?: boolean) => {
 			if (!config || !api) {
 				throw new Error(`no config provided`);
 			}
@@ -106,7 +113,8 @@ export function setup(config?: APIConfig) {
 				{
 					address: other
 				},
-				store
+				store,
+				markAsAcceptedAndRead
 			);
 			return conversationStore;
 		}

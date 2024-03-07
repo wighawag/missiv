@@ -9,11 +9,14 @@ import type {
 } from '../types.js';
 import { getConversationID, type Address } from 'missiv';
 
+// TODO remove: markAsAcceptedAndRead
+//   once we handle accepted/naccepted conversation in the UI we do it automatically here
 export function openOneConversation(
 	config: APIConfig,
 	user: User,
 	otherUser: OtherUser,
-	conversationsStore: Readable<ConversationsState>
+	conversationsStore: Readable<ConversationsState>,
+	markAsAcceptedAndRead?: boolean
 ): CurrentConversation {
 	const conversationID = getConversationID(user.address, otherUser.address);
 
@@ -42,6 +45,7 @@ export function openOneConversation(
 				});
 				if (domainUser?.publicKey) {
 					$store.otherUser.publicKey = domainUser.publicKey;
+					$store.otherUser.name = domainUser.domainUsername || domainUser.name;
 				}
 			}
 			const { messages } = await api.getMessages(
@@ -58,6 +62,19 @@ export function openOneConversation(
 			$store.loading = 'done';
 			$store.messages = messages;
 			store.set($store);
+
+			if (markAsAcceptedAndRead) {
+				api.acceptConversation(
+					{
+						domain: config.domain,
+						namespace: config.namespace,
+						conversationID
+					},
+					{
+						privateKey: user.delegatePrivateKey
+					}
+				);
+			}
 		}
 	}
 

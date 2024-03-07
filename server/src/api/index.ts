@@ -60,17 +60,22 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 
 	address = address.toLowerCase() as Address;
 
-	const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,created)
-		VALUES(?1,?2)
+	// const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,name,created)
+	// 	VALUES(?1,?2,?3)
+	// `);
+	const insertUser = env.DB.prepare(`INSERT INTO Users(address,name,created)
+		VALUES(?1,?2,?3)
+		ON CONFLICT(address) DO UPDATE SET name=coalesce(excluded.name,name)
 	`);
-	const insertDomainUser = env.DB.prepare(`INSERT INTO DomainUsers(user,domain,publicKey,signature,added,lastPresence)
-		VALUES(?1,?2,?3,?4,?5,?6)
-		ON CONFLICT(user,domain) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added, lastPresence=excluded.lastPresence
+	const insertDomainUser = env.DB.prepare(`INSERT INTO DomainUsers(user,domain,domainUsername,publicKey,signature,added,lastPresence)
+		VALUES(?1,?2,?3,?4,?5,?6,?7)
+		ON CONFLICT(user,domain) DO UPDATE SET domainUsername=coalesce(excluded.domainUsername,domainUsername), added=excluded.added, lastPresence=excluded.lastPresence
 	`);
+	// currently not possible to update publicKey: else  publicKey=excluded.publicKey,
 
 	const response = await env.DB.batch([
-		insertUser.bind(address, timestampMS),
-		insertDomainUser.bind(address, action.domain, publicKey, action.signature, timestampMS, timestampMS),
+		insertUser.bind(address, action.name || null, timestampMS),
+		insertDomainUser.bind(address, action.domain, action.domainUsername || null, publicKey, action.signature, timestampMS, timestampMS),
 	]);
 
 	return response;
@@ -94,19 +99,26 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetMi
 }
 
 export async function getDomainUser(env: Env, domain: string, address: Address): Promise<ResponseGetDomainUser> {
-	const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE user = ?1 AND domain = ?2`).bind(address, domain).all();
+	const response = await env.DB.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = ?1 AND user = ?1 AND domain = ?2;`)
+		.bind(address, domain)
+		.all();
 
 	if (response.results.length === 1) {
-		return { domainUser: response.results[0] as DomainUser };
+		return { domainUser: response.results[0] as DomainUser & MissivUser };
 	}
 	return { domainUser: undefined };
 }
 
 export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetDomainUser> {
-	const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
+	// const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
+	const response = await env.DB.prepare(
+		`SELECT * from DomainUsers INNER JOIN Users on Users.address = DomainUsers.user AND publicKey = ?1;`,
+	)
+		.bind(publicKey)
+		.all();
 
 	if (response.results.length === 1) {
-		return { domainUser: response.results[0] as DomainUser };
+		return { domainUser: response.results[0] as DomainUser & MissivUser };
 	}
 	return { domainUser: undefined };
 }
@@ -171,7 +183,7 @@ export async function acceptConversation(
 	action: ActionAcceptConversation,
 ): Promise<ResponseAcceptConversation> {
 	const statement = env.DB.prepare(
-		`UPDATE Conversations SET accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
+		`UPDATE Conversations SET accepted = 1, read = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
 	);
 	const response = await statement.bind(action.domain, action.namespace, account, action.conversationID).run();
 	return {
@@ -386,12 +398,13 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				env.DB.prepare(`DROP TABLE IF EXISTS DomainUsers;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS DomainUsers
 				(
-				  user          text       NOT NULL,
-				  domain        text       NOT NULL,
-				  publicKey     text       NOT NULL,
-				  signature     text       NOT NULL,
-				  added         timestamp  NOT NULL,
-				  lastPresence  timestamp  NOT NULL,
+				  user            text       NOT NULL,
+				  domain          text       NOT NULL,
+				  domainUsername  text       NULL,
+				  publicKey       text       NOT NULL,
+				  signature       text       NOT NULL,
+				  added           timestamp  NOT NULL,
+				  lastPresence    timestamp  NOT NULL,
 				  PRIMARY KEY (user, domain),
 				  UNIQUE(publicKey),
 				  FOREIGN KEY (user) REFERENCES Users (address)
@@ -403,6 +416,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
 				(
 				  address       text       NOT NULL,
+				  name			text       NULL,
 				  created       timestamp  NOT NULL,
 				  PRIMARY KEY (address)
 				);`),

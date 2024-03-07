@@ -29,6 +29,7 @@ export type ConversationState = {
 export type OtherUser = {
 	publicKey?: PublicKey;
 	address: `0x${string}`;
+	name?: string;
 };
 
 export type CurrentConversation = Readable<ConversationState> & {
