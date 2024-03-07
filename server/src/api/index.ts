@@ -139,7 +139,7 @@ export async function sendMessage(
 	`);
 
 	const insertMessage = env.DB.prepare(
-		`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
+		`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,type,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
 	);
 
 	const response = await env.DB.batch([
@@ -152,9 +152,10 @@ export async function sendMessage(
 			account,
 			publicKey,
 			action.to,
-			action.toPublicKey,
+			action.toPublicKey ? action.toPublicKey : null,
 			timestampMS,
 			action.message,
+			action.messageType,
 			action.signature,
 		),
 	]);
@@ -366,9 +367,10 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				  sender              text       NOT NULL,
 				  senderPublicKey     text       NOT NULL,
 				  recipient           text       NOT NULL,
-				  recipientPublicKey  text       NOT NULL,
+				  recipientPublicKey  text       NULL,
 				  timestamp           timestamp  NOT NULL,
 				  message             text       NOT NULL,
+				  type				  text       NOT NULL,
 				  signature           text       NOT NULL,
 				  PRIMARY KEY (domain, namespace, conversationID, sender, timestamp),
 				  FOREIGN KEY (sender) REFERENCES Users (address)

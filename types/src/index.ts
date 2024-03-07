@@ -9,7 +9,10 @@ import {
 	toLowerCase,
 	BaseTransformation,
 	BaseValidation,
-	Pipe,
+	union,
+	optional,
+	forward,
+	custom,
 } from 'valibot';
 export {parse} from 'valibot';
 
@@ -25,15 +28,30 @@ export type PublicKey = Output<typeof SchemaPublicKey>;
 export const SchemaAddress = string0x();
 export type Address = Output<typeof SchemaAddress>;
 
-export const SchemaActionSendMessage = object({
-	type: literal('sendMessage'),
-	domain: string(),
-	namespace: string(),
-	to: string0x(),
-	toPublicKey: string0x(),
-	message: string(),
-	signature: string0x(),
-});
+export const SchemaActionSendMessage = object(
+	{
+		type: literal('sendMessage'),
+		domain: string(),
+		namespace: string(),
+		to: string0x(),
+		toPublicKey: optional(string0x()),
+		message: string(),
+		messageType: union([literal('clear'), literal('encrypted')]),
+		signature: string0x(),
+	},
+	[
+		forward(
+			custom(({toPublicKey, messageType}) => {
+				if (messageType === 'clear') {
+					return toPublicKey ? false : true;
+				} else {
+					return toPublicKey ? true : false;
+				}
+			}, 'toPublicKey is required when message is encrypted and forbidden when message is clear'),
+			['toPublicKey'],
+		),
+	],
+);
 export type ActionSendMessage = Output<typeof SchemaActionSendMessage>;
 export type ResponseSendMessage = {
 	timestampMS: number;

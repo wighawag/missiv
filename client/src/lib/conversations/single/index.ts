@@ -109,11 +109,12 @@ export function openOneConversation(
 		await api.sendMessage(
 			{
 				message: text,
+				messageType: 'clear',
 				domain: config.domain,
 				namespace: config.namespace,
 				signature: '0x',
-				to: $store.otherUser.address,
-				toPublicKey: $store.otherUser.publicKey
+				to: $store.otherUser.address
+				// toPublicKey: $store.otherUser.publicKey
 			},
 			{
 				privateKey: $store.user.delegatePrivateKey
