@@ -36,16 +36,17 @@ export function openOneConversation(
 	async function fetchMessages() {
 		if ($store.user) {
 			if (!$store.otherUser.publicKey) {
-				const { namespacedUser } = await api.getNamespacedUser({
+				const { domainUser } = await api.getDomainUser({
 					address: otherUser.address,
-					namespace: config.namespace
+					domain: config.domain
 				});
-				if (namespacedUser?.publicKey) {
-					$store.otherUser.publicKey = namespacedUser.publicKey;
+				if (domainUser?.publicKey) {
+					$store.otherUser.publicKey = domainUser.publicKey;
 				}
 			}
 			const { messages } = await api.getMessages(
 				{
+					domain: config.domain,
 					namespace: config.namespace,
 					conversationID
 				},
@@ -108,6 +109,7 @@ export function openOneConversation(
 		await api.sendMessage(
 			{
 				message: text,
+				domain: config.domain,
 				namespace: config.namespace,
 				signature: '0x',
 				to: $store.otherUser.address,

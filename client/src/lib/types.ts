@@ -5,6 +5,7 @@ export type User = {
 
 export type APIConfig = {
 	endpoint: string;
+	domain: string;
 	namespace: string;
 	pollingInterval?: number;
 };

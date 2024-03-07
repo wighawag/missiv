@@ -27,6 +27,7 @@ export type Address = Output<typeof SchemaAddress>;
 
 export const SchemaActionSendMessage = object({
 	type: literal('sendMessage'),
+	domain: string(),
 	namespace: string(),
 	to: string0x(),
 	toPublicKey: string0x(),
@@ -40,6 +41,7 @@ export type ResponseSendMessage = {
 
 export const SchemaActionAcceptConversation = object({
 	type: literal('acceptConversation'),
+	domain: string(),
 	namespace: string(),
 	conversationID: string(),
 });
@@ -49,6 +51,7 @@ export type ResponseAcceptConversation = {
 };
 
 export type Conversation = {
+	domain: string;
 	namespace: string;
 	first: Address;
 	second: Address;
@@ -58,6 +61,7 @@ export type Conversation = {
 };
 export const SchemaActionGetConversations = object({
 	type: literal('getConversations'),
+	domain: string(),
 	namespace: string(),
 });
 export type ActionGetConversations = Output<typeof SchemaActionGetConversations>;
@@ -65,6 +69,7 @@ export type ResponseGetConversations = {conversations: Conversation[]};
 
 export const SchemaActionGetUnacceptedConversations = object({
 	type: literal('getUnacceptedConversations'),
+	domain: string(),
 	namespace: string(),
 });
 export type ActionGetUnacceptedConversations = Output<typeof SchemaActionGetUnacceptedConversations>;
@@ -72,6 +77,7 @@ export type ResponseGetUnacceptedConversations = {unacceptedConversations: Conve
 
 export const SchemaActionGetAcceptedConversations = object({
 	type: literal('getAcceptedConversations'),
+	domain: string(),
 	namespace: string(),
 });
 export type ActionGetAcceptedConversations = Output<typeof SchemaActionGetAcceptedConversations>;
@@ -79,6 +85,7 @@ export type ResponseGetAcceptedConversations = {acceptedConversations: Conversat
 
 export const SchemaActionMarkAsRead = object({
 	type: literal('markAsRead'),
+	domain: string(),
 	namespace: string(),
 	conversationID: string(),
 	lastMessageTimestampMS: number(),
@@ -87,6 +94,7 @@ export type ActionMarkAsRead = Output<typeof SchemaActionMarkAsRead>;
 export type ResponseMarkAsRead = {timestampMS: number};
 
 export type ConversationMessage = {
+	donmain: string;
 	namespace: string;
 	conversationID: string;
 	sender: Address;
@@ -98,6 +106,7 @@ export type ConversationMessage = {
 	signature: string;
 };
 export const SchemaActionGetMessages = object({
+	domain: string(),
 	namespace: string(),
 	type: literal('getMessages'),
 	conversationID: string(),
@@ -117,33 +126,33 @@ export const SchemaActionGetMissivUser = object({
 export type ActionGetMissivUser = Output<typeof SchemaActionGetMissivUser>;
 export type ResponseGetMissivUser = {user: MissivUser | undefined};
 
-export type NamespacedUser = {
+export type DomainUser = {
 	address: Address;
-	namespace: string;
+	domain: string;
 	publicKey: PublicKey;
 	signature: `0x${string}`;
 	lastPresence: number;
 	added: number;
 };
-export const SchemaActionGetNamespacedUser = object({
-	type: literal('getNamespacedUser'),
-	namespace: string(),
+export const SchemaActionGetDomainUser = object({
+	type: literal('getDomainUser'),
+	domain: string(),
 	address: string0x(),
 });
-export type ActionGetNamespacedUser = Output<typeof SchemaActionGetNamespacedUser>;
-export type ResponseGetNamespacedUser = {namespacedUser: NamespacedUser | undefined};
+export type ActionGetDomainUser = Output<typeof SchemaActionGetDomainUser>;
+export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
 
-export const SchemaActionRegisterNamespacedUser = object({
+export const SchemaActionRegisterDomainUser = object({
 	type: literal('register'),
-	namespace: string(),
+	domain: string(),
 	signature: string0x(),
 	address: string0x(),
 });
-export type ActionRegisterNamespacedUser = Output<typeof SchemaActionRegisterNamespacedUser>;
-export type ResponseRegisterNamespacedUser = {timestampMS: number};
+export type ActionRegisterDomainUser = Output<typeof SchemaActionRegisterDomainUser>;
+export type ResponseRegisterDomainUser = {timestampMS: number};
 
 export const SchemaAction = variant('type', [
-	SchemaActionRegisterNamespacedUser,
+	SchemaActionRegisterDomainUser,
 	SchemaActionSendMessage,
 	SchemaActionGetConversations,
 	SchemaActionGetUnacceptedConversations,
@@ -152,7 +161,7 @@ export const SchemaAction = variant('type', [
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
 	SchemaActionGetMissivUser,
-	SchemaActionGetNamespacedUser,
+	SchemaActionGetDomainUser,
 
 	object({
 		type: literal('db:select'),

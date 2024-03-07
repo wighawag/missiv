@@ -28,6 +28,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 		if ($store.currentUser) {
 			const { conversations } = await api.getConversations(
 				{
+					domain: config.domain,
 					namespace: config.namespace
 				},
 				{

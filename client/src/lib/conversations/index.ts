@@ -37,17 +37,17 @@ export function setup(config?: APIConfig) {
 		}
 		store.set($store);
 
-		if (isNewUser && newUser?.address) {
+		if (isNewUser && newUser) {
 			if (api && config) {
 				api
-					.getNamespacedUser({
-						address: newUser?.address,
-						namespace: config?.namespace
+					.getDomainUser({
+						address: newUser.address,
+						domain: config.domain
 					})
-					.then(({ namespacedUser }) => {
+					.then(({ domainUser }) => {
 						$store.registered = {
 							state: 'ready',
-							confirmed: namespacedUser ? true : false
+							confirmed: domainUser ? true : false
 						};
 						store.set($store);
 					});
@@ -64,7 +64,7 @@ export function setup(config?: APIConfig) {
 			await api.register(
 				{
 					address: user.address,
-					namespace: config.namespace,
+					domain: config.domain,
 					signature
 				},
 				{
@@ -75,14 +75,14 @@ export function setup(config?: APIConfig) {
 			$store.registered = { state: 'loading' };
 			store.set($store);
 
-			const { namespacedUser } = await api.getNamespacedUser({
+			const { domainUser } = await api.getDomainUser({
 				address: user.address,
-				namespace: config?.namespace
+				domain: config.domain
 			});
 
 			$store.registered = {
 				state: 'ready',
-				confirmed: namespacedUser ? true : false
+				confirmed: domainUser ? true : false
 			};
 			store.set($store);
 		}

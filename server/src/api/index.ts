@@ -7,7 +7,7 @@ import {
 	Action,
 	ActionAcceptConversation,
 	ActionMarkAsRead,
-	ActionRegisterNamespacedUser,
+	ActionRegisterDomainUser,
 	ActionSendMessage,
 	PublicKey,
 	Conversation,
@@ -22,12 +22,13 @@ import {
 	SchemaAddress,
 	ResponseGetMissivUser,
 	MissivUser,
-	ResponseGetNamespacedUser,
-	NamespacedUser,
+	ResponseGetDomainUser,
+	DomainUser,
 	getConversationID,
 	ResponseGetUnacceptedConversations,
 	ResponseGetAcceptedConversations,
 	publicKeyAuthorizationMessage,
+	ActionGetMessages,
 } from 'missiv';
 import { toJSONResponse } from '../utils';
 
@@ -39,7 +40,7 @@ function formatConversation(v: ConversationFromDB): Conversation {
 	return { ...v, state: v.accepted == 0 ? 'unaccepted' : v.read === 0 ? 'unread' : 'read' };
 }
 
-export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterNamespacedUser) {
+export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterDomainUser) {
 	let address: Address;
 	if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
 		if (env.WORKER_ENV !== 'dev') {
@@ -62,24 +63,24 @@ export async function register(env: Env, publicKey: PublicKey, timestampMS: numb
 	const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,created)
 		VALUES(?1,?2)
 	`);
-	const insertNamespacedUser = env.DB.prepare(`INSERT INTO NamespacedUsers(user,namespace,publicKey,signature,added,lastPresence)
+	const insertDomainUser = env.DB.prepare(`INSERT INTO DomainUsers(user,domain,publicKey,signature,added,lastPresence)
 		VALUES(?1,?2,?3,?4,?5,?6)
-		ON CONFLICT(user,namespace) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added, lastPresence=excluded.lastPresence
+		ON CONFLICT(user,domain) DO UPDATE SET publicKey=excluded.publicKey, added=excluded.added, lastPresence=excluded.lastPresence
 	`);
 
 	const response = await env.DB.batch([
 		insertUser.bind(address, timestampMS),
-		insertNamespacedUser.bind(address, action.namespace, publicKey, action.signature, timestampMS, timestampMS),
+		insertDomainUser.bind(address, action.domain, publicKey, action.signature, timestampMS, timestampMS),
 	]);
-	// await insertUser.bind(address, timestampMS, timestampMS).run();
-	// const response = insertPublicKey.bind(address, action.namespace, publicKey, action.signature, timestampMS).run();
 
 	return response;
 }
 
-export async function getChatMessages(env: Env, conversationID: string): Promise<ResponseGetMessages> {
-	const statement = env.DB.prepare(`SELECT * from Messages WHERE conversationID = ?1 ORDER BY timestamp DESC`);
-	const { results } = await statement.bind(conversationID).all();
+export async function getMessages(env: Env, action: ActionGetMessages): Promise<ResponseGetMessages> {
+	const statement = env.DB.prepare(
+		`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 ORDER BY timestamp DESC`,
+	);
+	const { results } = await statement.bind(action.domain, action.namespace, action.conversationID).all();
 	return { messages: results } as ResponseGetMessages;
 }
 
@@ -92,31 +93,31 @@ export async function getUser(env: Env, address: Address): Promise<ResponseGetMi
 	return { user: undefined };
 }
 
-export async function getNamespacedUser(env: Env, namespace: string, address: Address): Promise<ResponseGetNamespacedUser> {
-	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE user = ?1 AND namespace = ?2`).bind(address, namespace).all();
+export async function getDomainUser(env: Env, domain: string, address: Address): Promise<ResponseGetDomainUser> {
+	const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE user = ?1 AND domain = ?2`).bind(address, domain).all();
 
 	if (response.results.length === 1) {
-		return { namespacedUser: response.results[0] as NamespacedUser };
+		return { domainUser: response.results[0] as DomainUser };
 	}
-	return { namespacedUser: undefined };
+	return { domainUser: undefined };
 }
 
-export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetNamespacedUser> {
-	const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE publicKey = ?1`).bind(publicKey).all();
+export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetDomainUser> {
+	const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
 	if (response.results.length === 1) {
-		return { namespacedUser: response.results[0] as NamespacedUser };
+		return { domainUser: response.results[0] as DomainUser };
 	}
-	return { namespacedUser: undefined };
+	return { domainUser: undefined };
 }
 
 export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
 	const statement = env.DB.prepare(
-		`UPDATE Conversations SET read = 1, accepted = 1 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`,
+		`UPDATE Conversations SET read = 1, accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
 	);
 	// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
 
-	const response = await statement.bind(action.namespace, publicKey, action.conversationID).run();
+	const response = await statement.bind(action.domain, action.namespace, publicKey, action.conversationID).run();
 	return response;
 }
 
@@ -128,22 +129,24 @@ export async function sendMessage(
 	action: ActionSendMessage,
 ): Promise<ResponseSendMessage> {
 	const conversationID = getConversationID(action.to, account);
-	const upsertConversation = env.DB.prepare(`INSERT INTO Conversations(namespace,first,second,conversationID,lastMessage,accepted,read)
-		VALUES(?1,?2,?3,?4,?5,?6,?7)
-		ON CONFLICT(namespace,first,conversationID) DO UPDATE SET 
+	const upsertConversation = env.DB
+		.prepare(`INSERT INTO Conversations(domain,namespace,first,second,conversationID,lastMessage,accepted,read)
+		VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+		ON CONFLICT(domain,namespace,first,conversationID) DO UPDATE SET 
 			lastMessage=excluded.lastMessage,
 			accepted=1,
 			read=excluded.read
 	`);
 
 	const insertMessage = env.DB.prepare(
-		`INSERT INTO Messages(namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
+		`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
 	);
 
 	const response = await env.DB.batch([
-		upsertConversation.bind(action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
-		upsertConversation.bind(action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
+		upsertConversation.bind(action.domain, action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
+		upsertConversation.bind(action.domain, action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
 		insertMessage.bind(
+			action.domain,
 			action.namespace,
 			conversationID,
 			account,
@@ -166,38 +169,46 @@ export async function acceptConversation(
 	timestampMS: number,
 	action: ActionAcceptConversation,
 ): Promise<ResponseAcceptConversation> {
-	const statement = env.DB.prepare(`UPDATE Conversations SET accepted = 1 WHERE namespace = ?1 AND first = ?2 AND conversationID = ?3`);
-	const response = await statement.bind(action.namespace, account, action.conversationID).run();
+	const statement = env.DB.prepare(
+		`UPDATE Conversations SET accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
+	);
+	const response = await statement.bind(action.domain, action.namespace, account, action.conversationID).run();
 	return {
 		timestampMS,
 	};
 }
 
-export async function getConversations(env: Env, namespace: string, address: Address): Promise<ResponseGetConversations> {
+export async function getConversations(env: Env, domain: string, namespace: string, address: Address): Promise<ResponseGetConversations> {
 	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE namespace = ?1 AND first = ?2 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
+		`SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
 	);
-	const { results } = await statement.bind(namespace, address).all<ConversationFromDB>();
+	const { results } = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
 	return { conversations: results.map(formatConversation) };
 }
 
 export async function getUnacceptedConversations(
 	env: Env,
+	domain: string,
 	namespace: string,
 	account: Address,
 ): Promise<ResponseGetUnacceptedConversations> {
 	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 0 ORDER BY lastMessage DESC`,
+		`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
 	);
-	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
+	const { results } = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
 	return { unacceptedConversations: results.map(formatConversation) };
 }
 
-export async function getAcceptedConversations(env: Env, namespace: string, account: Address): Promise<ResponseGetAcceptedConversations> {
+export async function getAcceptedConversations(
+	env: Env,
+	domain: string,
+	namespace: string,
+	account: Address,
+): Promise<ResponseGetAcceptedConversations> {
 	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE namespace =?1 AND first = ?2 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
+		`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
 	);
-	const { results } = await statement.bind(namespace, account).all<ConversationFromDB>();
+	const { results } = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
 	return { acceptedConversations: results.map(formatConversation) };
 }
 
@@ -233,11 +244,17 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			publicKey = `0x${recoveredPubKey.toHex()}`;
 		}
 
-		const response = await env.DB.prepare(`SELECT * from NamespacedUsers WHERE publicKey = ?1`).bind(publicKey).all();
+		const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
 		if (response.results.length >= 1) {
-			const userPublicKey = response.results[0];
-			account = parse(SchemaAddress, userPublicKey.user);
+			const domainUser = response.results[0];
+			if ('domain' in action) {
+				if (domainUser.domain != action.domain) {
+					throw new Error(`the publicKey belongs to domain "${domainUser.domain}" and not "${action.domain}"`);
+				}
+			}
+
+			account = parse(SchemaAddress, domainUser.user);
 		}
 	}
 
@@ -265,14 +282,14 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			return toJSONResponse(getConversations(env, action.namespace, account));
+			return toJSONResponse(getConversations(env, action.domain, action.namespace, account));
 		}
 
 		case 'getAcceptedConversations': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			return toJSONResponse(getAcceptedConversations(env, action.namespace, account));
+			return toJSONResponse(getAcceptedConversations(env, action.domain, action.namespace, account));
 		}
 
 		case 'getUnacceptedConversations': {
@@ -280,7 +297,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				throw new Error(`no account authenticated`);
 			}
 
-			return toJSONResponse(getUnacceptedConversations(env, action.namespace, account));
+			return toJSONResponse(getUnacceptedConversations(env, action.domain, action.namespace, account));
 		}
 
 		case 'markAsRead': {
@@ -291,13 +308,13 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			return toJSONResponse(markAsRead(env, account, action));
 		}
 		case 'getMessages': {
-			return toJSONResponse(getChatMessages(env, action.conversationID));
+			return toJSONResponse(getMessages(env, action));
 		}
 		case 'getUser': {
 			return toJSONResponse(getUser(env, action.address));
 		}
-		case 'getNamespacedUser': {
-			return toJSONResponse(getNamespacedUser(env, action.namespace, action.address));
+		case 'getDomainUser': {
+			return toJSONResponse(getDomainUser(env, action.domain, action.address));
 		}
 		case 'acceptConversation': {
 			if (!account) {
@@ -322,6 +339,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			const response = await env.DB.batch([
 				env.DB.prepare(`DROP TABLE IF EXISTS Conversations;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Conversations (
+					domain          text       NOT NULL,
 					namespace       text       NOT NULL,
 					first           text       NOT NULL,
 					second          text       NOT NULL,
@@ -329,17 +347,20 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 					lastMessage     timestamp  NOT NULL,
 					accepted        boolean    NOT NULL,
 					read            boolean    NOT NULL,
-					PRIMARY KEY (namespace, first, conversationID),
+					PRIMARY KEY (domain, namespace, first, conversationID),
 					FOREIGN KEY (first) REFERENCES Users (address),
 					FOREIGN KEY (second) REFERENCES Users (address)
 				);`),
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (namespace, first, accepted, lastMessage);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (namespace, first, read, lastMessage);`),
+				env.DB.prepare(
+					`CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (domain, namespace, first, accepted, lastMessage);`,
+				),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (domain, namespace, first, read, lastMessage);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
 				(
+				  domain              text       NOT NULL,
 				  namespace           text       NOT NULL,
 				  conversationID      text       NOT NULL,
 				  sender              text       NOT NULL,
@@ -349,25 +370,26 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				  timestamp           timestamp  NOT NULL,
 				  message             text       NOT NULL,
 				  signature           text       NOT NULL,
-				  PRIMARY KEY (namespace, conversationID, sender, timestamp),
+				  PRIMARY KEY (domain, namespace, conversationID, sender, timestamp),
 				  FOREIGN KEY (sender) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (namespace, conversationID, timestamp);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages ON Messages (domain, namespace, conversationID, timestamp);`),
 
-				env.DB.prepare(`DROP TABLE IF EXISTS NamespacedUsers;`),
-				env.DB.prepare(`CREATE TABLE IF NOT EXISTS NamespacedUsers
+				env.DB.prepare(`DROP TABLE IF EXISTS DomainUsers;`),
+				env.DB.prepare(`CREATE TABLE IF NOT EXISTS DomainUsers
 				(
 				  user          text       NOT NULL,
-				  namespace     text       NOT NULL,
+				  domain        text       NOT NULL,
 				  publicKey     text       NOT NULL,
 				  signature     text       NOT NULL,
 				  added         timestamp  NOT NULL,
 				  lastPresence  timestamp  NOT NULL,
-				  PRIMARY KEY (user, namespace),
+				  PRIMARY KEY (user, domain),
+				  UNIQUE(publicKey),
 				  FOREIGN KEY (user) REFERENCES Users (address)
 				);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_NamespacedUsers_publicKey ON NamespacedUsers (publicKey);`),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_NamespacedUsers_lastPresence ON NamespacedUsers (lastPresence);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_DomainUsers_publicKey ON DomainUsers (publicKey);`),
+				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_DomainUsers_lastPresence ON DomainUsers (lastPresence);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Users;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS Users
