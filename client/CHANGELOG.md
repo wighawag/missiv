@@ -1,5 +1,14 @@
 # missiv-client
 
+## 0.0.10
+
+### Patch Changes
+
+- 982829b: fix
+- 7db8124: use domain/namespace pair
+- 9d734f7: fix
+- 7ef12ae: use messageType
+
 ## 0.0.9
 
 ### Patch Changes

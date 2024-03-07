@@ -1,5 +1,15 @@
 # missiv-server
 
+## 0.0.8
+
+### Patch Changes
+
+- 7db8124: use domain/namespace pair
+- 7ef12ae: use messageType
+- Updated dependencies [7db8124]
+- Updated dependencies [7ef12ae]
+  - missiv@0.0.7
+
 ## 0.0.7
 
 ### Patch Changes
