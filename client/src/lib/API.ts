@@ -17,10 +17,16 @@ import type {
 	ResponseRegisterDomainUser,
 	ResponseSendMessage,
 	ActionGetDomainUser,
-	ResponseGetDomainUser
+	ResponseGetDomainUser,
+	ActionSendMessageInClear,
+	ActionSendEncryptedMessage
 } from 'missiv';
-import { signAsync, utils as secpUtils } from '@noble/secp256k1';
+import { signAsync, utils as secpUtils, getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
+import { randomBytes, bytesToHex } from '@noble/hashes/utils';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
+import { base64 } from '@scure/base';
 
 export type FetchFunction = typeof fetch;
 
@@ -80,6 +86,39 @@ export class API {
 			},
 			options
 		);
+	}
+
+	async sendMessageInClear(action: Omit<ActionSendMessageInClear, 'type'>, options: APIOptions) {
+		return this.call<ResponseSendMessage>(
+			{
+				type: 'sendMessage',
+				...action
+			},
+			options
+		);
+	}
+
+	async sendEncryptedMessage(
+		action: Omit<ActionSendMessageInClear & { toPublicKey: `0x${string}` }, 'type' | 'messageType'>,
+		options: { privateKey: Uint8Array | string }
+	) {
+		const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
+			type: 'sendMessage',
+			...action,
+			messageType: 'encrypted'
+		};
+
+		const sharedKey = getSharedSecret(options.privateKey, action.toPublicKey.slice(2));
+		const sharedSecret = keccak_256(sharedKey);
+
+		const nonce = randomBytes(24);
+		const chacha = xchacha20poly1305(sharedSecret, nonce);
+
+		const data = utf8ToBytes(action.message);
+		const ciphertext = chacha.encrypt(data);
+		actionSendEncryptedMessage.message = `${base64.encode(nonce)}:${base64.encode(ciphertext)}`;
+
+		return this.call<ResponseSendMessage>(actionSendEncryptedMessage, options);
 	}
 
 	async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {

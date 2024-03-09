@@ -52,7 +52,30 @@ export const SchemaActionSendMessage = object(
 		),
 	],
 );
+
 export type ActionSendMessage = Output<typeof SchemaActionSendMessage>;
+
+export type ActionSendMessageInClear = {
+	type: 'sendMessage';
+	domain: string;
+	namespace: string;
+	to: `0x${string}`;
+	message: string;
+	messageType: 'clear';
+	signature: `0x${string}`;
+};
+
+export type ActionSendEncryptedMessage = {
+	type: 'sendMessage';
+	domain: string;
+	namespace: string;
+	to: `0x${string}`;
+	toPublicKey: `0x${string}`;
+	message: string;
+	messageType: 'encrypted';
+	signature: `0x${string}`;
+};
+
 export type ResponseSendMessage = {
 	timestampMS: number;
 };
@@ -122,6 +145,7 @@ export type ConversationMessage = {
 	recipientPublicKey: PublicKey;
 	timestamp: number;
 	message: string;
+	type: 'encrypted' | 'clear';
 	signature: string;
 };
 export const SchemaActionGetMessages = object({

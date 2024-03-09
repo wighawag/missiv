@@ -51,7 +51,6 @@ describe('@noble/secp256k1', () => {
 		expect(sharedKeyFromAlice).toEqual(sharedKey);
 
 		const sharedSecret = keccak_256(sharedKey);
-		const conversationID = keccak_256(sharedSecret);
 
 		const nonce = randomBytes(24);
 		const chacha = xchacha20poly1305(sharedSecret, nonce);

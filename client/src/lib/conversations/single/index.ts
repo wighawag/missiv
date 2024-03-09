@@ -8,6 +8,12 @@ import type {
 	OtherUser
 } from '../types.js';
 import { getConversationID, type Address } from 'missiv';
+import { getSharedSecret } from '@noble/secp256k1';
+import { keccak_256 } from '@noble/hashes/sha3';
+import { hexToBytes, randomBytes } from '@noble/hashes/utils';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
+import { base64 } from '@scure/base';
 
 // TODO remove: markAsAcceptedAndRead
 //   once we handle accepted/naccepted conversation in the UI we do it automatically here
@@ -58,6 +64,24 @@ export function openOneConversation(
 					privateKey: user.delegatePrivateKey
 				}
 			);
+
+			for (let i = 0; i < messages.length; i++) {
+				const message = messages[i];
+				if (message.type === 'encrypted') {
+					const sharedKey =
+						message.recipient.toLowerCase() == user.address.toLowerCase()
+							? getSharedSecret(user.delegatePrivateKey, message.senderPublicKey.slice(2))
+							: getSharedSecret(user.delegatePrivateKey, message.recipientPublicKey.slice(2));
+					const sharedSecret = keccak_256(sharedKey);
+
+					const [nonceb64, ciphertextb64] = message.message.split(/:(.*)/s);
+					const nonce = base64.decode(nonceb64);
+					const chacha = xchacha20poly1305(sharedSecret, nonce);
+					const ciphertext = base64.decode(ciphertextb64);
+					const content = chacha.decrypt(ciphertext);
+					message.message = bytesToUtf8(content);
+				}
+			}
 
 			$store.loading = 'done';
 			$store.messages = messages;
@@ -122,7 +146,7 @@ export function openOneConversation(
 		}
 
 		if (!$store.otherUser.publicKey) {
-			await api.sendMessage(
+			await api.sendMessageInClear(
 				{
 					message: text,
 					messageType: 'clear',
@@ -130,18 +154,15 @@ export function openOneConversation(
 					namespace: config.namespace,
 					signature: '0x',
 					to: $store.otherUser.address
-					// toPublicKey: $store.otherUser.publicKey
 				},
 				{
 					privateKey: $store.user.delegatePrivateKey
 				}
 			);
 		} else {
-			const encryptedPayload = ''; // TODO
-			await api.sendMessage(
+			await api.sendEncryptedMessage(
 				{
 					message: text,
-					messageType: 'encrypted',
 					domain: config.domain,
 					namespace: config.namespace,
 					signature: '0x',

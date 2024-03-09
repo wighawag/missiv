@@ -1,5 +1,16 @@
 # missiv-server
 
+## 0.0.10
+
+### Patch Changes
+
+- 9fcc362: update wrangler
+- f2db156: add id to messages
+- finish encryption implementation
+- Updated dependencies [f2db156]
+- Updated dependencies
+  - missiv@0.0.9
+
 ## 0.0.9
 
 ### Patch Changes

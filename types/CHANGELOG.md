@@ -1,5 +1,12 @@
 # missiv
 
+## 0.0.9
+
+### Patch Changes
+
+- f2db156: add id to messages
+- finish encryption implementation
+
 ## 0.0.8
 
 ### Patch Changes

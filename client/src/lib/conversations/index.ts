@@ -11,7 +11,7 @@ const $store: ConversationsState = { registered: { state: 'idle' } };
 const store = writable<ConversationsState>($store);
 
 function openConversationsList(config: APIConfig) {
-	$store.conversations = openConversationsView(config);
+	$store.conversations = openConversationsView(config, $store.currentUser);
 	store.set($store);
 }
 

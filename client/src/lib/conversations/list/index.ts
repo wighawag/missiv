@@ -3,13 +3,14 @@ import { API } from '../../API.js';
 import type { User, APIConfig } from '../../types.js';
 import type { ConversationViews, ConversationsViewState } from '../types.js';
 
-export function openConversationsView(config: APIConfig): ConversationViews {
+export function openConversationsView(config: APIConfig, currentUser?: User): ConversationViews {
 	function defaultState(): ConversationsViewState {
 		return {
 			conversations: [],
 			numUnread: 0,
 			numUnaccepted: 0,
-			loading: false
+			loading: false,
+			currentUser
 		};
 	}
 	function reset(fields?: { loading?: boolean; currentUser: User | undefined }) {
@@ -68,7 +69,7 @@ export function openConversationsView(config: APIConfig): ConversationViews {
 
 	function setCurrentUser(newUser: User | undefined) {
 		if (newUser) {
-			if (newUser.address !== $store.currentUser?.address) {
+			if (newUser.address.toLowerCase() !== $store.currentUser?.address.toLowerCase()) {
 				reset({ loading: true, currentUser: { ...newUser } });
 				fetchConversations();
 			}
