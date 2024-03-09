@@ -1,5 +1,11 @@
 # missiv-client
 
+## 0.0.13
+
+### Patch Changes
+
+- add cache for shared keys and messages + move all in conversations single
+
 ## 0.0.12
 
 ### Patch Changes

@@ -88,39 +88,6 @@ export class API {
 		);
 	}
 
-	async sendMessageInClear(action: Omit<ActionSendMessageInClear, 'type'>, options: APIOptions) {
-		return this.call<ResponseSendMessage>(
-			{
-				type: 'sendMessage',
-				...action
-			},
-			options
-		);
-	}
-
-	async sendEncryptedMessage(
-		action: Omit<ActionSendMessageInClear & { toPublicKey: `0x${string}` }, 'type' | 'messageType'>,
-		options: { privateKey: Uint8Array | string }
-	) {
-		const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
-			type: 'sendMessage',
-			...action,
-			messageType: 'encrypted'
-		};
-
-		const sharedKey = getSharedSecret(options.privateKey, action.toPublicKey.slice(2));
-		const sharedSecret = keccak_256(sharedKey);
-
-		const nonce = randomBytes(24);
-		const chacha = xchacha20poly1305(sharedSecret, nonce);
-
-		const data = utf8ToBytes(action.message);
-		const ciphertext = chacha.encrypt(data);
-		actionSendEncryptedMessage.message = `${base64.encode(nonce)}:${base64.encode(ciphertext)}`;
-
-		return this.call<ResponseSendMessage>(actionSendEncryptedMessage, options);
-	}
-
 	async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {
 		return this.call<ResponseSendMessage>(
 			{

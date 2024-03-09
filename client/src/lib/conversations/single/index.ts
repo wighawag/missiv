@@ -7,13 +7,28 @@ import type {
 	CurrentConversation,
 	OtherUser
 } from '../types.js';
-import { getConversationID, type Address } from 'missiv';
+import { getConversationID, type Address, type ActionSendEncryptedMessage } from 'missiv';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { hexToBytes, randomBytes } from '@noble/hashes/utils';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64 } from '@scure/base';
+
+const sharedKeyCache: { [userAndOtherpublicKey: string]: Uint8Array } = {};
+const messageCache: { [idTimestamp: string]: string } = {};
+
+function getSharedKey(user: User, otherpublicKey: `0x${string}`): Uint8Array {
+	const cacheID = user.address.toLowerCase() + ':' + otherpublicKey;
+	let sharedKey = sharedKeyCache[cacheID];
+	if (!sharedKey) {
+		const sharedSecret = getSharedSecret(user.delegatePrivateKey, otherpublicKey.slice(2));
+		sharedKey = keccak_256(sharedSecret);
+		sharedKeyCache[cacheID] = sharedKey;
+	}
+
+	return sharedKey;
+}
 
 // TODO remove: markAsAcceptedAndRead
 //   once we handle accepted/naccepted conversation in the UI we do it automatically here
@@ -68,18 +83,24 @@ export function openOneConversation(
 			for (let i = 0; i < messages.length; i++) {
 				const message = messages[i];
 				if (message.type === 'encrypted') {
-					const sharedKey =
-						message.recipient.toLowerCase() == user.address.toLowerCase()
-							? getSharedSecret(user.delegatePrivateKey, message.senderPublicKey.slice(2))
-							: getSharedSecret(user.delegatePrivateKey, message.recipientPublicKey.slice(2));
-					const sharedSecret = keccak_256(sharedKey);
+					const cacheID = message.id + ':' + message.timestamp;
+					let content = messageCache[cacheID];
+					if (!content) {
+						const sharedKey =
+							message.recipient.toLowerCase() == user.address.toLowerCase()
+								? getSharedKey($store.user, message.senderPublicKey)
+								: getSharedKey($store.user, message.recipientPublicKey);
 
-					const [nonceb64, ciphertextb64] = message.message.split(/:(.*)/s);
-					const nonce = base64.decode(nonceb64);
-					const chacha = xchacha20poly1305(sharedSecret, nonce);
-					const ciphertext = base64.decode(ciphertextb64);
-					const content = chacha.decrypt(ciphertext);
-					message.message = bytesToUtf8(content);
+						const [nonceb64, ciphertextb64] = message.message.split(/:(.*)/s);
+						const nonce = base64.decode(nonceb64);
+						const chacha = xchacha20poly1305(sharedKey, nonce);
+						const ciphertext = base64.decode(ciphertextb64);
+						const contentAsBytes = chacha.decrypt(ciphertext);
+						content = bytesToUtf8(contentAsBytes);
+						messageCache[cacheID] = content;
+					}
+
+					message.message = content;
 				}
 			}
 
@@ -146,7 +167,7 @@ export function openOneConversation(
 		}
 
 		if (!$store.otherUser.publicKey) {
-			await api.sendMessageInClear(
+			await api.sendMessage(
 				{
 					message: text,
 					messageType: 'clear',
@@ -160,19 +181,28 @@ export function openOneConversation(
 				}
 			);
 		} else {
-			await api.sendEncryptedMessage(
-				{
-					message: text,
-					domain: config.domain,
-					namespace: config.namespace,
-					signature: '0x',
-					to: $store.otherUser.address,
-					toPublicKey: $store.otherUser.publicKey
-				},
-				{
-					privateKey: $store.user.delegatePrivateKey
-				}
-			);
+			const sharedKey = getSharedKey($store.user, $store.otherUser.publicKey);
+
+			const nonce = randomBytes(24);
+			const chacha = xchacha20poly1305(sharedKey, nonce);
+
+			const data = utf8ToBytes(text);
+			const ciphertext = chacha.encrypt(data);
+
+			const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
+				type: 'sendMessage',
+				domain: config.domain,
+				namespace: config.namespace,
+				signature: '0x', //TODO
+				message: `${base64.encode(nonce)}:${base64.encode(ciphertext)}`,
+				to: $store.otherUser.address,
+				messageType: 'encrypted',
+				toPublicKey: $store.otherUser.publicKey
+			};
+
+			await api.sendMessage(actionSendEncryptedMessage, {
+				privateKey: $store.user.delegatePrivateKey
+			});
 		}
 	}
 
