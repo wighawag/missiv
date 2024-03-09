@@ -8,6 +8,16 @@ content-type: application/json
 }
 ### 
 
+# # reset DB
+# POST http://api.missiv.xyz/api HTTP/1.1
+# content-type: application/json
+
+# {
+# "type": "db:reset"
+# }
+# ### 
+
+
 
 # sending "hello world"
 #  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
