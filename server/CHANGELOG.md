@@ -1,5 +1,11 @@
 # missiv-server
 
+## 0.0.11
+
+### Patch Changes
+
+- add schema.sql
+
 ## 0.0.10
 
 ### Patch Changes
