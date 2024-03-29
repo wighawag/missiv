@@ -4,7 +4,7 @@ layout {
 			args "-c" "pnpm types:dev; cd types; ${SHELL-bash}"
 		}
 		pane command="bash"  {
-			args "-c" "pnpm server:dev; cd server; ${SHELL-bash}"
+			args "-c" "pnpm cf-worker:dev; cd server/platforms/cf-worker; ${SHELL-bash}"
 		}
 		
 	}
