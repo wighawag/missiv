@@ -1,0 +1,20 @@
+{
+  "name": "missiv-server-nodejs",
+  "version": "0.0.0",
+  "bin": {
+    "missiv": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.9.1",
+    "missiv-server-app": "workspace:*"
+  },
+  "devDependencies": {
+    "pkgroll": "^2.0.2",
+    "@types/node": "^20.11.17",
+    "tsx": "^4.7.1"
+  },
+  "scripts": {
+    "build": "pkgroll",
+    "dev": "tsx watch src/cli.ts"
+  }
+}

@@ -23,6 +23,7 @@
     "wrangler": "^3.32.0"
   },
   "scripts": {
-    "build": "pkgroll"
+    "build": "pkgroll",
+    "dev": "pkgroll --watch"
   }
 }
