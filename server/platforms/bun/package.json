@@ -1,9 +1,6 @@
 {
   "name": "missiv-server-bun",
   "version": "0.0.0",
-  "bin": {
-    "missiv": "./dist/cli.js"
-  },
   "dependencies": {
     "missiv-server-app": "workspace:*"
   },
@@ -12,6 +9,6 @@
   },
   "scripts": {
     "build": "echo 'No setup for build'",
-    "dev": "bun run --hot src/cli.ts"
+    "dev": "bun run --hot src/index.ts"
   }
 }
