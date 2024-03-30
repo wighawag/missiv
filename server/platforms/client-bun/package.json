@@ -10,6 +10,6 @@
   },
   "scripts": {
     "build": "echo 'No setup for build'",
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/cli.ts"
   }
 }

@@ -1,5 +1,16 @@
-import {createServer} from 'missiv-server-app';
+import {createServer, handleWebsocket} from 'missiv-server-app';
+import { createBunWebSocket } from 'hono/bun'
+
+const { upgradeWebSocket, websocket } = createBunWebSocket()
 
 const app = createServer();
 
-export default app
+app.get(
+    '/ws',
+    upgradeWebSocket(handleWebsocket)
+)
+
+Bun.serve({
+    fetch: app.fetch,
+    websocket,
+  })
