@@ -8,4 +8,12 @@ app.get(
   upgradeWebSocket(handleWebsocket));
 
 
-export default app
+  export default {
+    fetch: app.fetch,
+    // @ts-expect-error TS6133
+    async scheduled(event, env, ctx) {
+      ctx.waitUntil(() => {
+        console.log(`scheduled`);
+      })
+    },
+  }
