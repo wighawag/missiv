@@ -2,11 +2,14 @@
   "name": "missiv-server-bun",
   "version": "0.0.0",
   "dependencies": {
+    "drizzle-orm": "^0.30.6",
     "hono": "^4.1.5",
     "missiv-server-app": "workspace:*"
   },
   "devDependencies": {
-    "bun-types": "^1.0.36"
+    "better-sqlite3": "^9.4.3",
+    "bun-types": "^1.0.36",
+    "drizzle-kit": "^0.20.14"
   },
   "scripts": {
     "build": "echo 'No setup for build'",
