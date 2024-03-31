@@ -3,3 +3,4 @@ packages:
   - 'server/platforms/*'
   - 'server/app'
   - 'types'
+  - 'test'

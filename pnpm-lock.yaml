@@ -188,20 +188,7 @@ importers:
         specifier: ^3.32.0
         version: 3.41.0(@cloudflare/workers-types@4.20240320.1)
 
-  server/platforms/client-bun:
-    dependencies:
-      hono:
-        specifier: ^4.1.5
-        version: 4.1.5
-      missiv-server-app:
-        specifier: workspace:*
-        version: link:../../app
-    devDependencies:
-      bun-types:
-        specifier: ^1.0.36
-        version: 1.0.36
-
-  server/platforms/nodejs:
+  server/platforms/nodejs-better-sqlite3:
     dependencies:
       '@hono/node-server':
         specifier: ^1.9.1
@@ -228,6 +215,19 @@ importers:
       tsx:
         specifier: ^4.7.1
         version: 4.7.1
+
+  test:
+    dependencies:
+      hono:
+        specifier: ^4.1.5
+        version: 4.1.5
+      missiv-server-app:
+        specifier: workspace:*
+        version: link:../server/app
+    devDependencies:
+      bun-types:
+        specifier: ^1.0.36
+        version: 1.0.36
 
   types:
     dependencies:
