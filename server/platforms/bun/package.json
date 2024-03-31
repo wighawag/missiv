@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "echo 'No setup for build'",
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "db:migrate": "bun migrate.ts ../../app/drizzle/migrations"
   }
 }
