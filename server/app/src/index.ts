@@ -1,20 +1,18 @@
-import {DrizzleD1Database} from 'drizzle-orm/d1';
-import {BunSQLiteDatabase} from 'drizzle-orm/bun-sqlite';
-import {BetterSQLite3Database} from 'drizzle-orm/better-sqlite3';
 import {Context, Hono} from 'hono';
 import {WSEvents} from 'hono/ws';
 import {Bindings} from 'hono/types';
 import {posts} from './db/schema';
+import {Server, ServerOptions} from './types';
+import {ServerObjectHandlerExample} from './websocket/ServerObjectHandlerExample';
+
+export * from './types';
 
 export function createServer<
 	Env extends Bindings = Bindings,
 	TSchema extends Record<string, unknown> = Record<string, never>,
->(
-	getDB: (
-		c: Context<{Bindings: Env}>,
-	) => BetterSQLite3Database<TSchema> | DrizzleD1Database<TSchema> | BunSQLiteDatabase<TSchema>,
-): {app: Hono<{Bindings: Env}>; handleWebsocket(c: Context<{Bindings: Env}>): WSEvents | Promise<WSEvents>} {
+>(options: ServerOptions<Env, TSchema>): Server<Env> {
 	const app = new Hono<{Bindings: Env & {}}>();
+	const {getDB, getServerObject} = options;
 
 	app
 		.get('/', (c) => {
@@ -30,6 +28,14 @@ export function createServer<
 			const {title, content} = await c.req.json();
 			const result = await db.insert(posts).values({title, content}).returning();
 			return c.json(result);
+		})
+		.get('/room/:name/websocket', (c) => {
+			const websocketServerInstance = getServerObject(
+				c,
+				c.req.param().name,
+				(instance) => new ServerObjectHandlerExample(instance),
+			);
+			return websocketServerInstance.fetch(c.req.url);
 		});
 
 	return {
@@ -37,12 +43,9 @@ export function createServer<
 		handleWebsocket(c: Context<{Bindings: Env}>): WSEvents | Promise<WSEvents> {
 			return {
 				onMessage(event, ws) {
-					console.log(`Message from client: ${event.data}`);
-					ws.send('Hello from server!');
+					ws.send(`Echo: ${event.data}`);
 				},
-				onClose: () => {
-					console.log('Connection closed');
-				},
+				onClose: () => {},
 			};
 		},
 	};

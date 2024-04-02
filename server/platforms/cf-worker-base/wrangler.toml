@@ -5,3 +5,12 @@ compatibility_date = "2023-12-01"
 binding = "DB" # i.e. available in your Worker on env.DB
 database_name = "missiv-db-tmp"
 database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
+
+
+[[durable_objects.bindings]]
+name = "WEBSOCKET_HIBERNATION_SERVER"
+class_name = "WebSocketHibernationServer"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["WebSocketHibernationServer"]
