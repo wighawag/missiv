@@ -25,6 +25,7 @@ export abstract class Room extends AbstractServerObject {
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+		console.log(`message@: ${message}`);
 		// Upon receiving a message from the client, reply with the same message,
 		// but will prefix the message with "[Server Object]: ".
 		ws.send(`[Server Object]: ${message}`);

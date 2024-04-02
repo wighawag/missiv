@@ -9,7 +9,7 @@ database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
 
 [[durable_objects.bindings]]
 name = "ROOM_DO"
-class_name = "RoomDo"
+class_name = "RoomDO"
 
 [[migrations]]
 tag = "v1"
