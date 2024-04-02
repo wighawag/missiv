@@ -1,27 +1,19 @@
-import {createServer, ServerObjetHandler} from 'missiv-server-app';
+import {createServer, Room} from 'missiv-server-app';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {drizzle} from 'drizzle-orm/d1';
 
 type Env = {
 	DB: D1Database;
-	WEBSOCKET_HIBERNATION_SERVER: DurableObjectNamespace;
+	ROOM_DO: DurableObjectNamespace;
 };
 
-export class WebSocketHibernationServer {
+// for each ServerObject we need a class that do the following:
+export class RoomDO extends Room {
 	state: DurableObjectState;
-	_handler!: ServerObjetHandler;
 
 	constructor(state: DurableObjectState) {
+		super();
 		this.state = state;
-	}
-
-	setHandler(handler: ServerObjetHandler): void {
-		this._handler = handler;
-	}
-
-	// Handle HTTP requests from clients.
-	async fetch(request: Request): Promise<Response> {
-		return this._handler.fetch(request);
 	}
 
 	async upgradeWebsocket(request: Request): Promise<Response> {
@@ -56,30 +48,20 @@ export class WebSocketHibernationServer {
 	getWebSockets(tag?: string): WebSocket[] {
 		return this.state.getWebSockets(tag);
 	}
-
-	webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
-		return this._handler.webSocketMessage(ws, message);
-	}
-
-	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-		return this._handler.webSocketClose(ws, code, reason, wasClean);
-	}
 }
 
-const {app, handleWebsocket} = createServer<Env>({
+const app = createServer<Env>({
 	getDB: (c) => drizzle(c.env.DB),
-	getServerObject: (c, idOrName, implementation) => {
+	getRoom: (c, idOrName) => {
 		if (typeof idOrName == 'string') {
-			idOrName = c.env.WEBSOCKET_HIBERNATION_SERVER.idFromName(idOrName);
+			idOrName = c.env.ROOM_DO.idFromName(idOrName);
 		}
-		let stub: DurableObjectStub = c.env.WEBSOCKET_HIBERNATION_SERVER.get(idOrName);
-		const instance = stub as unknown as WebSocketHibernationServer;
-		instance.setHandler(implementation(instance));
+		let stub: DurableObjectStub = c.env.ROOM_DO.get(idOrName);
+		const instance = stub as unknown as RoomDO;
 		return instance;
 	},
+	upgradeWebSocket,
 });
-
-app.get('/ws', upgradeWebSocket(handleWebsocket));
 
 export default {
 	fetch: app.fetch,

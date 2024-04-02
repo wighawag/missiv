@@ -8,9 +8,9 @@ database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
 
 
 [[durable_objects.bindings]]
-name = "WEBSOCKET_HIBERNATION_SERVER"
-class_name = "WebSocketHibernationServer"
+name = "ROOM_DO"
+class_name = "RoomDo"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["WebSocketHibernationServer"]
+new_classes = ["RoomDO"]

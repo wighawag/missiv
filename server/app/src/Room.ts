@@ -1,19 +1,13 @@
-import {ServerObjetInstance} from '../types';
+import {AbstractServerObject} from './server-abstraction';
 
-export class ServerObjectHandlerExample {
-	so: ServerObjetInstance;
-
-	constructor(so: ServerObjetInstance) {
-		this.so = so;
-	}
-
+export abstract class Room extends AbstractServerObject {
 	// Handle HTTP requests from clients.
 	async fetch(request: Request): Promise<Response> {
 		if (request.url.endsWith('/websocket')) {
-			return this.so.upgradeWebsocket(request);
+			return this.upgradeWebsocket(request);
 		} else if (request.url.endsWith('/getCurrentConnections')) {
 			// Retrieves all currently connected websockets accepted via `acceptWebSocket()`.
-			let numConnections: number = this.so.getWebSockets().length;
+			let numConnections: number = this.getWebSockets().length;
 			if (numConnections == 1) {
 				return new Response(`There is ${numConnections} WebSocket client connected to this Durable Object instance.`);
 			}

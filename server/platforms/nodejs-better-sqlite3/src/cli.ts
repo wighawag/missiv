@@ -8,7 +8,17 @@ export function getDB() {
 	return drizzle(sqlite);
 }
 
-const {app} = createServer(getDB);
+export function getRoom() {
+	return {} as any;
+}
+
+const app = createServer({
+	getDB,
+	getRoom,
+	upgradeWebSocket: (d: any) => {
+		return {} as any;
+	},
+});
 
 const port = 3000;
 console.log(`Server is running on port ${port}`);

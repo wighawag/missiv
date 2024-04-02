@@ -7,10 +7,13 @@ export function getDB() {
 	const sqlite = new Database('sqlite.db');
 	return drizzle(sqlite);
 }
-const {upgradeWebSocket, websocket} = createBunWebSocket();
-const {app, handleWebsocket} = createServer(getDB);
 
-app.get('/ws', upgradeWebSocket(handleWebsocket));
+export function getRoom() {
+	return {} as any;
+}
+
+const {upgradeWebSocket, websocket} = createBunWebSocket();
+const app = createServer({getDB, getRoom, upgradeWebSocket});
 
 Bun.serve({
 	fetch: app.fetch,

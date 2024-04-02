@@ -3,25 +3,11 @@ import {BunSQLiteDatabase} from 'drizzle-orm/bun-sqlite';
 import {DrizzleD1Database} from 'drizzle-orm/d1';
 import {LibSQLDatabase} from 'drizzle-orm/libsql';
 import {Context, Hono} from 'hono';
-import {Bindings} from 'hono/types';
-import {WSEvents} from 'hono/ws';
+import {Bindings, MiddlewareHandler} from 'hono/types';
+import {UpgradedWebSocketResponseInputJSONType, WSEvents} from 'hono/ws';
+import {AbstractServerObject} from '.';
 
-export type Server<Env extends Bindings = Bindings> = {
-	app: Hono<{Bindings: Env}>;
-	handleWebsocket(c: Context<{Bindings: Env}>): WSEvents | Promise<WSEvents>;
-};
-
-export type ServerObjetInstance = {
-	fetch(input: RequestInfo, init?: RequestInit): Promise<Response>;
-	upgradeWebsocket(request: Request): Promise<Response>;
-	getWebSockets(tag?: string): WebSocket[];
-};
-
-export type ServerObjetHandler = {
-	fetch(input: RequestInfo, init?: RequestInit): Promise<Response>;
-	webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> | void;
-	webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> | void;
-};
+export type Server<Env extends Bindings = Bindings> = Hono<{Bindings: Env}>;
 
 export type ServerObjectId = {
 	toString(): string;
@@ -55,9 +41,14 @@ export type ServerOptions<
 		| DrizzleD1Database<TSchema>
 		| BunSQLiteDatabase<TSchema>
 		| LibSQLDatabase<TSchema>;
-	getServerObject: (
-		c: Context<{Bindings: Env}>,
-		idOrName: ServerObjectId | string,
-		implementation: (instance: ServerObjetInstance) => ServerObjetHandler,
-	) => ServerObjetInstance;
+	getRoom: (c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) => AbstractServerObject;
+	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
+		any,
+		string,
+		{
+			in: {
+				json: UpgradedWebSocketResponseInputJSONType;
+			};
+		}
+	>;
 };
