@@ -5,9 +5,11 @@ import {LibSQLDatabase} from 'drizzle-orm/libsql';
 import {Context, Hono} from 'hono';
 import {Bindings, MiddlewareHandler} from 'hono/types';
 import {UpgradedWebSocketResponseInputJSONType, WSEvents} from 'hono/ws';
-import {AbstractServerObject} from '.';
 
-export type Server<Env extends Bindings = Bindings> = Hono<{Bindings: Env}>;
+export abstract class AbstractServerObject {
+	abstract upgradeWebsocket(request: Request): Promise<Response>;
+	abstract getWebSockets(): WebSocket[];
+}
 
 export type ServerObjectId = {
 	toString(): string;
@@ -41,7 +43,7 @@ export type ServerOptions<
 		| DrizzleD1Database<TSchema>
 		| BunSQLiteDatabase<TSchema>
 		| LibSQLDatabase<TSchema>;
-	getRoom: (c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) => AbstractServerObject;
+	getRoom: (c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) => ServerObject;
 	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
 		any,
 		string,
@@ -51,4 +53,8 @@ export type ServerOptions<
 			};
 		}
 	>;
+};
+
+export type ServerObject = {
+	fetch(input: RequestInfo, init?: RequestInit): Promise<Response>;
 };

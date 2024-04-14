@@ -1,9 +1,10 @@
 import {Context, Hono} from 'hono';
 import {Bindings, BlankInput, MiddlewareHandler} from 'hono/types';
 import {posts} from './db/schema';
-import {Server, ServerOptions} from './server-abstraction/types';
+import {ServerOptions} from './types';
 import {UpgradedWebSocketResponseInputJSONType} from 'hono/ws';
 
+export type {ServerObject, ServerObjectId} from './types';
 export {Room} from './Room';
 
 type WebsocketResponse = MiddlewareHandler<
@@ -26,7 +27,7 @@ export function createServer<
 	return (
 		app
 			.get('/', (c) => {
-				return c.text('Hello dd!');
+				return c.text('Hello world!');
 			})
 			.get('/posts', async (c) => {
 				const db = getDB(c);

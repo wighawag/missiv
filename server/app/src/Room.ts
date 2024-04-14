@@ -1,4 +1,4 @@
-import {AbstractServerObject} from './server-abstraction';
+import {AbstractServerObject} from './types';
 
 export abstract class Room extends AbstractServerObject {
 	// Handle HTTP requests from clients.

@@ -56,9 +56,7 @@ const app = createServer<Env>({
 		if (typeof idOrName == 'string') {
 			idOrName = c.env.ROOM_DO.idFromName(idOrName);
 		}
-		let stub: DurableObjectStub = c.env.ROOM_DO.get(idOrName);
-		const instance = stub as unknown as RoomDO;
-		return instance;
+		return c.env.ROOM_DO.get(idOrName);
 	},
 	upgradeWebSocket,
 });
