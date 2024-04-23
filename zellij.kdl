@@ -1,9 +1,6 @@
 layout {
 	pane split_direction="vertical" {
 		pane command="bash"  {
-			args "-c" "pnpm types:dev; cd types; ${SHELL-bash}"
-		}
-		pane command="bash"  {
 			args "-c" "pnpm client:dev; cd client; ${SHELL-bash}"
 		}
 		pane command="bash"  {

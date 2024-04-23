@@ -17,6 +17,11 @@ export type ServerObjectId = {
 	readonly name?: string;
 };
 
+export type DB<TSchema extends Record<string, unknown> = Record<string, never>> =
+	// | BetterSQLite3Database<TSchema> // We need Batch
+	// | BunSQLiteDatabase<TSchema> // We need batch
+	DrizzleD1Database<TSchema>; // | LibSQLDatabase<TSchema>;
+
 // export type ServerObjectState = {
 // 	//   waitUntil(promise: Promise<any>): void;
 // 	readonly id: ServerObjectId;
@@ -36,13 +41,7 @@ export type ServerOptions<
 	Env extends Bindings = Bindings,
 	TSchema extends Record<string, unknown> = Record<string, never>,
 > = {
-	getDB: (
-		c: Context<{Bindings: Env}>,
-	) =>
-		| BetterSQLite3Database<TSchema>
-		| DrizzleD1Database<TSchema>
-		| BunSQLiteDatabase<TSchema>
-		| LibSQLDatabase<TSchema>;
+	getDB: (c: Context<{Bindings: Env}>) => DB<TSchema>;
 	getRoom: (c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) => ServerObject;
 	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
 		any,

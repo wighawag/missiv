@@ -1,6 +1,6 @@
 import {Context, Hono} from 'hono';
 import {Bindings, BlankInput, MiddlewareHandler} from 'hono/types';
-import {posts} from './db/schema';
+import {messages} from './db/schema';
 import {ServerOptions} from './types';
 import {UpgradedWebSocketResponseInputJSONType} from 'hono/ws';
 
@@ -31,14 +31,15 @@ export function createServer<
 			})
 			.get('/posts', async (c) => {
 				const db = getDB(c);
-				const result = await db.select().from(posts).all();
+				const result = await db.select().from(messages).all();
 				return c.json(result);
 			})
 			.post('/posts', async (c) => {
 				const db = getDB(c);
 				const {title, content} = await c.req.json();
-				const result = await db.insert(posts).values({title, content}).returning();
-				return c.json(result);
+				// const result = await db.insert(messages).values({title, content}).returning();
+				// return c.json(result);
+				return c.json({});
 			})
 			.get('/websocket', async (c) => {
 				console.log({name: 'global websocket'});
