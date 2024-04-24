@@ -4,7 +4,7 @@ import { RemoteD1 } from './api/d1db';
 
 type Env = {
 	DB: D1Database;
-	ROOM_DO: DurableObjectNamespace;
+	ROOMS: DurableObjectNamespace;
 };
 
 // for each ServerObject we need a class that do the following:
@@ -54,9 +54,9 @@ const app = createServer<Env>({
 	getDB: (c) => new RemoteD1(c.env.DB),
 	getRoom: (c, idOrName) => {
 		if (typeof idOrName == 'string') {
-			idOrName = c.env.ROOM_DO.idFromName(idOrName);
+			idOrName = c.env.ROOMS.idFromName(idOrName);
 		}
-		return c.env.ROOM_DO.get(idOrName);
+		return c.env.ROOMS.get(idOrName);
 	},
 	upgradeWebSocket,
 });
