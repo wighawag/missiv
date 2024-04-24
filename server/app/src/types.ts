@@ -1,7 +1,7 @@
 import {Context} from 'hono';
 import {Bindings, MiddlewareHandler} from 'hono/types';
 import {UpgradedWebSocketResponseInputJSONType, WSEvents} from 'hono/ws';
-import {RemoteSQL} from '../dist';
+import {RemoteSQL} from './utils/DB';
 
 export abstract class AbstractServerObject {
 	abstract upgradeWebsocket(request: Request): Promise<Response>;
