@@ -1,6 +1,6 @@
 
 # reset DB
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 content-type: application/json
 
 {
@@ -19,7 +19,7 @@ content-type: application/json
 
 
 # registering
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 content-type: application/json
 SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
@@ -36,7 +36,7 @@ SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 # sending "hello world"
 #  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 #  to 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 content-type: application/json
 SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
@@ -56,7 +56,7 @@ SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 # sending "Yo !"
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  to 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 content-type: application/json
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 
@@ -70,7 +70,7 @@ SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 
 # getting list of chats
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -84,7 +84,7 @@ content-type: application/json
 # getting messages from chat
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  with 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -97,7 +97,7 @@ content-type: application/json
 
 # mark as read up to 01/01/2038
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:34003/api/messages HTTP/1.1
+POST http://localhost:34003/api/private HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 

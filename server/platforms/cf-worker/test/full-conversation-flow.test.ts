@@ -58,7 +58,7 @@ describe('Worker', () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new API('http://localhost/api/messages', {
+		api = new API('http://localhost/api/private', {
 			fetch: worker.fetch.bind(worker) as FetchFunction,
 		});
 	});

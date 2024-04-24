@@ -16,7 +16,7 @@ import {ServerOptions} from '../../types';
 import {recoverMessageAddress} from 'viem';
 import {RemoteSQLStorage} from '../../storage/RemoteSQLStorage';
 
-export function getMessagesAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
+export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const {getDB} = options;
 
 	const app = new Hono<{Bindings: Env & {}}>().post('/', async (c) => {
