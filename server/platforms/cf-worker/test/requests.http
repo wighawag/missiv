@@ -1,6 +1,6 @@
 
 # reset DB
-POST http://localhost:34003/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 content-type: application/json
 
 {
@@ -18,18 +18,36 @@ content-type: application/json
 # ### 
 
 
+# registering
+POST http://localhost:34003/api/messages HTTP/1.1
+content-type: application/json
+SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+{
+"type": "register",
+"domain": "test",
+"signature": "0x",
+"address": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
+### 
+
+
 
 # sending "hello world"
 #  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 #  to 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 content-type: application/json
 SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 {
 "type": "sendMessage",
+"domain": "test",
+"namespace": "test",
 "to": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-"message": "hello world"
+"message": "hello world",
+"messageType": "clear",
+"signature": "0xFAKE"
 }
 ### 
 
@@ -38,7 +56,7 @@ SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 # sending "Yo !"
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  to 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 content-type: application/json
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 
@@ -52,7 +70,7 @@ SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 
 # getting list of chats
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -66,7 +84,7 @@ content-type: application/json
 # getting messages from chat
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  with 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -79,7 +97,7 @@ content-type: application/json
 
 # mark as read up to 01/01/2038
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:34003/api/messages HTTP/1.1
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -89,22 +107,3 @@ content-type: application/json
 }
 ### 
 
-
-############################################################
-
-
-POST http://localhost:8787/api HTTP/1.1
-content-type: application/json
-
-{
-"type": "kv:list"
-}
-###
-
-POST http://localhost:8787/api HTTP/1.1
-content-type: application/json
-
-{
-"type": "kv:delete"
-}
-###

@@ -1,10 +1,12 @@
 import {Context, Hono} from 'hono';
+import {cors} from 'hono/cors';
 import {Bindings, BlankInput, MiddlewareHandler} from 'hono/types';
-import {messages} from './db/schema';
 import {ServerOptions} from './types';
 import {UpgradedWebSocketResponseInputJSONType} from 'hono/ws';
+import {getMessagesAPI} from './api/messages';
 
 export type {ServerObject, ServerObjectId} from './types';
+export type {Storage} from './storage';
 export {Room} from './Room';
 
 type WebsocketResponse = MiddlewareHandler<
@@ -17,29 +19,33 @@ type WebsocketResponse = MiddlewareHandler<
 	}
 >;
 
-export function createServer<
-	Env extends Bindings = Bindings,
-	TSchema extends Record<string, unknown> = Record<string, never>,
->(options: ServerOptions<Env, TSchema>) {
+export function createServer<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>();
-	const {getDB, getRoom, upgradeWebSocket} = options;
+	const {getStorage, getRoom, upgradeWebSocket} = options;
+
+	const messagesAPI = getMessagesAPI<Env>(options);
 
 	return (
 		app
+			.use(
+				'/*',
+				cors({
+					// 'Access-Control-Allow-Origin': '*',
+					// 'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
+					// 'Access-Control-Allow-Headers': 'Content-Type,SIGNATURE',
+					// 'Access-Control-Max-Age': '86400',
+					// Allow: 'GET, HEAD, POST, OPTIONS',
+					origin: '*',
+					allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE'],
+					allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
+					exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
+					maxAge: 600,
+					credentials: true,
+				}),
+			)
+			.route('api/messages', messagesAPI)
 			.get('/', (c) => {
 				return c.text('Hello world!');
-			})
-			.get('/posts', async (c) => {
-				const db = getDB(c);
-				const result = await db.select().from(messages).all();
-				return c.json(result);
-			})
-			.post('/posts', async (c) => {
-				const db = getDB(c);
-				const {title, content} = await c.req.json();
-				// const result = await db.insert(messages).values({title, content}).returning();
-				// return c.json(result);
-				return c.json({});
 			})
 			.get('/websocket', async (c) => {
 				console.log({name: 'global websocket'});

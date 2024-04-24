@@ -1,44 +1,72 @@
-import type { Env } from './env';
-import { handleErrors } from './utils';
-import { handleComversationsApiRequest } from './api';
+import { createServer, Room } from 'missiv-server-app';
+import { upgradeWebSocket } from 'hono/cloudflare-workers';
+import { D1Storage } from './api/D1Storage';
 
-//@ts-ignore
-import INDEX_HTML from './index.html';
-import { CorsResponse, handleOptions } from './cors';
-import { handleRoomsApiRequest } from './ChatRoom/api';
+type Env = {
+	DB: D1Database;
+	ROOM_DO: DurableObjectNamespace;
+};
 
-export { ChatRoom, RateLimiter } from './ChatRoom';
+// for each ServerObject we need a class that do the following:
+export class ChatRoom extends Room {
+	state: DurableObjectState;
+
+	constructor(state: DurableObjectState) {
+		super();
+		this.state = state;
+	}
+
+	async upgradeWebsocket(request: Request): Promise<Response> {
+		// Expect to receive a WebSocket Upgrade request.
+		// If there is one, accept the request and return a WebSocket Response.
+		const upgradeHeader = request.headers.get('Upgrade');
+		if (!upgradeHeader || upgradeHeader !== 'websocket') {
+			return new Response('Durable Object expected Upgrade: websocket', { status: 426 });
+		}
+
+		// Creates two ends of a WebSocket connection.
+		const webSocketPair = new WebSocketPair();
+		const [client, server] = Object.values(webSocketPair);
+
+		// Calling `acceptWebSocket()` tells the runtime that this WebSocket is to begin terminating
+		// request within the Durable Object. It has the effect of "accepting" the connection,
+		// and allowing the WebSocket to send and receive messages.
+		// Unlike `ws.accept()`, `state.acceptWebSocket(ws)` informs the Workers Runtime that the WebSocket
+		// is "hibernatable", so the runtime does not need to pin this Durable Object to memory while
+		// the connection is open. During periods of inactivity, the Durable Object can be evicted
+		// from memory, but the WebSocket connection will remain open. If at some later point the
+		// WebSocket receives a message, the runtime will recreate the Durable Object
+		// (run the `constructor`) and deliver the message to the appropriate handler.
+		this.state.acceptWebSocket(server);
+
+		return new Response(null, {
+			status: 101,
+			webSocket: client,
+		});
+	}
+
+	getWebSockets(tag?: string): WebSocket[] {
+		return this.state.getWebSockets(tag);
+	}
+}
+
+const app = createServer<Env>({
+	getStorage: (c) => new D1Storage(c.env.DB),
+	getRoom: (c, idOrName) => {
+		if (typeof idOrName == 'string') {
+			idOrName = c.env.ROOM_DO.idFromName(idOrName);
+		}
+		return c.env.ROOM_DO.get(idOrName);
+	},
+	upgradeWebSocket,
+});
 
 export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		if (request.method === 'OPTIONS') {
-			return handleOptions(request);
-		}
-		return await handleErrors(request, async () => {
-			let url = new URL(request.url);
-			let path = url.pathname.slice(1).split('/');
-
-			if (!path[0]) {
-				// Serve our HTML at the root path.
-				return new CorsResponse(INDEX_HTML, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
-			}
-
-			switch (path[0]) {
-				case 'api':
-					if (path.length > 1) {
-						switch (path[1]) {
-							case 'rooms':
-								return handleRoomsApiRequest(path.slice(2), request, env);
-							default:
-								return new CorsResponse('Not found', { status: 404 });
-						}
-					} else {
-						return handleComversationsApiRequest(path.slice(1), request, env);
-					}
-
-				default:
-					return new CorsResponse('Not found', { status: 404 });
-			}
+	fetch: app.fetch,
+	// @ts-expect-error TS6133
+	async scheduled(event, env, ctx) {
+		ctx.waitUntil(() => {
+			console.log(`scheduled`);
 		});
 	},
 };

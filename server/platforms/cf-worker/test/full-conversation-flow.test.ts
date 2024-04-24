@@ -1,10 +1,11 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction, publicKeyAuthorizationMessage } from 'missiv-client';
+import { API, FetchFunction } from 'missiv-client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
+import { publicKeyAuthorizationMessage } from 'missiv';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -57,7 +58,7 @@ describe('Worker', () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new API('http://localhost/api', {
+		api = new API('http://localhost/api/messages', {
 			fetch: worker.fetch.bind(worker) as FetchFunction,
 		});
 	});
@@ -90,7 +91,7 @@ describe('Worker', () => {
 		const resp = await worker.fetch();
 		if (resp) {
 			const text = await resp.text();
-			expect(text).toMatchInlineSnapshot(`"Hello world\n"`);
+			expect(text).toMatchInlineSnapshot(`"Hello world!"`);
 		}
 	});
 

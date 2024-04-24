@@ -36,7 +36,7 @@ describe('Registration of keys', () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new API('http://localhost/api', {
+		api = new API('http://localhost/api/messages', {
 			fetch: worker.fetch.bind(worker) as FetchFunction,
 		});
 	});
@@ -67,11 +67,11 @@ describe('Registration of keys', () => {
 		const { user } = await api.getUser({
 			address: USER_B.address,
 		});
-		const { domainUser } = await api.getDomainUser({
+		const { completeUser } = await api.getCompleteUser({
 			address: USER_B.address,
 			domain: 'test',
 		});
 		expect(user?.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
-		expect(domainUser?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
+		expect(completeUser?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
 	});
 });

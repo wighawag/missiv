@@ -1,7 +1,10 @@
 layout {
 	pane split_direction="vertical" {
 		pane command="bash"  {
-			args "-c" "pnpm client:dev; cd client; ${SHELL-bash}"
+			args "-c" "pnpm types:dev; cd types; ${SHELL-bash}"
+		}
+		pane command="bash"  {
+			args "-c" "pnpm client:dev:build; cd client; ${SHELL-bash}"
 		}
 		pane command="bash"  {
 			args "-c" "pnpm server:dev; cd server/app; ${SHELL-bash}"
@@ -9,7 +12,7 @@ layout {
 	}
 	pane split_direction="vertical" {
 		pane command="bash"  {
-			args "-c" "pnpm platform:cf-worker:dev; cd server/platforms/cf-worker-base; ${SHELL-bash}"
+			args "-c" "pnpm platform:cf-worker:dev; cd server/platforms/cf-worker; ${SHELL-bash}"
 		}
 	}
 

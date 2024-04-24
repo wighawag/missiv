@@ -22,9 +22,10 @@ database_id = "accc2885-d412-447d-a1ed-daf6758cb8e4"
 [durable_objects]
 bindings = [
   { name = "ROOMS", class_name = "ChatRoom" },
-  { name = "LIMITERS", class_name = "RateLimiter" }
+  #TODO { name = "LIMITERS", class_name = "RateLimiter" }
 ]
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ChatRoom", "RateLimiter"]
+# TODO new_classes = ["ChatRoom", "RateLimiter"]
+new_classes = ["ChatRoom"]

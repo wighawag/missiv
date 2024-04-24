@@ -75,7 +75,7 @@ export async function handleRoomsApiRequest(path: string[], request: Request, en
 			// Send the request to the object. The `fetch()` method of a Durable Object stub has the
 			// same signature as the global `fetch()` function, but the request is always sent to the
 			// object, regardless of the request's URL.
-			return roomObject.fetch(newUrl, request);
+			return roomObject.fetch(newUrl.toString(), request);
 		}
 
 		default:

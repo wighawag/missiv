@@ -16,17 +16,11 @@ import type {
 	ResponseGetMissivUser,
 	ResponseRegisterDomainUser,
 	ResponseSendMessage,
-	ActionGetDomainUser,
-	ResponseGetDomainUser,
-	ActionSendMessageInClear,
-	ActionSendEncryptedMessage
+	ResponseGetCompleteUser,
+	ActionGetCompleteUser
 } from 'missiv';
-import { signAsync, utils as secpUtils, getSharedSecret } from '@noble/secp256k1';
+import { signAsync } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
-import { randomBytes, bytesToHex } from '@noble/hashes/utils';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
-import { base64 } from '@scure/base';
 
 export type FetchFunction = typeof fetch;
 
@@ -71,8 +65,10 @@ export class API {
 		if (resp.status !== 200) {
 			throw new Error(await resp.text());
 		}
+
 		if (resp) {
-			return (await resp.json()) as T;
+			const json = (await resp.json()) as T;
+			return json;
 		} else {
 			throw new Error(`no response`);
 		}
@@ -163,9 +159,9 @@ export class API {
 		});
 	}
 
-	async getDomainUser(action: Omit<ActionGetDomainUser, 'type'>) {
-		return this.call<ResponseGetDomainUser>({
-			type: 'getDomainUser',
+	async getCompleteUser(action: Omit<ActionGetCompleteUser, 'type'>) {
+		return this.call<ResponseGetCompleteUser>({
+			type: 'getCompleteUser',
 			...action
 		});
 	}

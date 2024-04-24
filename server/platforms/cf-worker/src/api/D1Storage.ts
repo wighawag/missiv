@@ -19,7 +19,8 @@ import {
 	ResponseGetAcceptedConversations,
 	ActionGetMessages,
 } from 'missiv';
-import { Storage } from './Storage';
+import { ResponseGetCompleteUser } from 'missiv';
+import { Storage } from 'missiv-server-app';
 
 type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & { read: 0 | 1; accepted: 0 | 1 };
 
@@ -66,19 +67,19 @@ export class D1Storage implements Storage {
 		return { user: undefined };
 	}
 
-	async getDomainUser(domain: string, address: Address): Promise<ResponseGetDomainUser> {
+	async getCompleteUser(domain: string, address: Address): Promise<ResponseGetCompleteUser> {
 		const response = await this.db
 			.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = ?1 AND user = ?1 AND domain = ?2;`)
 			.bind(address, domain)
 			.all();
 
 		if (response.results.length === 1) {
-			return { domainUser: response.results[0] as DomainUser & MissivUser };
+			return { completeUser: response.results[0] as DomainUser & MissivUser };
 		}
-		return { domainUser: undefined };
+		return { completeUser: undefined };
 	}
 
-	async getUserAddressByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser> {
+	async getCompleteUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetCompleteUser> {
 		// const response = await this.db.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
 		const response = await this.db
 			.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = DomainUsers.user AND publicKey = ?1;`)
@@ -86,7 +87,15 @@ export class D1Storage implements Storage {
 			.all();
 
 		if (response.results.length === 1) {
-			return { domainUser: response.results[0] as DomainUser & MissivUser };
+			return { completeUser: response.results[0] as DomainUser & MissivUser };
+		}
+		return { completeUser: undefined };
+	}
+
+	async getDomainUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser> {
+		const response = await this.db.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
+		if (response.results.length === 1) {
+			return { domainUser: response.results[0] as DomainUser };
 		}
 		return { domainUser: undefined };
 	}
@@ -132,6 +141,7 @@ export class D1Storage implements Storage {
 				action.signature,
 			),
 		]);
+		console.log({ timestampMS });
 		return {
 			timestampMS,
 		};

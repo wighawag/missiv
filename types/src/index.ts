@@ -170,7 +170,7 @@ export type ActionGetMissivUser = Output<typeof SchemaActionGetMissivUser>;
 export type ResponseGetMissivUser = {user: MissivUser | undefined};
 
 export type DomainUser = {
-	address: Address;
+	user: Address;
 	domain: string;
 	domainUsername: string;
 	publicKey: PublicKey;
@@ -178,13 +178,21 @@ export type DomainUser = {
 	lastPresence: number;
 	added: number;
 };
-export const SchemaActionGetDomainUser = object({
-	type: literal('getDomainUser'),
+// export const SchemaActionGetDomainUser = object({
+// 	type: literal('getDomainUser'),
+// 	domain: string(),
+// 	address: string0x(),
+// });
+// export type ActionGetDomainUser = Output<typeof SchemaActionGetDomainUser>;
+export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
+
+export const SchemaActionGetCompleteUser = object({
+	type: literal('getCompleteUser'),
 	domain: string(),
 	address: string0x(),
 });
-export type ActionGetDomainUser = Output<typeof SchemaActionGetDomainUser>;
-export type ResponseGetDomainUser = {domainUser: (DomainUser & MissivUser) | undefined};
+export type ActionGetCompleteUser = Output<typeof SchemaActionGetCompleteUser>;
+export type ResponseGetCompleteUser = {completeUser: (DomainUser & MissivUser) | undefined};
 
 export const SchemaActionRegisterDomainUser = object({
 	type: literal('register'),
@@ -207,7 +215,7 @@ export const SchemaAction = variant('type', [
 	SchemaActionGetMessages,
 	SchemaActionAcceptConversation,
 	SchemaActionGetMissivUser,
-	SchemaActionGetDomainUser,
+	SchemaActionGetCompleteUser,
 
 	object({
 		type: literal('db:select'),
