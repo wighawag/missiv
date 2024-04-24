@@ -1,11 +1,12 @@
 import { unstable_dev } from 'wrangler';
 import type { UnstableDevWorker } from 'wrangler';
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction, getPublicKey, publicKeyAuthorizationMessage } from 'missiv-client';
+import { API, FetchFunction, getPublicKey } from 'missiv-client';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
 import { utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
+import { publicKeyAuthorizationMessage } from 'missiv-server-app';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -36,7 +37,7 @@ describe('Registration of keys', () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new API('http://localhost/api/private', {
+		api = new API('http://localhost/api', {
 			fetch: worker.fetch.bind(worker) as FetchFunction,
 		});
 	});
@@ -55,7 +56,7 @@ describe('Registration of keys', () => {
 			publicKey: userBDelegatePublicKey,
 		});
 		const signature = await userBAccount.signMessage({ message: userBMessage });
-		await api.register(
+		const response = await api.register(
 			{
 				address: USER_B.address,
 				signature: signature,
@@ -63,6 +64,7 @@ describe('Registration of keys', () => {
 			},
 			{ publicKey: USER_B.publicKey },
 		);
+		console.log({ response });
 
 		const { user } = await api.getUser({
 			address: USER_B.address,

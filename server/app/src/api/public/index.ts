@@ -21,6 +21,9 @@ export function getPublicChatAPI<Env extends Bindings = Bindings>(options: Serve
 	const {getRoom, upgradeWebSocket} = options;
 
 	const app = new Hono<{Bindings: Env & {}}>()
+		.get('/', async (c) => {
+			return c.text('Hello World!');
+		})
 		.get('/websocket', async (c) => {
 			console.log({name: 'global websocket'});
 			const room = getRoom(c, 'global websocket');

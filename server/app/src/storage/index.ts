@@ -1,21 +1,22 @@
-import {ResponseGetCompleteUser} from 'missiv';
 import {
 	ActionAcceptConversation,
+	ActionGetMessages,
 	ActionMarkAsRead,
-	ActionRegisterDomainUser,
 	ActionSendMessage,
-	PublicKey,
 	ResponseAcceptConversation,
+	ResponseGetAcceptedConversations,
 	ResponseGetConversations,
 	ResponseGetMessages,
-	ResponseSendMessage,
-	Address,
-	ResponseGetMissivUser,
-	ResponseGetDomainUser,
 	ResponseGetUnacceptedConversations,
-	ResponseGetAcceptedConversations,
-	ActionGetMessages,
-} from 'missiv';
+	ResponseSendMessage,
+} from '../api/private/types';
+import {Address, PublicKey} from '../api/types';
+import {
+	ActionRegisterDomainUser,
+	ResponseGetCompleteUser,
+	ResponseGetDomainUser,
+	ResponseGetMissivUser,
+} from '../api/user/types';
 
 export interface Storage {
 	register(

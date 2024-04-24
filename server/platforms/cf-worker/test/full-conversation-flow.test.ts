@@ -5,7 +5,7 @@ import { API, FetchFunction } from 'missiv-client';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { getPublicKey, utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
-import { publicKeyAuthorizationMessage } from 'missiv';
+import { publicKeyAuthorizationMessage } from 'missiv-server-app';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -58,7 +58,7 @@ describe('Worker', () => {
 		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
 			experimental: { disableExperimentalWarning: true },
 		});
-		api = new API('http://localhost/api/private', {
+		api = new API('http://localhost/api', {
 			fetch: worker.fetch.bind(worker) as FetchFunction,
 		});
 	});

@@ -2,9 +2,9 @@ import { writable } from 'svelte/store';
 import { openOneConversation } from './single/index.js';
 import { openConversationsView } from './list/index.js';
 import type { APIConfig, User } from '$lib/types.js';
-import { type Address } from 'missiv';
 import { API } from '$lib/API.js';
 import type { ConversationsState, OtherUser } from './types.js';
+import type { Address } from 'missiv-server-app';
 
 const $store: ConversationsState = { registered: { state: 'idle' } };
 
@@ -40,14 +40,14 @@ export function setup(config?: APIConfig) {
 		if (isNewUser && newUser) {
 			if (api && config) {
 				api
-					.getDomainUser({
+					.getCompleteUser({
 						address: newUser.address,
 						domain: config.domain
 					})
-					.then(({ domainUser }) => {
+					.then(({ completeUser }) => {
 						$store.registered = {
 							state: 'ready',
-							confirmed: domainUser ? true : false
+							confirmed: completeUser ? true : false
 						};
 						store.set($store);
 					});
@@ -80,14 +80,14 @@ export function setup(config?: APIConfig) {
 			$store.registered = { state: 'loading' };
 			store.set($store);
 
-			const { domainUser } = await api.getDomainUser({
+			const { completeUser } = await api.getCompleteUser({
 				address: user.address,
 				domain: config.domain
 			});
 
 			$store.registered = {
 				state: 'ready',
-				confirmed: domainUser ? true : false
+				confirmed: completeUser ? true : false
 			};
 			store.set($store);
 		}

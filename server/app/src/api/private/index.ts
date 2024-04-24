@@ -1,147 +1,97 @@
-import {keccak_256} from '@noble/hashes/sha3';
-import {Signature} from '@noble/secp256k1';
 import {Hono} from 'hono';
 import {Bindings} from 'hono/types';
-import {
-	Action,
-	Address,
-	PublicKey,
-	SchemaAction,
-	SchemaAddress,
-	SchemaPublicKey,
-	parse,
-	publicKeyAuthorizationMessage,
-} from 'missiv';
 import {ServerOptions} from '../../types';
-import {recoverMessageAddress} from 'viem';
 import {RemoteSQLStorage} from '../../storage/RemoteSQLStorage';
-import {eth_auth, getAuth} from '../utils';
+import {zValidator} from '@hono/zod-validator';
+import {
+	SchemaActionAcceptConversation,
+	SchemaActionGetAcceptedConversations,
+	SchemaActionGetConversations,
+	SchemaActionGetMessages,
+	SchemaActionGetUnacceptedConversations,
+	SchemaActionMarkAsRead,
+	SchemaActionSendMessage,
+} from './types';
+import {eth_auth, getAuth} from '../auth';
 
 export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const {getDB} = options;
 
-	const app = new Hono<{Bindings: Env & {}}>().use(eth_auth({serverOptions: options})).post('/', async (c) => {
-		const storage = new RemoteSQLStorage(getDB(c));
-		const rawContent = await c.req.text();
-		const action: Action = parse(SchemaAction, JSON.parse(rawContent));
-		const timestampMS = Date.now();
-		const {account, publicKey} = getAuth(c);
-
-		switch (action.type) {
-			case 'register': {
-				if (!publicKey) {
-					throw new Error(`no publicKey authenticated`);
-				}
-
-				let address: Address;
-				if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
-					if (c.env.WORKER_ENV !== 'dev') {
-						throw new Error(`FAKE authentication only allowed in dev mode`);
-					}
-					address = action.address;
-				} else {
-					const message = publicKeyAuthorizationMessage({address: action.address, publicKey});
-					address = await recoverMessageAddress({
-						message,
-						signature: action.signature,
-					});
-					if (address.toLowerCase() != action.address.toLowerCase()) {
-						throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
-					}
-				}
-
-				address = address.toLowerCase() as Address;
-				await storage.register(address, publicKey, timestampMS, action);
-				return c.json({success: true});
+	const app = new Hono<{Bindings: Env & {}}>()
+		.use(eth_auth({serverOptions: options}))
+		.post('/sendMessage', zValidator('json', SchemaActionSendMessage), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const timestampMS = Date.now();
+			const {account, publicKey} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+			if (!publicKey) {
+				throw new Error(`no publicKey authenticated`);
 			}
 
-			case 'sendMessage': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				if (!publicKey) {
-					throw new Error(`no publicKey authenticated`);
-				}
+			const action = c.req.valid('json');
 
-				const result = await storage.sendMessage(publicKey, account, timestampMS, action);
-				return c.json(result);
+			const result = await storage.sendMessage(publicKey, account, timestampMS, action);
+			return c.json(result);
+		})
+		.post('/getConversations', zValidator('json', SchemaActionGetConversations), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
 			}
-
-			case 'getConversations': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				const result = await storage.getConversations(action.domain, action.namespace, account);
-				return c.json(result);
+			const action = c.req.valid('json');
+			const result = await storage.getConversations(action.domain, action.namespace, account);
+			return c.json(result);
+		})
+		.post('/getAcceptedConversations', zValidator('json', SchemaActionGetAcceptedConversations), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
 			}
-
-			case 'getAcceptedConversations': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				const result = await storage.getAcceptedConversations(action.domain, action.namespace, account);
-				return c.json(result);
+			const action = c.req.valid('json');
+			const result = await storage.getAcceptedConversations(action.domain, action.namespace, account);
+			return c.json(result);
+		})
+		.post('/getUnacceptedConversations', zValidator('json', SchemaActionGetUnacceptedConversations), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
 			}
-
-			case 'getUnacceptedConversations': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-
-				const result = await storage.getUnacceptedConversations(action.domain, action.namespace, account);
-				return c.json(result);
+			const action = c.req.valid('json');
+			const result = await storage.getUnacceptedConversations(action.domain, action.namespace, account);
+			return c.json(result);
+		})
+		.post('/markAsRead', zValidator('json', SchemaActionMarkAsRead), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
 			}
-
-			case 'markAsRead': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-
-				await storage.markAsRead(account, action);
-				return c.json({success: true});
+			const action = c.req.valid('json');
+			await storage.markAsRead(account, action);
+			return c.json({success: true});
+		})
+		.post('/getMessages', zValidator('json', SchemaActionGetMessages), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const action = c.req.valid('json');
+			const result = await storage.getMessages(action);
+			return c.json(result);
+		})
+		.post('/acceptConversation', zValidator('json', SchemaActionAcceptConversation), async (c) => {
+			const storage = new RemoteSQLStorage(getDB(c));
+			const timestampMS = Date.now();
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
 			}
-			case 'getMessages': {
-				const result = await storage.getMessages(action);
-				return c.json(result);
-			}
-			case 'getUser': {
-				const result = await storage.getUser(action.address);
-				return c.json(result);
-			}
-			case 'getCompleteUser': {
-				const result = await storage.getCompleteUser(action.domain, action.address);
-				return c.json(result);
-			}
-			case 'acceptConversation': {
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				const result = await storage.acceptConversation(account, timestampMS, action);
-				return c.json(result);
-			}
-			case 'db:select': {
-				if (c.env.WORKER_ENV !== 'dev') {
-					throw new Error(`kv api not available unless in dev mode`);
-				}
-				// const table = action.table;
-				// const SQL_SELECT = env.DB.prepare('SELECT * FROM ?1');
-				// const {results} = await SQL_SELECT.bind(table).all();
-				// return c.json(results);
-				return c.html('Not Implemented', 400);
-			}
-
-			case 'db:reset': {
-				if (c.env.WORKER_ENV !== 'dev') {
-					throw new Error(`kv api not available unless in dev mode`);
-				}
-				await storage.reset();
-				return c.json({success: true});
-			}
-
-			default:
-				return c.html(`Not Action found for : ${(action as any).type}`, 404);
-		}
-	});
+			const action = c.req.valid('json');
+			const result = await storage.acceptConversation(account, timestampMS, action);
+			return c.json(result);
+		});
 
 	return app;
 }

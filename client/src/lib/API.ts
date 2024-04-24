@@ -1,26 +1,25 @@
+import { signAsync } from '@noble/secp256k1';
+import { keccak_256 } from '@noble/hashes/sha3';
 import type {
-	Action,
 	ActionAcceptConversation,
 	ActionGetAcceptedConversations,
+	ActionGetCompleteUser,
 	ActionGetConversations,
 	ActionGetMessages,
-	ActionGetUnacceptedConversations,
 	ActionGetMissivUser,
+	ActionGetUnacceptedConversations,
 	ActionRegisterDomainUser,
 	ActionSendMessage,
 	ResponseAcceptConversation,
 	ResponseGetAcceptedConversations,
+	ResponseGetCompleteUser,
 	ResponseGetConversations,
 	ResponseGetMessages,
-	ResponseGetUnacceptedConversations,
 	ResponseGetMissivUser,
+	ResponseGetUnacceptedConversations,
 	ResponseRegisterDomainUser,
-	ResponseSendMessage,
-	ResponseGetCompleteUser,
-	ActionGetCompleteUser
-} from 'missiv';
-import { signAsync } from '@noble/secp256k1';
-import { keccak_256 } from '@noble/hashes/sha3';
+	ResponseSendMessage
+} from 'missiv-server-app';
 
 export type FetchFunction = typeof fetch;
 
@@ -43,7 +42,7 @@ export class API {
 		this.fetchFunction = options?.fetch || fetch;
 	}
 
-	async call<T>(action: Action, options?: APIOptions): Promise<T> {
+	async call<T>(path: string, action: any, options?: APIOptions): Promise<T> {
 		const headers: { [header: string]: string } = {
 			'content-type': 'application/json'
 		};
@@ -57,12 +56,12 @@ export class API {
 					'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
 			}
 		}
-		const resp = await this.fetchFunction(this.endpoint, {
+		const resp = await this.fetchFunction(this.endpoint + path, {
 			method: 'POST',
 			body,
 			headers
 		});
-		if (resp.status !== 200) {
+		if (resp.status !== 200 && resp.status !== 201) {
 			throw new Error(await resp.text());
 		}
 
@@ -74,101 +73,54 @@ export class API {
 		}
 	}
 
-	async register(action: Omit<ActionRegisterDomainUser, 'type'>, options: APIOptions) {
-		return this.call<ResponseRegisterDomainUser>(
-			{
-				type: 'register',
-				...action
-			},
-			options
-		);
+	async register(action: ActionRegisterDomainUser, options: APIOptions) {
+		return this.call<ResponseRegisterDomainUser>('/user/register', action, options);
 	}
 
-	async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {
-		return this.call<ResponseSendMessage>(
-			{
-				type: 'sendMessage',
-				...action
-			},
-			options
-		);
+	async sendMessage(action: ActionSendMessage, options: APIOptions) {
+		return this.call<ResponseSendMessage>('/private/sendMessage', action, options);
 	}
 
-	async getConversations(action: Omit<ActionGetConversations, 'type'>, options: APIOptions) {
-		return this.call<ResponseGetConversations>(
-			{
-				type: 'getConversations',
-				...action
-			},
-			options
-		);
+	async getConversations(action: ActionGetConversations, options: APIOptions) {
+		return this.call<ResponseGetConversations>('/private/getConversations', action, options);
 	}
 
-	async getAcceptedConversations(
-		action: Omit<ActionGetAcceptedConversations, 'type'>,
-		options: APIOptions
-	) {
+	async getAcceptedConversations(action: ActionGetAcceptedConversations, options: APIOptions) {
 		return this.call<ResponseGetAcceptedConversations>(
-			{
-				type: 'getAcceptedConversations',
-				...action
-			},
+			'/private/getAcceptedConversations',
+			action,
 			options
 		);
 	}
 
-	async getUnacceptedConversations(
-		action: Omit<ActionGetUnacceptedConversations, 'type'>,
-		options: APIOptions
-	) {
+	async getUnacceptedConversations(action: ActionGetUnacceptedConversations, options: APIOptions) {
 		return this.call<ResponseGetUnacceptedConversations>(
-			{
-				type: 'getUnacceptedConversations',
-				...action
-			},
+			'/private/getUnacceptedConversations',
+			action,
 			options
 		);
 	}
-	async acceptConversation(
-		conversation: Omit<ActionAcceptConversation, 'type'>,
-		options: APIOptions
-	) {
+	async acceptConversation(conversation: ActionAcceptConversation, options: APIOptions) {
 		return this.call<ResponseAcceptConversation>(
-			{
-				type: 'acceptConversation',
-				...conversation
-			},
+			'/private/acceptConversation',
+			conversation,
 			options
 		);
 	}
 
-	async getMessages(chat: Omit<ActionGetMessages, 'type'>, options: APIOptions) {
-		return this.call<ResponseGetMessages>(
-			{
-				type: 'getMessages',
-				...chat
-			},
-			options
-		);
+	async getMessages(chat: ActionGetMessages, options: APIOptions) {
+		return this.call<ResponseGetMessages>('/private/getMessages', chat, options);
 	}
 
-	async getUser(action: Omit<ActionGetMissivUser, 'type'>) {
-		return this.call<ResponseGetMissivUser>({
-			type: 'getUser',
-			...action
-		});
+	async getUser(action: ActionGetMissivUser) {
+		return this.call<ResponseGetMissivUser>('/user/getUser', action);
 	}
 
-	async getCompleteUser(action: Omit<ActionGetCompleteUser, 'type'>) {
-		return this.call<ResponseGetCompleteUser>({
-			type: 'getCompleteUser',
-			...action
-		});
+	async getCompleteUser(action: ActionGetCompleteUser) {
+		return this.call<ResponseGetCompleteUser>('/user/getCompleteUser', action);
 	}
 
 	async clear() {
-		return this.call<ResponseAcceptConversation>({
-			type: 'db:reset'
-		});
+		return this.call<{ success: boolean }>('/admin/db-reset', { reset: true });
 	}
 }

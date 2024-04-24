@@ -1,26 +1,25 @@
+import {Address, Conversation, DomainUser, MissivUser, PublicKey} from '../api/types';
+import {
+	ActionRegisterDomainUser,
+	ResponseGetCompleteUser,
+	ResponseGetDomainUser,
+	ResponseGetMissivUser,
+} from '../api/user/types';
 import {
 	ActionAcceptConversation,
+	ActionGetMessages,
 	ActionMarkAsRead,
-	ActionRegisterDomainUser,
 	ActionSendMessage,
-	PublicKey,
-	Conversation,
 	ResponseAcceptConversation,
+	ResponseGetAcceptedConversations,
 	ResponseGetConversations,
 	ResponseGetMessages,
-	ResponseSendMessage,
-	Address,
-	ResponseGetMissivUser,
-	MissivUser,
-	ResponseGetDomainUser,
-	DomainUser,
-	getConversationID,
 	ResponseGetUnacceptedConversations,
-	ResponseGetAcceptedConversations,
-	ActionGetMessages,
-} from 'missiv';
-import {ResponseGetCompleteUser} from 'missiv';
-import {RemoteSQL, Storage} from 'missiv-server-app';
+	ResponseSendMessage,
+} from '../api/private/types';
+import {getConversationID} from '../api/utils';
+import {RemoteSQL} from '../utils/DB';
+import {Storage} from '.';
 
 type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};
 
@@ -141,19 +140,33 @@ export class RemoteSQLStorage implements Storage {
 		const response = await this.db.batch([
 			upsertConversation.bind(action.domain, action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
 			upsertConversation.bind(action.domain, action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
-			insertMessage.bind(
-				action.domain,
-				action.namespace,
-				conversationID,
-				account,
-				publicKey,
-				action.to,
-				action.toPublicKey ? action.toPublicKey : null,
-				timestampMS,
-				action.message,
-				action.messageType,
-				action.signature,
-			),
+			action.messageType === 'clear'
+				? insertMessage.bind(
+						action.domain,
+						action.namespace,
+						conversationID,
+						account,
+						publicKey,
+						action.to,
+						null,
+						timestampMS,
+						action.message,
+						action.messageType,
+						action.signature,
+					)
+				: insertMessage.bind(
+						action.domain,
+						action.namespace,
+						conversationID,
+						account,
+						publicKey,
+						action.to,
+						action.toPublicKey,
+						timestampMS,
+						action.message,
+						action.messageType,
+						action.signature,
+					),
 		]);
 		console.log({timestampMS});
 		return {
