@@ -9,6 +9,8 @@ export type {ServerObject, ServerObjectId} from './types';
 export type {Storage} from './storage';
 export {Room} from './Room';
 
+export * from './utils/DB';
+
 type WebsocketResponse = MiddlewareHandler<
 	any,
 	string,
@@ -21,7 +23,7 @@ type WebsocketResponse = MiddlewareHandler<
 
 export function createServer<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>();
-	const {getStorage, getRoom, upgradeWebSocket} = options;
+	const {getDB, getRoom, upgradeWebSocket} = options;
 
 	const messagesAPI = getMessagesAPI<Env>(options);
 

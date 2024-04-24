@@ -1,6 +1,6 @@
 import { createServer, Room } from 'missiv-server-app';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
-import { D1Storage } from './api/D1Storage';
+import { RemoteD1 } from './api/d1db';
 
 type Env = {
 	DB: D1Database;
@@ -51,7 +51,7 @@ export class ChatRoom extends Room {
 }
 
 const app = createServer<Env>({
-	getStorage: (c) => new D1Storage(c.env.DB),
+	getDB: (c) => new RemoteD1(c.env.DB),
 	getRoom: (c, idOrName) => {
 		if (typeof idOrName == 'string') {
 			idOrName = c.env.ROOM_DO.idFromName(idOrName);

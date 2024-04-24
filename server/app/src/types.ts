@@ -1,7 +1,7 @@
 import {Context} from 'hono';
 import {Bindings, MiddlewareHandler} from 'hono/types';
 import {UpgradedWebSocketResponseInputJSONType, WSEvents} from 'hono/ws';
-import {Storage} from './storage';
+import {RemoteSQL} from '../dist';
 
 export abstract class AbstractServerObject {
 	abstract upgradeWebsocket(request: Request): Promise<Response>;
@@ -30,7 +30,7 @@ export type ServerObjectId = {
 // };
 
 export type ServerOptions<Env extends Bindings = Bindings> = {
-	getStorage: (c: Context<{Bindings: Env}>) => Storage;
+	getDB: (c: Context<{Bindings: Env}>) => RemoteSQL;
 	getRoom: (c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) => ServerObject;
 	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
 		any,

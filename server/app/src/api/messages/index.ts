@@ -14,12 +14,13 @@ import {
 } from 'missiv';
 import {ServerOptions} from '../../types';
 import {recoverMessageAddress} from 'viem';
+import {RemoteSQLStorage} from '../../storage/RemoteSQLStorage';
 
 export function getMessagesAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const {getStorage} = options;
+	const {getDB} = options;
 
 	const app = new Hono<{Bindings: Env & {}}>().post('/', async (c) => {
-		const storage = getStorage(c);
+		const storage = new RemoteSQLStorage(getDB(c));
 		const rawContent = await c.req.text();
 		const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 		const timestampMS = Date.now();
