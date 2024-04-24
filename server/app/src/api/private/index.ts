@@ -15,51 +15,17 @@ import {
 import {ServerOptions} from '../../types';
 import {recoverMessageAddress} from 'viem';
 import {RemoteSQLStorage} from '../../storage/RemoteSQLStorage';
+import {eth_auth, getAuth} from '../utils';
 
 export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const {getDB} = options;
 
-	const app = new Hono<{Bindings: Env & {}}>().post('/', async (c) => {
+	const app = new Hono<{Bindings: Env & {}}>().use(eth_auth({serverOptions: options})).post('/', async (c) => {
 		const storage = new RemoteSQLStorage(getDB(c));
 		const rawContent = await c.req.text();
 		const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 		const timestampMS = Date.now();
-		let publicKey: PublicKey | undefined;
-		let account: Address | undefined;
-
-		const authentication = c.req.header('SIGNATURE');
-		if (authentication) {
-			if (authentication.startsWith('FAKE:')) {
-				if (c.env?.WORKER_ENV !== 'dev') {
-					throw new Error(`FAKE authentication only allowed in dev mode`);
-				}
-				const splitted = authentication.split(':');
-				publicKey = parse(SchemaPublicKey, splitted[1]);
-				if (!publicKey) {
-					throw new Error(`no publicKey provided in FAKE mode`);
-				}
-			} else {
-				const signatureString = authentication;
-				const splitted = signatureString.split(':');
-				const recoveryBit = Number(splitted[1]);
-				const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
-				const msgHash = keccak_256(rawContent);
-				const recoveredPubKey = signature.recoverPublicKey(msgHash);
-				publicKey = `0x${recoveredPubKey.toHex()}`;
-			}
-
-			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);
-
-			if (domainUser) {
-				if ('domain' in action) {
-					if (domainUser.domain != action.domain) {
-						throw new Error(`the publicKey belongs to domain "${domainUser.domain}" and not "${action.domain}"`);
-					}
-				}
-
-				account = parse(SchemaAddress, domainUser.user);
-			}
-		}
+		const {account, publicKey} = getAuth(c);
 
 		switch (action.type) {
 			case 'register': {
