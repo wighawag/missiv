@@ -18,8 +18,8 @@ import {
 	ResponseSendMessage,
 } from '../api/private/types';
 import {getConversationID} from '../api/utils';
-import {RemoteSQL} from '../utils/DB';
 import {Storage} from '.';
+import {RemoteSQL} from 'remote-sql';
 
 type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};
 
@@ -62,15 +62,15 @@ export class RemoteSQLStorage implements Storage {
 		const statement = this.db.prepare(
 			`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 ORDER BY timestamp DESC`,
 		);
-		const {rows} = await statement.bind(action.domain, action.namespace, action.conversationID).all();
-		return {messages: rows} as ResponseGetMessages;
+		const {results} = await statement.bind(action.domain, action.namespace, action.conversationID).all();
+		return {messages: results} as ResponseGetMessages;
 	}
 
 	async getUser(address: Address): Promise<ResponseGetMissivUser> {
 		const response = await this.db.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
 
-		if (response.rows.length === 1) {
-			return {user: response.rows[0] as MissivUser};
+		if (response.results.length === 1) {
+			return {user: response.results[0] as MissivUser};
 		}
 		return {user: undefined};
 	}
@@ -81,8 +81,8 @@ export class RemoteSQLStorage implements Storage {
 			.bind(address, domain)
 			.all();
 
-		if (response.rows.length === 1) {
-			return {completeUser: response.rows[0] as DomainUser & MissivUser};
+		if (response.results.length === 1) {
+			return {completeUser: response.results[0] as DomainUser & MissivUser};
 		}
 		return {completeUser: undefined};
 	}
@@ -94,16 +94,16 @@ export class RemoteSQLStorage implements Storage {
 			.bind(publicKey)
 			.all();
 
-		if (response.rows.length === 1) {
-			return {completeUser: response.rows[0] as DomainUser & MissivUser};
+		if (response.results.length === 1) {
+			return {completeUser: response.results[0] as DomainUser & MissivUser};
 		}
 		return {completeUser: undefined};
 	}
 
 	async getDomainUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser> {
 		const response = await this.db.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
-		if (response.rows.length === 1) {
-			return {domainUser: response.rows[0] as DomainUser};
+		if (response.results.length === 1) {
+			return {domainUser: response.results[0] as DomainUser};
 		}
 		return {domainUser: undefined};
 	}
@@ -192,8 +192,8 @@ export class RemoteSQLStorage implements Storage {
 		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
 		);
-		const {rows} = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
-		return {conversations: rows.map(formatConversation)};
+		const {results} = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
+		return {conversations: results.map(formatConversation)};
 	}
 
 	async getUnacceptedConversations(
@@ -204,8 +204,8 @@ export class RemoteSQLStorage implements Storage {
 		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
 		);
-		const {rows} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
-		return {unacceptedConversations: rows.map(formatConversation)};
+		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
+		return {unacceptedConversations: results.map(formatConversation)};
 	}
 
 	async getAcceptedConversations(
@@ -216,8 +216,8 @@ export class RemoteSQLStorage implements Storage {
 		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
 		);
-		const {rows} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
-		return {acceptedConversations: rows.map(formatConversation)};
+		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
+		return {acceptedConversations: results.map(formatConversation)};
 	}
 
 	async reset() {

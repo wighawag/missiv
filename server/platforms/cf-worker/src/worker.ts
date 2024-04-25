@@ -1,6 +1,6 @@
 import { createServer, Room } from 'missiv-server-app';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
-import { RemoteD1 } from './api/d1db';
+import { RemoteD1 } from 'remote-sql-d1';
 
 type Env = {
 	DB: D1Database;

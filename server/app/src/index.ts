@@ -16,9 +16,6 @@ export * from './api/utils';
 export type {Storage} from './storage';
 export {Room} from './Room';
 
-// TODO separate
-export * from './utils/DB';
-
 export function createServer<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>()
 		.use(
