@@ -22,7 +22,7 @@ layout {
 			args "-c" "pnpm client:dev; cd packages/client; ${SHELL-bash}"
 		}
 		pane command="bash"  {
-			args "-c" "pnpm client:build; cd packages/client; ${SHELL-bash}"
+			args "-c" "pnpm client:dev:build; cd packages/client; ${SHELL-bash}"
 		}
 	}
 

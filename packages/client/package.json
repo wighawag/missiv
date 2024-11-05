@@ -1,6 +1,6 @@
 {
 	"name": "missiv-client",
-	"version": "0.0.1",
+	"version": "0.0.13",
 	"files": [
 		"dist",
 		"!dist/**/*.test.*",
@@ -26,6 +26,7 @@
 		"@sveltejs/kit": "^2.0.0",
 		"@sveltejs/package": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^4.0.0",
+		"as-soon": "^0.0.9",
 		"prettier": "^3.3.2",
 		"prettier-plugin-svelte": "^3.2.6",
 		"publint": "^0.2.0",
@@ -38,6 +39,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build && npm run package",
+		"dev:build": "as-soon -w src/lib pnpm build",
 		"preview": "vite preview",
 		"package": "svelte-kit sync && svelte-package && publint",
 		"prepublishOnly": "npm run package",
