@@ -8,7 +8,8 @@
     "@changesets/cli": "^2.27.1",
     "ldenv": "^0.3.7",
     "set-defaults": "^0.0.2",
-    "syncpack": "^11.2.1"
+    "syncpack": "^11.2.1",
+    "zellij-launcher": "^0.0.1"
   },
   "scripts": {
     "prepare": "set-defaults .vscode server client",
@@ -19,20 +20,19 @@
     "format": "prettier --write . && pnpm -r format",
     "format:check": "prettier --check . && pnpm -r format:check",
     "---------------------- TEST ----------------------": "",
-    "client:test": "pnpm --filter ./client test",
-    "server:test": "pnpm --filter ./server test",
+    "client:test": "pnpm --filter ./packages/client test",
+    "server:test": "pnpm --filter ./packages/server test",
     "test": "pnpm -r test run",
     "---------------------- DEV ----------------------": "",
-    "client:dev": "pnpm --filter ./client dev",
-    "client:dev:build": "pnpm --filter ./client dev:build",
-    "server:dev": "pnpm --filter ./server dev",
-    "types:dev": "pnpm --filter ./types dev",
+    "client:dev": "pnpm --filter ./packages/client dev",
+    "client:dev:build": "pnpm --filter ./packages/client dev:build",
+    "server:dev": "pnpm --filter ./packages/server dev",
+    "types:dev": "pnpm --filter ./packages/types dev",
     "---------------------- DEPLOY ----------------------": "",
-    "build": "ldenv pnpm run --filter ./types build && ldenv pnpm run --filter ./client build",
-    "serve": "pnpm --filter ./client serve",
+    "build": "ldenv pnpm run --filter ./packages/types build && ldenv pnpm run --filter ./client build",
+    "serve": "pnpm --filter ./packages/client serve",
     "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
-    "start:wezterm": "wezterm --config-file wezterm.lua start $PWD",
     "stop": "zellij kill-session $npm_package_name",
-    "start": "zellij --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
+    "start": "zellij-launcher --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
   }
 }

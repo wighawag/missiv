@@ -1,4 +1,3 @@
 packages:
-  - 'client'
-  - 'server'
-  - 'types'
+  - 'packages/*'
+  - 'platforms/*'

@@ -1,0 +1,30 @@
+name = "missiv-server"
+main = "src/worker.ts"
+compatibility_date = "2023-08-14"
+
+# Variable bindings. These are arbitrary, plaintext strings (similar to environment variables)
+# Note: Use secrets to store sensitive data.
+# Docs: https://developers.cloudflare.com/workers/platform/environment-variables
+# [vars]
+# MY_VARIABLE = "production_value"
+
+# Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
+# Docs: https://developers.cloudflare.com/workers/runtime-apis/kv
+# [[kv_namespaces]]
+# binding = "MY_KV_NAMESPACE"
+# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "missiv-db"
+database_id = "accc2885-d412-447d-a1ed-daf6758cb8e4"
+
+[durable_objects]
+bindings = [
+  { name = "ROOMS", class_name = "ChatRoom" },
+  { name = "LIMITERS", class_name = "RateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom", "RateLimiter"]
