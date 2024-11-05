@@ -1,6 +1,4 @@
 packages:
-  - 'client'
-  - 'server/platforms/*'
-  - 'server/app'
-  - 'types'
-  - 'test'
+  - 'platforms/*'
+  - 'packages/*'
+  - 'test/*'

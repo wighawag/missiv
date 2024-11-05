@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@changesets/cli": "^2.27.1",
-    "ldenv": "^0.3.7",
-    "set-defaults": "^0.0.2",
-    "syncpack": "^11.2.1",
+    "@changesets/cli": "^2.27.9",
+    "ldenv": "^0.3.11",
+    "set-defaults": "^0.0.5",
+    "syncpack": "^13.0.0",
     "zellij-launcher": "^0.0.1"
   },
   "scripts": {

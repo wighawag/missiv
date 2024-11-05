@@ -1,0 +1,16 @@
+{
+  "name": "missiv-server-cf-worker-base",
+  "version": "0.0.0",
+  "dependencies": {
+    "hono": "^4.6.9",
+    "missiv-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "wrangler": "^3.84.1"
+  },
+  "scripts": {
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy --minify src/index.ts"
+  }
+}
