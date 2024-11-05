@@ -1,12 +1,11 @@
-import {createServer} from 'missiv-server-app';
+import {createServer} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
-import {drizzle} from 'drizzle-orm/d1';
 
 type Env = {
 	DB: D1Database;
 };
 
-const {app, handleWebsocket} = createServer<Env>((c) => drizzle(c.env.DB));
+const {app, handleWebsocket} = createServer<Env>({getDB: (c) => c.env.DB, getEnv: (c) => c.env});
 
 app.get('/ws', upgradeWebSocket(handleWebsocket));
 

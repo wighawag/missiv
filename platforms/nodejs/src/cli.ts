@@ -1,14 +1,13 @@
 import {serve} from '@hono/node-server';
-import {drizzle} from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
-import {createServer} from 'missiv-server-app';
+import {createServer} from 'missiv-server';
 
 export function getDB() {
-	const sqlite = new Database('sqlite.db');
-	return drizzle(sqlite);
+	// TODO
+	return null as any;
 }
 
-const {app} = createServer(getDB);
+const {app} = createServer({getDB, getEnv: (c) => process.env});
+// TODO websocket ?
 
 const port = 3000;
 console.log(`Server is running on port ${port}`);
