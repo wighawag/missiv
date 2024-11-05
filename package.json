@@ -25,7 +25,7 @@
     "test": "pnpm -r test run",
     "---------------------- DEV ----------------------": "",
     "client:dev": "pnpm --filter missiv-client dev",
-    "client:dev:build": "pnpm --filter missiv-client dev:build",
+    "client:build": "pnpm --filter missiv-client build",
     "cf-worker:dev": "pnpm --filter missiv-server-cf-worker dev",
     "bun:dev": "pnpm --filter missiv-server-bun dev",
     "server:dev": "pnpm --filter missiv-server dev",
