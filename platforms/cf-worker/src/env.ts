@@ -1,6 +1,7 @@
-export interface Env {
-	WORKER_ENV?: 'dev';
+export type Env = {
 	DB: D1Database;
-	LIMITERS: DurableObjectNamespace;
-	ROOMS: DurableObjectNamespace;
-}
+	LOGFLARE_API_KEY?: string;
+	LOGFLARE_SOURCE?: string;
+	NAMED_LOGS?: string;
+	NAMED_LOGS_LEVEL?: string;
+};

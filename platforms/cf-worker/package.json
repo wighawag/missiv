@@ -1,33 +1,20 @@
 {
   "name": "missiv-server-cf-worker",
-  "version": "0.0.11",
-  "publishConfig": {
-    "access": "public"
-  },
-  "type": "module",
-  "files": [
-    "schema.sql",
-    "src",
-    "tsconfig.json"
-  ],
+  "version": "0.0.0",
   "dependencies": {
-    "@noble/ciphers": "^1.0.0",
-    "@noble/curves": "^1.6.0",
-    "@noble/hashes": "^1.5.0",
-    "@noble/secp256k1": "^2.0.0",
-    "missiv": "workspace:*",
-    "viem": "^2.21.40"
+    "hono": "^4.6.9",
+    "missiv-server": "workspace:*",
+    "named-logs": "^0.3.0",
+    "named-logs-context": "^0.1.1",
+    "remote-sql-d1": "^0.0.6",
+    "workers-logger": "npm:@bug-fix/workers-logger@0.2.0-fix.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241022.0",
-    "@types/node": "^22.9.0",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.4",
     "wrangler": "^3.84.1"
   },
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev --port 34003",
-    "test": "vitest --minWorkers 1 --maxWorkers 1"
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy --minify src/index.ts"
   }
 }

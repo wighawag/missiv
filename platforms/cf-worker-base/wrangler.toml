@@ -1,7 +1,0 @@
-name = "missiv-server-cf-worker-base"
-compatibility_date = "2023-12-01"
-
-[[d1_databases]]
-binding = "DB" # i.e. available in your Worker on env.DB
-database_name = "missiv-db-tmp"
-database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
