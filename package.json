@@ -8,7 +8,8 @@
     "@changesets/cli": "^2.27.1",
     "ldenv": "^0.3.7",
     "set-defaults": "^0.0.2",
-    "syncpack": "^11.2.1"
+    "syncpack": "^11.2.1",
+    "zellij-launcher": "^0.0.1"
   },
   "scripts": {
     "prepare": "set-defaults .vscode",
@@ -32,6 +33,6 @@
     "serve": "pnpm --filter missiv-client serve",
     "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
     "stop": "zellij kill-session $npm_package_name",
-    "start": "zellij --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
+    "start": "zellij-launcher --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
   }
 }
