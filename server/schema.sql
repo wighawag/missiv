@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS Conversations (
   PRIMARY KEY (domain, namespace, first, conversationID)
 );
 
-CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);
+CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage); // TODO should also add domain
 
 CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (domain, namespace, first, accepted, lastMessage);
 
