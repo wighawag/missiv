@@ -17,16 +17,10 @@ import type {
 	ResponseRegisterDomainUser,
 	ResponseSendMessage,
 	ActionGetDomainUser,
-	ResponseGetDomainUser,
-	ActionSendMessageInClear,
-	ActionSendEncryptedMessage
-} from 'missiv';
-import { signAsync, utils as secpUtils, getSharedSecret } from '@noble/secp256k1';
+	ResponseGetDomainUser
+} from 'missiv-common';
+import { signAsync } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
-import { randomBytes, bytesToHex } from '@noble/hashes/utils';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
-import { base64 } from '@scure/base';
 
 export type FetchFunction = typeof fetch;
 
@@ -34,8 +28,6 @@ export type APIOptions =
 	| { signature: string }
 	| { publicKey: string }
 	| { privateKey: Uint8Array | string };
-
-export { getPublicKey } from '@noble/secp256k1';
 
 export class API {
 	protected fetchFunction: FetchFunction;
@@ -88,15 +80,16 @@ export class API {
 		);
 	}
 
-	async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {
-		return this.call<ResponseSendMessage>(
-			{
-				type: 'sendMessage',
-				...action
-			},
-			options
-		);
-	}
+	// TODO
+	// async sendMessage(action: Omit<ActionSendMessage, 'type'>, options: APIOptions) {
+	// 	return this.call<ResponseSendMessage>(
+	// 		{
+	// 			type: 'sendMessage',
+	// 			...action
+	// 		},
+	// 		options
+	// 	);
+	// }
 
 	async getConversations(action: Omit<ActionGetConversations, 'type'>, options: APIOptions) {
 		return this.call<ResponseGetConversations>(

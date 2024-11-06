@@ -7,7 +7,7 @@ import type {
 	CurrentConversation,
 	OtherUser
 } from '../types.js';
-import { getConversationID, type Address, type ActionSendEncryptedMessage } from 'missiv';
+import { getConversationID, type Address, type ActionSendEncryptedMessage } from 'missiv-common';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { hexToBytes, randomBytes } from '@noble/hashes/utils';

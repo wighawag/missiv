@@ -1,5 +1,3 @@
-import {recoverMessageAddress} from 'viem';
-import type {Env} from '../env';
 import {
 	ActionAcceptConversation,
 	ActionMarkAsRead,
@@ -18,35 +16,29 @@ import {
 	getConversationID,
 	ResponseGetUnacceptedConversations,
 	ResponseGetAcceptedConversations,
-	publicKeyAuthorizationMessage,
 	ActionGetMessages,
-} from 'missiv';
+} from 'missiv-common';
 import {RemoteSQL} from 'remote-sql';
+import {ConversationFromDB, formatConversation} from '../api/index.js';
 
 export class MessagesStorage {
 	constructor(private db: RemoteSQL) {}
-	async register(
-		env: Env,
-		address: Address,
-		publicKey: PublicKey,
-		timestampMS: number,
-		action: ActionRegisterDomainUser,
-	) {
-		// const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,name,created)
+	async register(address: Address, publicKey: PublicKey, timestampMS: number, action: ActionRegisterDomainUser) {
+		// const insertUser = this.db.prepare(`INSERT OR IGNORE INTO Users(address,name,created)
 		// 	VALUES(?1,?2,?3)
 		// `);
-		const insertUser = env.DB.prepare(`INSERT INTO Users(address,name,created)
+		const insertUser = this.db.prepare(`INSERT INTO Users(address,name,created)
             VALUES(?1,?2,?3)
             ON CONFLICT(address) DO UPDATE SET name=coalesce(excluded.name,name)
         `);
-		const insertDomainUser = env.DB
+		const insertDomainUser = this.db
 			.prepare(`INSERT INTO DomainUsers(user,domain,domainUsername,publicKey,signature,added,lastPresence)
             VALUES(?1,?2,?3,?4,?5,?6,?7)
             ON CONFLICT(user,domain) DO UPDATE SET domainUsername=coalesce(excluded.domainUsername,domainUsername), added=excluded.added, lastPresence=excluded.lastPresence
         `);
 		// currently not possible to update publicKey: else  publicKey=excluded.publicKey,
 
-		const response = await env.DB.batch([
+		const response = await this.db.batch([
 			insertUser.bind(address, action.name || null, timestampMS),
 			insertDomainUser.bind(
 				address,
@@ -62,16 +54,16 @@ export class MessagesStorage {
 		return response;
 	}
 
-	async getMessages(env: Env, action: ActionGetMessages): Promise<ResponseGetMessages> {
-		const statement = env.DB.prepare(
+	async getMessages(action: ActionGetMessages): Promise<ResponseGetMessages> {
+		const statement = this.db.prepare(
 			`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 ORDER BY timestamp DESC`,
 		);
 		const {results} = await statement.bind(action.domain, action.namespace, action.conversationID).all();
 		return {messages: results} as ResponseGetMessages;
 	}
 
-	async getUser(env: Env, address: Address): Promise<ResponseGetMissivUser> {
-		const response = await env.DB.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
+	async getUser(address: Address): Promise<ResponseGetMissivUser> {
+		const response = await this.db.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
 
 		if (response.results.length === 1) {
 			return {user: response.results[0] as MissivUser};
@@ -79,10 +71,9 @@ export class MessagesStorage {
 		return {user: undefined};
 	}
 
-	async getDomainUser(env: Env, domain: string, address: Address): Promise<ResponseGetDomainUser> {
-		const response = await env.DB.prepare(
-			`SELECT * from DomainUsers INNER JOIN Users on Users.address = ?1 AND user = ?1 AND domain = ?2;`,
-		)
+	async getDomainUser(domain: string, address: Address): Promise<ResponseGetDomainUser> {
+		const response = await this.db
+			.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = ?1 AND user = ?1 AND domain = ?2;`)
 			.bind(address, domain)
 			.all();
 
@@ -92,11 +83,10 @@ export class MessagesStorage {
 		return {domainUser: undefined};
 	}
 
-	async getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetDomainUser> {
-		// const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
-		const response = await env.DB.prepare(
-			`SELECT * from DomainUsers INNER JOIN Users on Users.address = DomainUsers.user AND publicKey = ?1;`,
-		)
+	async getUserAddressByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser> {
+		// const response = await this.db.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
+		const response = await this.db
+			.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = DomainUsers.user AND publicKey = ?1;`)
 			.bind(publicKey)
 			.all();
 
@@ -106,25 +96,24 @@ export class MessagesStorage {
 		return {domainUser: undefined};
 	}
 
-	async markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
-		const statement = env.DB.prepare(
+	async markAsRead(publicKey: PublicKey, action: ActionMarkAsRead) {
+		const statement = this.db.prepare(
 			`UPDATE Conversations SET read = 1, accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
 		);
 		// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
 
-		const response = await statement.bind(action.domain, action.namespace, publicKey, action.conversationID).run();
+		const response = await statement.bind(action.domain, action.namespace, publicKey, action.conversationID).all();
 		return response;
 	}
 
 	async sendMessage(
-		env: Env,
 		publicKey: PublicKey,
 		account: Address,
 		timestampMS: number,
 		action: ActionSendMessage,
 	): Promise<ResponseSendMessage> {
 		const conversationID = getConversationID(action.to, account);
-		const upsertConversation = env.DB
+		const upsertConversation = this.db
 			.prepare(`INSERT INTO Conversations(domain,namespace,first,second,conversationID,lastMessage,accepted,read)
             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
             ON CONFLICT(domain,namespace,first,conversationID) DO UPDATE SET 
@@ -133,11 +122,11 @@ export class MessagesStorage {
                 read=excluded.read
         `);
 
-		const insertMessage = env.DB.prepare(
+		const insertMessage = this.db.prepare(
 			`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,type,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
 		);
 
-		const response = await env.DB.batch([
+		const response = await this.db.batch([
 			upsertConversation.bind(action.domain, action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
 			upsertConversation.bind(action.domain, action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
 			insertMessage.bind(
@@ -147,7 +136,7 @@ export class MessagesStorage {
 				account,
 				publicKey,
 				action.to,
-				action.toPublicKey ? action.toPublicKey : null,
+				action.messageType === 'encrypted' ? action.toPublicKey : null,
 				timestampMS,
 				action.message,
 				action.messageType,
@@ -160,27 +149,21 @@ export class MessagesStorage {
 	}
 
 	async acceptConversation(
-		env: Env,
 		account: Address,
 		timestampMS: number,
 		action: ActionAcceptConversation,
 	): Promise<ResponseAcceptConversation> {
-		const statement = env.DB.prepare(
+		const statement = this.db.prepare(
 			`UPDATE Conversations SET accepted = 1, read = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
 		);
-		const response = await statement.bind(action.domain, action.namespace, account, action.conversationID).run();
+		const response = await statement.bind(action.domain, action.namespace, account, action.conversationID).all();
 		return {
 			timestampMS,
 		};
 	}
 
-	async getConversations(
-		env: Env,
-		domain: string,
-		namespace: string,
-		address: Address,
-	): Promise<ResponseGetConversations> {
-		const statement = env.DB.prepare(
+	async getConversations(domain: string, namespace: string, address: Address): Promise<ResponseGetConversations> {
+		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
 		);
 		const {results} = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
@@ -188,12 +171,11 @@ export class MessagesStorage {
 	}
 
 	async getUnacceptedConversations(
-		env: Env,
 		domain: string,
 		namespace: string,
 		account: Address,
 	): Promise<ResponseGetUnacceptedConversations> {
-		const statement = env.DB.prepare(
+		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
 		);
 		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
@@ -201,12 +183,11 @@ export class MessagesStorage {
 	}
 
 	async getAcceptedConversations(
-		env: Env,
 		domain: string,
 		namespace: string,
 		account: Address,
 	): Promise<ResponseGetAcceptedConversations> {
-		const statement = env.DB.prepare(
+		const statement = this.db.prepare(
 			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
 		);
 		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();

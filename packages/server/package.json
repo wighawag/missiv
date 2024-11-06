@@ -1,14 +1,11 @@
 {
   "name": "missiv-server",
   "version": "0.0.0",
-  "description": "missiv server app",
+  "description": "missiv server",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
-  "main": "./dist/esm/index.js",
-  "types": "./dist/esm/index.d.ts",
-  "module": "./dist/esm/index.js",
   "exports": {
     ".": {
       "import": {
@@ -24,9 +21,13 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.4.1",
     "@hono/typia-validator": "^0.0.5",
+    "@noble/hashes": "^1.5.0",
+    "@noble/secp256k1": "^2.1.0",
     "hono": "^4.6.9",
+    "missiv-common": "workspace:*",
     "named-logs": "^0.3.0",
     "remote-sql": "^0.0.6",
+    "sha3": "link:@noble/hashes/sha3",
     "viem": "^2.21.40"
   },
   "devDependencies": {

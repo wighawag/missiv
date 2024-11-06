@@ -1,5 +1,5 @@
 import type { User } from '$lib/types.js';
-import type { Conversation, ConversationMessage, PublicKey } from 'missiv';
+import type { Conversation, ConversationMessage, PublicKey } from 'missiv-common';
 import type { Readable } from 'svelte/store';
 
 export type ConversationState = {

@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.5",
+    "missiv-common": "workspace:*",
     "missiv-server": "workspace:*"
   },
   "devDependencies": {

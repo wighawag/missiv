@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "dependencies": {
     "hono": "^4.6.9",
+    "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
     "named-logs": "^0.3.0",
     "named-logs-context": "^0.1.1",

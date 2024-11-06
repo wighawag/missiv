@@ -9,7 +9,7 @@ import {getPublicAPI} from './api/index.js';
 export type WebsocketHandler<Env extends Bindings> = (c: Context<{Bindings: Env}>) => WSEvents | Promise<WSEvents>;
 
 export type Server<Env extends Bindings> = {
-	app: {fetch: any}; // TODO fetch
+	app: any; //{fetch: any}; // TODO fetch, get ?
 	handleWebsocket: WebsocketHandler<Env>;
 };
 

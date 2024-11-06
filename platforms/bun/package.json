@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "dependencies": {
     "hono": "^4.6.9",
-    "missiv-server": "workspace:*"
+    "missiv-common": "workspace:*",
+    "missiv-server": "workspace:*",
+    "remote-sql": "^0.0.6"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -12,7 +14,6 @@
     "typescript": "^5.6.3"
   },
   "scripts": {
-    "build": "echo 'No setup for build'",
     "dev": "bun run --hot src/index.ts"
   }
 }

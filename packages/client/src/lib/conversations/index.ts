@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 import { openOneConversation } from './single/index.js';
 import { openConversationsView } from './list/index.js';
 import type { APIConfig, User } from '$lib/types.js';
-import { type Address } from 'missiv';
+import { type Address } from 'missiv-common';
 import { API } from '$lib/API.js';
 import type { ConversationsState, OtherUser } from './types.js';
 
