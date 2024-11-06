@@ -10,12 +10,6 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export function publicKeyAuthorizationMessage({
-	address,
-	publicKey,
-}: {
-	address: `0x${string}`;
-	publicKey: `0x${string}`;
-}): string {
+export function publicKeyAuthorizationMessage({address, publicKey}: {address: Address; publicKey: PublicKey}): string {
 	return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
 }

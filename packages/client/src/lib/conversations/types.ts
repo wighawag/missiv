@@ -1,5 +1,5 @@
 import type { User } from '$lib/types.js';
-import type { Conversation, ConversationMessage, PublicKey } from 'missiv-common';
+import type { Address, Conversation, ConversationMessage, PublicKey } from 'missiv-common';
 import type { Readable } from 'svelte/store';
 
 export type ConversationState = {
@@ -28,7 +28,7 @@ export type ConversationState = {
 
 export type OtherUser = {
 	publicKey?: PublicKey;
-	address: `0x${string}`;
+	address: Address;
 	name?: string;
 };
 

@@ -7,6 +7,7 @@ async function main() {
 
 	const response = await client.api.user.register.$post({
 		json: {
+			type: 'register',
 			domain: 'test',
 			signature: '0x',
 			address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
@@ -20,7 +21,7 @@ async function main() {
 			to: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
 			message: 'hello world',
 			messageType: 'clear',
-			signature: '0xFAKE',
+			signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
 		},
 	});
 

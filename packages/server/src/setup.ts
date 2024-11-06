@@ -2,11 +2,11 @@ import {MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from './types.js';
 import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
-import {PublicKey} from 'missiv-common';
-import {Address} from 'viem';
+import {Address, PublicKey} from 'missiv-common';
 import {keccak_256} from '@noble/hashes/sha3';
 import {Signature} from '@noble/secp256k1';
 import {Context} from 'hono';
+import {assert} from 'typia';
 
 // used to be hono Bindings but its type is now `object` which break compilation here
 type Bindings = Record<string, any>;
@@ -53,9 +53,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 				}
 				const splitted = authentication.split(':');
 
-				// TODO typia validation
-				// publicKey = SchemaPublicKey.parse(splitted[1]);
-				publicKey = splitted[1] as PublicKey;
+				publicKey = assert<PublicKey>(splitted[1]);
 
 				if (!publicKey) {
 					throw new Error(`no publicKey provided in FAKE mode`);
@@ -67,7 +65,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 				const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
 				const msgHash = keccak_256(rawContent);
 				const recoveredPubKey = signature.recoverPublicKey(msgHash);
-				publicKey = `0x${recoveredPubKey.toHex()}`;
+				publicKey = `0x${recoveredPubKey.toHex()}` as PublicKey;
 			}
 
 			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);
@@ -81,9 +79,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 			// 	}
 
 			if (domainUser) {
-				// TODO typia validation
-				// account = SchemaAddress.parse(domainUser.user);
-				account = domainUser.user as Address;
+				account = assert<Address>(domainUser.user);
 			}
 		}
 

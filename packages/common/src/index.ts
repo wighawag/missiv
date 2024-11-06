@@ -1,4 +1,9 @@
-export type String0x = `0x${string}`;
+import {tags} from 'typia';
+
+/** not considered it seems, so we ust tags
+ * @Pattern /^0x[a-f0-9]+$/
+ */
+export type String0x = string & tags.Pattern<'^0x[a-f0-9]+$'>;
 
 export type PublicKey = String0x;
 
@@ -116,7 +121,7 @@ export type DomainUser = {
 	domain: string;
 	domainUsername: string;
 	publicKey: PublicKey;
-	signature: `0x${string}`;
+	signature: String0x;
 	lastPresence: number;
 	added: number;
 };
@@ -172,12 +177,6 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export function publicKeyAuthorizationMessage({
-	address,
-	publicKey,
-}: {
-	address: `0x${string}`;
-	publicKey: `0x${string}`;
-}): string {
+export function publicKeyAuthorizationMessage({address, publicKey}: {address: Address; publicKey: PublicKey}): string {
 	return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
 }

@@ -2,25 +2,18 @@ import {Hono} from 'hono';
 import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {setup} from '../../setup.js';
+import {typiaValidator} from '@hono/typia-validator';
+import {createValidate} from 'typia';
 
 export function getAdminAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const app = new Hono<{Bindings: Env & {}}>().use(setup({serverOptions: options})).post(
-		'/db-reset',
-		// TODO typia
-		// zValidator(
-		// 	'json',
-		// 	z.object({
-		// 		reset: z.boolean(),
-		// 	}),
-		// ),
-		async (c) => {
+	const app = new Hono<{Bindings: Env & {}}>()
+		.use(setup({serverOptions: options}))
+		.post('/db-reset', typiaValidator('json', createValidate<{reset: boolean}>()), async (c) => {
 			const config = c.get('config');
 			const env = config.env;
 			const storage = config.storage;
 
-			// TODO typia validation
-			// const action = c.req.valid('json');
-			const action = await c.req.json();
+			const action = c.req.valid('json');
 
 			if (action.reset) {
 				if (!(env as any).DEV) {
@@ -30,8 +23,7 @@ export function getAdminAPI<Env extends Bindings = Bindings>(options: ServerOpti
 				return c.json({success: true});
 			}
 			return c.json({success: false});
-		},
-	);
+		});
 
 	return app;
 }

@@ -173,7 +173,7 @@ export class ChatRoom {
 					const recoveryBit = Number(splitted[1]);
 					const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
 					const msgHash = keccak_256(dataString);
-					const publicKey = signature.recoverPublicKey(msgHash).toHex() as `0x${string}`;
+					const publicKey = signature.recoverPublicKey(msgHash).toHex() as PublicKey;
 
 					if (!publicKey) {
 						webSocket.send(

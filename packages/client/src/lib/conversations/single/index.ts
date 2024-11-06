@@ -13,12 +13,12 @@ import { randomBytes } from '@noble/hashes/utils';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64 } from '@scure/base';
-import { getConversationID, type ActionSendEncryptedMessage } from 'missiv-common';
+import { getConversationID, type ActionSendEncryptedMessage, type PublicKey } from 'missiv-common';
 
 const sharedKeyCache: { [userAndOtherpublicKey: string]: Uint8Array } = {};
 const messageCache: { [idTimestamp: string]: string } = {};
 
-function getSharedKey(user: User, otherpublicKey: `0x${string}`): Uint8Array {
+function getSharedKey(user: User, otherpublicKey: PublicKey): Uint8Array {
 	const cacheID = user.address.toLowerCase() + ':' + otherpublicKey;
 	let sharedKey = sharedKeyCache[cacheID];
 	if (!sharedKey) {

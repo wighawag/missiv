@@ -9,6 +9,7 @@ import {
 	ActionMarkAsRead,
 	ActionRegisterDomainUser,
 	ActionSendMessage,
+	Address,
 	Conversation,
 	DomainUser,
 	MissivUser,
@@ -23,7 +24,6 @@ import {
 	ResponseGetUnacceptedConversations,
 	ResponseSendMessage,
 } from 'missiv-common';
-import {Address} from 'viem';
 import dropTables from '../schema/ts/drop.sql.js';
 
 type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};

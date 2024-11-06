@@ -1,6 +1,8 @@
+import type { Address } from 'missiv-common';
+
 export type User = {
 	delegatePrivateKey: string;
-	address: `0x${string}`;
+	address: Address;
 };
 
 export type APIConfig = {

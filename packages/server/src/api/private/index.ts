@@ -2,57 +2,54 @@ import {Hono} from 'hono';
 import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {getAuth, setup} from '../../setup.js';
+import {typiaValidator} from '@hono/typia-validator';
+import {createValidate} from 'typia';
+import {
+	ActionAcceptConversation,
+	ActionGetAcceptedConversations,
+	ActionGetConversations,
+	ActionGetMessages,
+	ActionGetUnacceptedConversations,
+	ActionMarkAsRead,
+	ActionSendMessage,
+} from 'missiv-common';
 
 export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>()
 		.use(setup({serverOptions: options}))
-		.post(
-			'/sendMessage',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionSendMessage),
-			async (c) => {
-				const config = c.get('config');
-				const storage = config.storage;
-				const timestampMS = Date.now();
-				const {account, publicKey} = getAuth(c);
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				if (!publicKey) {
-					throw new Error(`no publicKey authenticated`);
-				}
+		.post('/sendMessage', typiaValidator('json', createValidate<ActionSendMessage>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
+			const timestampMS = Date.now();
+			const {account, publicKey} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+			if (!publicKey) {
+				throw new Error(`no publicKey authenticated`);
+			}
 
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+			const action = c.req.valid('json');
 
-				const result = await storage.sendMessage(publicKey, account, timestampMS, action);
-				return c.json(result);
-			},
-		)
-		.post(
-			'/getConversations',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionGetConversations),
-			async (c) => {
-				const config = c.get('config');
-				const storage = config.storage;
-				const {account} = getAuth(c);
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+			const result = await storage.sendMessage(publicKey, account, timestampMS, action);
+			return c.json(result);
+		})
+		.post('/getConversations', typiaValidator('json', createValidate<ActionGetConversations>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
 
-				const result = await storage.getConversations(action.domain, action.namespace, account);
-				return c.json(result);
-			},
-		)
+			const action = c.req.valid('json');
+
+			const result = await storage.getConversations(action.domain, action.namespace, account);
+			return c.json(result);
+		})
 		.post(
 			'/getAcceptedConversations',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionGetAcceptedConversations),
+			typiaValidator('json', createValidate<ActionGetAcceptedConversations>()),
 			async (c) => {
 				const config = c.get('config');
 				const storage = config.storage;
@@ -62,9 +59,7 @@ export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: Serv
 					throw new Error(`no account authenticated`);
 				}
 
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+				const action = c.req.valid('json');
 
 				const result = await storage.getAcceptedConversations(action.domain, action.namespace, account);
 				return c.json(result);
@@ -72,8 +67,7 @@ export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: Serv
 		)
 		.post(
 			'/getUnacceptedConversations',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionGetUnacceptedConversations),
+			typiaValidator('json', createValidate<ActionGetUnacceptedConversations>()),
 			async (c) => {
 				const config = c.get('config');
 				const storage = config.storage;
@@ -82,73 +76,51 @@ export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: Serv
 				if (!account) {
 					throw new Error(`no account authenticated`);
 				}
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+
+				const action = c.req.valid('json');
 
 				const result = await storage.getUnacceptedConversations(action.domain, action.namespace, account);
 				return c.json(result);
 			},
 		)
-		.post(
-			'/markAsRead',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionMarkAsRead),
-			async (c) => {
-				const config = c.get('config');
-				const storage = config.storage;
+		.post('/markAsRead', typiaValidator('json', createValidate<ActionMarkAsRead>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
 
-				const {account} = getAuth(c);
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
 
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+			const action = c.req.valid('json');
 
-				await storage.markAsRead(account, action);
-				return c.json({success: true});
-			},
-		)
-		.post(
-			'/getMessages',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionGetMessages),
-			async (c) => {
-				const config = c.get('config');
-				const storage = config.storage;
+			await storage.markAsRead(account, action);
+			return c.json({success: true});
+		})
+		.post('/getMessages', typiaValidator('json', createValidate<ActionGetMessages>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
 
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+			const action = c.req.valid('json');
 
-				const result = await storage.getMessages(action);
-				return c.json(result);
-			},
-		)
-		.post(
-			'/acceptConversation',
-			// TODO typia Validation
-			// zValidator('json', SchemaActionAcceptConversation),
-			async (c) => {
-				const config = c.get('config');
-				const storage = config.storage;
+			const result = await storage.getMessages(action);
+			return c.json(result);
+		})
+		.post('/acceptConversation', typiaValidator('json', createValidate<ActionAcceptConversation>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
 
-				const timestampMS = Date.now();
-				const {account} = getAuth(c);
-				if (!account) {
-					throw new Error(`no account authenticated`);
-				}
+			const timestampMS = Date.now();
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
 
-				// TODO typia Validation
-				// const action = c.req.valid('json');
-				const action = await c.req.json();
+			const action = c.req.valid('json');
 
-				const result = await storage.acceptConversation(account, timestampMS, action);
-				return c.json(result);
-			},
-		);
+			const result = await storage.acceptConversation(account, timestampMS, action);
+			return c.json(result);
+		});
 
 	return app;
 }

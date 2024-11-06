@@ -18,7 +18,7 @@ SIGNATURE: FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 {
 "type": "register",
 "domain": "conquest.game",
-"signature": "0xFAKE",
+"signature": "0x0000000000000000000000000000000000000000000000000000000000000000",
 "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 ###
@@ -63,7 +63,7 @@ SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 {
 "type": "register",
 "domain": "conquest.game",
-"signature": "0xFAKE",
+"signature": "0x0000000000000000000000000000000000000000000000000000000000000000",
 "address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }
 ###

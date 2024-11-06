@@ -56,7 +56,7 @@ export function setup(config?: APIConfig) {
 	}
 
 	async function register(
-		signature: `0x${string}`,
+		signature: Address,
 		options?: { name?: string; domainUsername?: string }
 	) {
 		if (api && config && $store.currentUser) {

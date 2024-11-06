@@ -44,7 +44,7 @@ export function createServer<Env extends Bindings = Bindings>(options: ServerOpt
 		.route('/api/admin', adminAPI)
 		.onError((err, c) => {
 			const config = c.get('config');
-			const env = config.env || {};
+			const env = config?.env || {};
 			console.error(err);
 			if (err instanceof HTTPException) {
 				if (err.res) {
