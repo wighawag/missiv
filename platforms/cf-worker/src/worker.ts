@@ -53,6 +53,7 @@ export class ChatRoom extends Room {
 
 export const app = createServer<Env>({
 	getDB: (c) => new RemoteD1(c.env.DB),
+	getEnv: (c) => c.env,
 	getRoom: (c, idOrName) => {
 		if (typeof idOrName == 'string') {
 			idOrName = c.env.ROOMS.idFromName(idOrName);

@@ -2,19 +2,35 @@
   "name": "missiv-server-bun",
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "missiv-server-bun": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "stc",
+    ".env.default"
+  ],
   "dependencies": {
+    "commander": "^12.1.0",
     "hono": "^4.6.9",
+    "ldenv": "^0.3.11",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
+    "named-logs-context": "^0.1.1",
     "remote-sql": "^0.0.6"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "as-soon": "^0.0.9",
     "bun-types": "^1.1.34",
+    "prettier": "^3.3.3",
+    "set-defaults": "^0.0.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   },
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "prepare": "set-defaults .env.default",
+    "build": "tsc",
+    "dev": "bun run --hot src/cli.ts"
   }
 }

@@ -1,5 +1,4 @@
-import { unstable_dev } from 'wrangler';
-import type { UnstableDevWorker } from 'wrangler';
+
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { API, FetchFunction, getPublicKey, publicKeyAuthorizationMessage } from 'missiv-client';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';

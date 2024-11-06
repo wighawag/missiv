@@ -1,6 +1,11 @@
 layout {
 	pane split_direction="vertical" {
 		pane command="bash"  {
+			args "-c" "${SHELL-bash}"
+		}
+	}
+	pane split_direction="vertical" {
+		pane command="bash"  {
 			args "-c" "pnpm common:dev; cd packages/common; ${SHELL-bash}"
 		}
 		pane command="bash"  {
