@@ -1,5 +1,4 @@
 import {Hono} from 'hono';
-import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {getAuth, setup} from '../../setup.js';
 import {typiaValidator} from '@hono/typia-validator';
@@ -13,9 +12,10 @@ import {
 	ActionMarkAsRead,
 	ActionSendMessage,
 } from 'missiv-common';
+import {Env} from '../../env.js';
 
-export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const app = new Hono<{Bindings: Env & {}}>()
+export function getPrivateChatAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
+	const app = new Hono<{Bindings: Bindings}>()
 		.use(setup({serverOptions: options}))
 		.post('/sendMessage', typiaValidator('json', createValidate<ActionSendMessage>()), async (c) => {
 			const config = c.get('config');

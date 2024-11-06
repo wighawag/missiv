@@ -1,5 +1,4 @@
 import {Hono} from 'hono';
-import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {recoverMessageAddress} from 'viem';
 import {
@@ -12,9 +11,10 @@ import {
 import {getAuth, setup} from '../../setup.js';
 import {typiaValidator} from '@hono/typia-validator';
 import {createValidate} from 'typia';
+import {Env} from '../../env.js';
 
-export function getUserAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const app = new Hono<{Bindings: Env & {}}>()
+export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
+	const app = new Hono<{Bindings: Bindings}>()
 		.use(setup({serverOptions: options}))
 		.post('/register', typiaValidator('json', createValidate<ActionRegisterDomainUser>()), async (c) => {
 			const config = c.get('config');

@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import {Room, ServerObjectId, createServer} from 'missiv-server';
+import {Room, ServerObjectId, createServer, type Env} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {Context} from 'hono';
-import { RemoteBunSQL } from './remote-sql-bun/index.js';
+import {RemoteBunSQL} from './remote-sql-bun/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
@@ -16,7 +16,7 @@ loadEnv({
 	defaultEnvFile: path.join(__dirname, '../.env.default'),
 });
 
-type Env = {
+type BunEnv = Env & {
 	DB: string;
 };
 
@@ -24,8 +24,6 @@ type Options = {
 	port?: string;
 	processInterval?: string;
 };
-
-
 
 async function main() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
@@ -43,18 +41,17 @@ async function main() {
 	const options: Options = program.opts();
 	const port = options.port ? parseInt(options.port) : 2000;
 
-
-	const env = process.env as Env;
+	const env = process.env as BunEnv;
 
 	const dbURL = env.DB;
-	const db = new RemoteBunSQL(new Database(dbURL, { strict: true }));
+	const db = new RemoteBunSQL(new Database(dbURL, {strict: true}));
 
 	function getDB() {
 		return db;
 	}
 
-	function getEnv(): Env {
-		return process.env as Env;
+	function getEnv(): BunEnv {
+		return env;
 	}
 
 	const {upgradeWebSocket, websocket} = createBunWebSocket();
@@ -67,7 +64,7 @@ async function main() {
 		constructor(private name: string) {
 			super();
 			rooms.set(this.name, this);
-		} 
+		}
 
 		async upgradeWebsocket(request: Request): Promise<Response> {
 			if ((request as any).server) {
@@ -99,11 +96,11 @@ async function main() {
 		}
 	}
 
-	function getRoom(c: Context<{Bindings: Env}>, idOrName: ServerObjectId | string) {
+	function getRoom(c: Context<{Bindings: BunEnv}>, idOrName: ServerObjectId | string) {
 		return new BunRoom(idOrName.toString()); // TODO check toString for ServerObjectId
 	}
 
-	const app = createServer({getDB, getRoom, getEnv, upgradeWebSocket});
+	const app = createServer<BunEnv>({getDB, getRoom, getEnv, upgradeWebSocket});
 
 	if (dbURL === ':memory:') {
 		console.log(`executing setup...`);
@@ -168,8 +165,7 @@ async function main() {
 			},
 		},
 	});
-	console.log(`Server is running on :${port}`)
+	console.log(`Server is running on :${port}`);
 }
 
 main();
-

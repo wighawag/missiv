@@ -8,15 +8,17 @@ import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
 import {hc} from 'hono/client';
 import {HTTPException} from 'hono/http-exception';
+import {Env} from './env.js';
+
+export type {Env};
 
 export type {ServerObject, ServerObjectId} from './types.js';
 
-export * from './api/utils.js';
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
 
-export function createServer<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const app = new Hono<{Bindings: Env & {}}>()
+export function createServer<Bindings extends Env>(options: ServerOptions<Bindings>) {
+	const app = new Hono<{Bindings: Bindings}>()
 		.use(
 			'/*',
 			cors({
@@ -32,10 +34,10 @@ export function createServer<Env extends Bindings = Bindings>(options: ServerOpt
 			return c.text('Hello world!');
 		});
 
-	const userAPI = getUserAPI<Env>(options);
-	const privateChatAPI = getPrivateChatAPI<Env>(options);
-	const publicChatAPI = getPublicChatAPI<Env>(options);
-	const adminAPI = getAdminAPI<Env>(options);
+	const userAPI = getUserAPI(options);
+	const privateChatAPI = getPrivateChatAPI(options);
+	const publicChatAPI = getPublicChatAPI(options);
+	const adminAPI = getAdminAPI(options);
 
 	return app
 		.route('/api/user', userAPI)

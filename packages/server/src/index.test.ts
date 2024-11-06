@@ -16,6 +16,7 @@ async function main() {
 
 	await client.api.private.sendMessage.$post({
 		json: {
+			type: 'sendMessage',
 			domain: 'test',
 			namespace: 'test',
 			to: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',

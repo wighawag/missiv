@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'named-logs-context';
-import {createServer} from 'missiv-server';
+import {createServer, type Env} from 'missiv-server';
 import {serve} from '@hono/node-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -15,7 +15,7 @@ loadEnv({
 	defaultEnvFile: path.join(__dirname, '../.env.default'),
 });
 
-type Env = {
+type NodeJSEnv = Env & {
 	DB: string;
 };
 
@@ -39,7 +39,7 @@ async function main() {
 	const options: Options = program.opts();
 	const port = options.port ? parseInt(options.port) : 2000;
 
-	const env = process.env as Env;
+	const env = process.env as NodeJSEnv;
 
 	const db = env.DB;
 	const TOKEN_ADMIN = (env as any).TOKEN_ADMIN;
@@ -49,7 +49,7 @@ async function main() {
 	});
 	const remoteSQL = new RemoteLibSQL(client);
 
-	const app = createServer<Env>({
+	const app = createServer<NodeJSEnv>({
 		getDB: () => remoteSQL,
 		getEnv: () => env,
 		getRoom: () => {

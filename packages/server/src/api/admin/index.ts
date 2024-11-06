@@ -1,12 +1,12 @@
 import {Hono} from 'hono';
-import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {setup} from '../../setup.js';
 import {typiaValidator} from '@hono/typia-validator';
 import {createValidate} from 'typia';
+import {Env} from '../../env.js';
 
-export function getAdminAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
-	const app = new Hono<{Bindings: Env & {}}>()
+export function getAdminAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
+	const app = new Hono<{Bindings: Bindings}>()
 		.use(setup({serverOptions: options}))
 		.post('/db-reset', typiaValidator('json', createValidate<{reset: boolean}>()), async (c) => {
 			const config = c.get('config');

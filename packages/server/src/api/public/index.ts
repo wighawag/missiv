@@ -1,6 +1,7 @@
 import {Context, Hono} from 'hono';
-import {Bindings, BlankInput, MiddlewareHandler} from 'hono/types';
+import {BlankInput, MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from '../../types.js';
+import {Env} from '../../env.js';
 
 export type {ServerObject, ServerObjectId} from '../../types.js';
 export type {Storage} from '../../storage/index.js';
@@ -14,10 +15,10 @@ type WebsocketResponse = MiddlewareHandler<
 	}
 >;
 
-export function getPublicChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
+export function getPublicChatAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
 	const {getRoom, upgradeWebSocket} = options;
 
-	const app = new Hono<{Bindings: Env & {}}>()
+	const app = new Hono<{Bindings: Bindings}>()
 		.get('/', async (c) => {
 			return c.text('Hello World!');
 		})
@@ -31,7 +32,7 @@ export function getPublicChatAPI<Env extends Bindings = Bindings>(options: Serve
 		})
 		// we need to cast the function as WebsocketResponse so client get the correct type
 		// but by doing so. we then need to also type the context manually
-		.get('/room/:name/websocket', ((c: Context<{Bindings: Env}, '/room/:name/websocket', BlankInput>) => {
+		.get('/room/:name/websocket', ((c: Context<{Bindings: Bindings}, '/room/:name/websocket', BlankInput>) => {
 			console.log({name: c.req.param().name});
 			const room = getRoom(c, c.req.param().name);
 			return room.fetch(c.req.raw);

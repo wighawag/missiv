@@ -1,4 +1,3 @@
-import {getConversationID} from '../api/utils.js';
 import {Storage} from './index.js';
 import {RemoteSQL} from 'remote-sql';
 import setupTables from '../schema/ts/conversations.sql.js';
@@ -12,6 +11,7 @@ import {
 	Address,
 	Conversation,
 	DomainUser,
+	getConversationID,
 	MissivUser,
 	PublicKey,
 	ResponseAcceptConversation,
