@@ -2,8 +2,13 @@ import {Hono} from 'hono';
 import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {recoverMessageAddress} from 'viem';
-import {publicKeyAuthorizationMessage} from '../utils.js';
-import {ActionGetCompleteUser, ActionGetMissivUser, ActionRegisterDomainUser, Address} from 'missiv-common';
+import {
+	ActionGetCompleteUser,
+	ActionGetMissivUser,
+	ActionRegisterDomainUser,
+	Address,
+	publicKeyAuthorizationMessage,
+} from 'missiv-common';
 import {getAuth, setup} from '../../setup.js';
 import {typiaValidator} from '@hono/typia-validator';
 import {createValidate} from 'typia';
@@ -41,7 +46,6 @@ export function getUserAPI<Env extends Bindings = Bindings>(options: ServerOptio
 				}
 			}
 
-			address = address.toLowerCase() as Address;
 			await storage.register(address, publicKey, timestampMS, action);
 			return c.json(
 				{
