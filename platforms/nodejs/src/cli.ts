@@ -52,8 +52,12 @@ async function main() {
 	const app = createServer<Env>({
 		getDB: () => remoteSQL,
 		getEnv: () => env,
-		getRoom: () => null,
-		upgradeWebSocket: () => null,
+		getRoom: () => {
+			throw new Error(`getRoom not implemented for nodejs`);
+		},
+		upgradeWebSocket: () => {
+			throw new Error(`upgradeWebSocket not implemented for nodejs`);
+		},
 	});
 
 	if (db === ':memory:') {

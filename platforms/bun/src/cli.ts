@@ -46,7 +46,8 @@ async function main() {
 
 	const env = process.env as Env;
 
-	const db = new RemoteBunSQL(new Database(env.DB, { strict: true }));
+	const dbURL = env.DB;
+	const db = new RemoteBunSQL(new Database(dbURL, { strict: true }));
 
 	function getDB() {
 		return db;
@@ -66,7 +67,7 @@ async function main() {
 		constructor(private name: string) {
 			super();
 			rooms.set(this.name, this);
-		}
+		} 
 
 		async upgradeWebsocket(request: Request): Promise<Response> {
 			if ((request as any).server) {
@@ -103,6 +104,17 @@ async function main() {
 	}
 
 	const app = createServer({getDB, getRoom, getEnv, upgradeWebSocket});
+
+	if (dbURL === ':memory:') {
+		console.log(`executing setup...`);
+		await app.fetch(
+			new Request('http://localhost/api/admin/setup', {
+				// headers: {
+				// 	Authorization: `Basic ${btoa(`admin:${TOKEN_ADMIN}`)}`,
+				// },
+			}),
+		);
+	}
 
 	Bun.serve({
 		port,
