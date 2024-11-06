@@ -13,13 +13,13 @@ content-type: application/json
 # register 
 POST http://localhost:2000/api/user/register
 content-type: application/json
-SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+SIGNATURE: FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 {
 "type": "register",
 "domain": "conquest.game",
 "signature": "0xFAKE",
-"address": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+"address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 ###
 
@@ -36,20 +36,20 @@ content-type: application/json
 
 
 # sending "hello world"
-#  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-#  to 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+#  from 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+#  to 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 POST http://localhost:2000/api/private/sendMessage
 content-type: application/json
-SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+SIGNATURE: FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 {
 "type": "sendMessage",
-"to": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 "message": "hello world",
 "domain": "conquest.game",
 "namespace": "main",
 "messageType": "clear",
-"signature": "FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+"signature": "FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 ### 
 
@@ -70,8 +70,8 @@ SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 
 # sending "Yo !"
-#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-#  to 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+#  to 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 POST http://localhost:2000/api/private/sendMessage
 content-type: application/json
 SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -89,7 +89,7 @@ SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 
 # getting list of chats
-#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 POST http://localhost:2000/api/private/getConversations
 content-type: application/json
 SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -102,8 +102,8 @@ SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ### 
 
 
-# getting list of chats
-#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+# getting list of unaccepted chats
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 POST http://localhost:2000/api/private/getUnacceptedConversations
 content-type: application/json
 SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -116,24 +116,38 @@ SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ### 
 
 
+# getting list of accepted chats
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:2000/api/private/getAcceptedConversations
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
+}
+### 
+
+
 # getting messages from chat
-#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-#  with 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+#  with 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 POST http://localhost:8787/api
-SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 content-type: application/json
 
 {
 "type": "getMessages",
-"with": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+"with": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 ### 
 
 
 # mark as read up to 01/01/2038
-#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 POST http://localhost:8787/api
-SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 content-type: application/json
 
 {

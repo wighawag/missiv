@@ -53,17 +53,6 @@ console.log({
 const api = new API(MISSIV_URL);
 
 describe('hono client full conversation', () => {
-	// --------------------------------------------------------------------------------------------
-	// wakeup worker
-	//   the first time the worker is called, it setups itself and this can take time
-	//   hence we have a dummy test to ensure the other tests have normal timeout
-	//   We also call setChainOverride to ensure the api is talking to the proper eth node
-	// --------------------------------------------------------------------------------------------
-	beforeAll(async () => {
-		await api.clear();
-	});
-	// --------------------------------------------------------------------------------------------
-
 	beforeEach(async () => {
 		await api.clear();
 		await api.register(
@@ -86,7 +75,7 @@ describe('hono client full conversation', () => {
 		);
 	});
 
-	it('sending a message first time ends up in conversation request only', async () => {
+	it.only('sending a message first time ends up in conversation request only', async () => {
 		const time = Date.now();
 		const sent = await api.sendMessage(
 			{

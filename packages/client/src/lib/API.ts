@@ -71,6 +71,7 @@ export class API {
 
 		if (resp) {
 			const json = (await resp.json()) as T;
+			console.log({ json });
 			return json;
 		} else {
 			console.error(`failed with no response`);
