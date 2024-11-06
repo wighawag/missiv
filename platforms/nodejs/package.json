@@ -1,22 +1,37 @@
 {
   "name": "missiv-server-nodejs",
   "version": "0.0.0",
-  "bin": {
-    "missiv": "./dist/cli.js"
+  "publishConfig": {
+    "access": "public"
   },
+  "type": "module",
+  "bin": {
+    "missiv-server-nodejs": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "stc",
+    ".env.default"
+  ],
   "dependencies": {
     "@hono/node-server": "^1.13.5",
-    "missiv-common": "workspace:*",
-    "missiv-server": "workspace:*"
+    "@libsql/client": "^0.14.0",
+    "commander": "^12.1.0",
+    "missiv-server": "workspace:*",
+    "ldenv": "^0.3.11",
+    "named-logs-context": "^0.1.1",
+    "remote-sql-libsql": "^0.0.6"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "as-soon": "^0.0.9",
     "set-defaults": "^0.0.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   },
   "scripts": {
-    "build": "pkgroll",
-    "dev": "tsx watch src/cli.ts"
+    "prepare": "set-defaults .env.default",
+    "dev": "tsx watch src/cli.ts --port 30042",
+    "build": "tsc"
   }
 }
