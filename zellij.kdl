@@ -6,6 +6,9 @@ layout {
 		pane command="bash"  {
 			args "-c" "pnpm server:dev; cd packages/server; ${SHELL-bash}"
 		}
+		pane name="server sql watch" command="bash" {
+			args "-c" "pnpm run --filter ./packages/server sql2ts:watch; cd packages/server; ${SHELL-bash}"
+		}
 	}
 	pane split_direction="vertical" {
 		pane command="bash"  {
