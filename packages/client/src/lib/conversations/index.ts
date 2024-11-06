@@ -3,8 +3,8 @@ import { openOneConversation } from './single/index.js';
 import { openConversationsView } from './list/index.js';
 import type { APIConfig, User } from '$lib/types.js';
 import { API } from '$lib/API.js';
-import type { ConversationsState, OtherUser } from './types.js';
-import type { Address } from 'missiv-server-app';
+import type { ConversationsState } from './types.js';
+import type { Address } from 'missiv-common';
 
 const $store: ConversationsState = { registered: { state: 'idle' } };
 
@@ -66,6 +66,7 @@ export function setup(config?: APIConfig) {
 
 			await api.register(
 				{
+					type: 'register',
 					address: user.address,
 					domain: config.domain,
 					signature,

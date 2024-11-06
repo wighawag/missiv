@@ -1,14 +1,14 @@
 import * as secp from '@noble/secp256k1';
-import { webcrypto } from 'node:crypto';
+import {webcrypto} from 'node:crypto';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
-import { keccak_256 } from '@noble/hashes/sha3';
+import {keccak_256} from '@noble/hashes/sha3';
 
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { utf8ToBytes } from '@noble/ciphers/utils';
-import { randomBytes } from '@noble/ciphers/webcrypto';
+import {xchacha20poly1305} from '@noble/ciphers/chacha';
+import {utf8ToBytes} from '@noble/ciphers/utils';
+import {randomBytes} from '@noble/ciphers/webcrypto';
 
-import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
+import {describe, expect, it, beforeAll, afterAll, afterEach, beforeEach} from 'vitest';
 
 function publicKeyToAddress(publicKey: `0x${string}`): `0x${string}` {
 	const publicKeyRaw = secp.ProjectivePoint.fromHex(publicKey.slice(2)).toRawBytes(false);

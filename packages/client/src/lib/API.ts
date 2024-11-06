@@ -19,7 +19,7 @@ import type {
 	ResponseGetUnacceptedConversations,
 	ResponseRegisterDomainUser,
 	ResponseSendMessage
-} from 'missiv-server-app';
+} from 'missiv-common';
 
 export type FetchFunction = typeof fetch;
 
@@ -56,19 +56,24 @@ export class API {
 					'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
 			}
 		}
-		const resp = await this.fetchFunction(this.endpoint + path, {
+		const url = this.endpoint + '/api' + path;
+		console.log({ url });
+		const resp = await this.fetchFunction(url, {
 			method: 'POST',
 			body,
 			headers
 		});
 		if (resp.status !== 200 && resp.status !== 201) {
-			throw new Error(await resp.text());
+			const text = await resp.text();
+			console.error(`failed`, text);
+			throw new Error(text);
 		}
 
 		if (resp) {
 			const json = (await resp.json()) as T;
 			return json;
 		} else {
+			console.error(`failed with no response`);
 			throw new Error(`no response`);
 		}
 	}

@@ -1,6 +1,6 @@
-import {FUZD_URL} from './prool/pool';
+import {MISSIV_URL} from './prool/pool';
 
-export function connectToWorker() {
+export function connectToMissiv() {
 	return {
 		async fetch(req: Request | string, init?: RequestInit) {
 			let request: Request | string;
@@ -9,9 +9,9 @@ export function connectToWorker() {
 					request = req;
 				} else {
 					if (req.startsWith('/')) {
-						request = `${FUZD_URL}${req}`;
+						request = `${MISSIV_URL}${req}`;
 					} else {
-						request = `${FUZD_URL}${req}`;
+						request = `${MISSIV_URL}${req}`;
 					}
 				}
 			} else {

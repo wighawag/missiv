@@ -10,7 +10,9 @@
     "bun-types": "^1.1.34",
     "hono": "^4.6.9",
     "missiv-client": "workspace:*",
+    "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
+    "missiv-server-bun": "workspace:*",
     "prool": "^0.0.16",
     "prool-any": "^0.0.1",
     "tsx": "^4.19.2",
@@ -20,6 +22,7 @@
   "scripts": {
     "build": "echo 'No setup for build'",
     "dev": "bun run --hot src/cli.ts",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "test": "vitest"
   }
 }

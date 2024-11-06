@@ -6,6 +6,7 @@ import {getPrivateChatAPI} from './api/private/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
+import {hc} from 'hono/client';
 
 export type {ServerObject, ServerObjectId} from './types.js';
 
@@ -43,3 +44,8 @@ export function createServer<Env extends Bindings = Bindings>(options: ServerOpt
 }
 
 export type App = ReturnType<typeof createServer<{}>>;
+
+// this is a trick to calculate the type when compiling
+const client = hc<App>('');
+export type Client = typeof client;
+export const createClient = (...args: Parameters<typeof hc>): Client => hc<App>(...args);

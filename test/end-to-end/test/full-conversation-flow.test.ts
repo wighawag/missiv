@@ -1,8 +1,11 @@
 import {describe, expect, it, beforeAll, afterAll, afterEach, beforeEach} from 'vitest';
-import {API, FetchFunction, publicKeyAuthorizationMessage} from 'missiv-client';
+import {publicKeyAuthorizationMessage} from 'missiv-common';
+import {createClient} from 'missiv-server';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
 import {webcrypto} from 'node:crypto';
+import {MISSIV_URL} from './prool/pool';
+import {API} from 'missiv-client';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -47,23 +50,25 @@ console.log({
 	userBMessage,
 });
 
-describe('Worker', () => {
-	let worker: UnstableDevWorker;
-	let api: API;
+const api = new API(MISSIV_URL);
 
+describe('hono client full conversation', () => {
+	// --------------------------------------------------------------------------------------------
+	// wakeup worker
+	//   the first time the worker is called, it setups itself and this can take time
+	//   hence we have a dummy test to ensure the other tests have normal timeout
+	//   We also call setChainOverride to ensure the api is talking to the proper eth node
+	// --------------------------------------------------------------------------------------------
 	beforeAll(async () => {
-		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
-			experimental: {disableExperimentalWarning: true},
-		});
-		api = new API('http://localhost/api', {
-			fetch: worker.fetch.bind(worker) as FetchFunction,
-		});
+		await api.clear();
 	});
+	// --------------------------------------------------------------------------------------------
 
 	beforeEach(async () => {
 		await api.clear();
 		await api.register(
 			{
+				type: 'register',
 				address: USER_B.address,
 				signature: USER_B.signature,
 				domain: 'test.com',
@@ -72,6 +77,7 @@ describe('Worker', () => {
 		);
 		await api.register(
 			{
+				type: 'register',
 				address: USER_A.address,
 				signature: USER_A.signature,
 				domain: 'test.com',
@@ -80,22 +86,11 @@ describe('Worker', () => {
 		);
 	});
 
-	afterAll(async () => {
-		await worker.stop();
-	});
-
-	it('should return Hello World', async () => {
-		const resp = await worker.fetch();
-		if (resp) {
-			const text = await resp.text();
-			expect(text).toMatchInlineSnapshot(`"Hello world\n"`);
-		}
-	});
-
 	it('sending a message first time ends up in conversation request only', async () => {
 		const time = Date.now();
 		const sent = await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -108,12 +103,12 @@ describe('Worker', () => {
 		);
 		expect(sent.timestampMS).to.toBeGreaterThan(time);
 		const {acceptedConversations} = await api.getAcceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(acceptedConversations.length).toBe(0);
 		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(unacceptedConversations.length).toBe(1);
@@ -122,6 +117,7 @@ describe('Worker', () => {
 	it('accepting a conversation request make it end up in conversations', async () => {
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -133,12 +129,13 @@ describe('Worker', () => {
 			{publicKey: USER_B.publicKey},
 		);
 		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
+				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
 				conversationID: unacceptedConversations[0].conversationID,
@@ -146,12 +143,12 @@ describe('Worker', () => {
 			{publicKey: USER_A.publicKey},
 		);
 		const {unacceptedConversations: unacceptedConversationsAfter} = await api.getUnacceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(unacceptedConversationsAfter.length).toBe(0);
 		const {acceptedConversations} = await api.getAcceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(acceptedConversations.length).toBe(1);
@@ -160,6 +157,7 @@ describe('Worker', () => {
 	it('sending further message on an accepted conversation end up there', async () => {
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -171,13 +169,14 @@ describe('Worker', () => {
 			{publicKey: USER_B.publicKey},
 		);
 		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(unacceptedConversations.length).toBe(1);
 
 		await api.acceptConversation(
 			{
+				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
 				conversationID: unacceptedConversations[0].conversationID,
@@ -186,6 +185,7 @@ describe('Worker', () => {
 		);
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -197,17 +197,27 @@ describe('Worker', () => {
 			{publicKey: USER_B.publicKey},
 		);
 		const {acceptedConversations} = await api.getAcceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(acceptedConversations.length).toBe(1);
 		const {messages: messagesA} = await api.getMessages(
-			{domain: 'test.com', namespace: 'test', conversationID: acceptedConversations[0].conversationID},
+			{
+				type: 'getMessages',
+				domain: 'test.com',
+				namespace: 'test',
+				conversationID: acceptedConversations[0].conversationID,
+			},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(messagesA.length).toBe(2);
 		const {messages: messagesB} = await api.getMessages(
-			{domain: 'test.com', namespace: 'test', conversationID: acceptedConversations[0].conversationID},
+			{
+				type: 'getMessages',
+				domain: 'test.com',
+				namespace: 'test',
+				conversationID: acceptedConversations[0].conversationID,
+			},
 			{publicKey: USER_B.publicKey},
 		);
 		// console.log({ messagesA });
@@ -217,6 +227,7 @@ describe('Worker', () => {
 	it('reply show up as unread', async () => {
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -228,12 +239,13 @@ describe('Worker', () => {
 			{publicKey: USER_B.publicKey},
 		);
 		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(unacceptedConversations.length).toBe(1);
 		await api.acceptConversation(
 			{
+				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
 				conversationID: unacceptedConversations[0].conversationID,
@@ -242,6 +254,7 @@ describe('Worker', () => {
 		);
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_A.address,
@@ -254,6 +267,7 @@ describe('Worker', () => {
 		);
 		await api.sendMessage(
 			{
+				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
 				to: USER_B.address,
@@ -265,13 +279,13 @@ describe('Worker', () => {
 			{publicKey: USER_A.publicKey},
 		);
 		const {acceptedConversations: conversationsB} = await api.getAcceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_B.publicKey},
 		);
 		expect(conversationsB.length).toBe(1);
 		expect(conversationsB[0].state).toBe('unread');
 		const {acceptedConversations: conversationsA} = await api.getAcceptedConversations(
-			{domain: 'test.com', namespace: 'test'},
+			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_A.publicKey},
 		);
 		expect(conversationsA.length).toBe(1);

@@ -1,10 +1,12 @@
 
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction, getPublicKey, publicKeyAuthorizationMessage } from 'missiv-client';
+import { API, FetchFunction, getPublicKey } from 'missiv-client';
+import {publicKeyAuthorizationMessage} from 'missiv-common';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
 import { utils as secpUtils } from '@noble/secp256k1';
 import { webcrypto } from 'node:crypto';
+import { MISSIV_URL } from './prool/pool';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -27,26 +29,25 @@ const USER_B = {
 	address: userBAccount.address,
 } as const;
 
-describe('Registration of keys', () => {
-	let worker: UnstableDevWorker;
-	let api: API;
+const api = new API(MISSIV_URL);
 
+describe('Registration of keys', () => {
+	
+// --------------------------------------------------------------------------------------------
+	// wakeup worker
+	//   the first time the worker is called, it setups itself and this can take time
+	//   hence we have a dummy test to ensure the other tests have normal timeout
+	//   We also call setChainOverride to ensure the api is talking to the proper eth node
+	// --------------------------------------------------------------------------------------------
 	beforeAll(async () => {
-		worker = await unstable_dev(__dirname + '/../src/worker.ts', {
-			experimental: { disableExperimentalWarning: true },
-		});
-		api = new API('http://localhost/api', {
-			fetch: worker.fetch.bind(worker) as FetchFunction,
-		});
+		await api.clear();
 	});
+	// --------------------------------------------------------------------------------------------
 
 	beforeEach(async () => {
 		await api.clear();
 	});
 
-	afterAll(async () => {
-		await worker.stop();
-	});
 
 	it('should be able to register', async () => {
 		const userBMessage = publicKeyAuthorizationMessage({
@@ -56,6 +57,7 @@ describe('Registration of keys', () => {
 		const signature = await userBAccount.signMessage({ message: userBMessage });
 		await api.register(
 			{
+				type: 'register',
 				address: USER_B.address,
 				signature: signature,
 				domain: 'test',
@@ -64,9 +66,10 @@ describe('Registration of keys', () => {
 		);
 
 		const { user } = await api.getUser({
+			type: 'getUser',
 			address: USER_B.address,
 		});
-		const { domainUser } = await api.getDomainUser({
+		const { domainUser } = await api.getCompleteUser({
 			address: USER_B.address,
 			domain: 'test',
 		});

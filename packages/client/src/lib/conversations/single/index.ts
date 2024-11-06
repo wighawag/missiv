@@ -9,11 +9,11 @@ import type {
 } from '../types.js';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
-import { hexToBytes, randomBytes } from '@noble/hashes/utils';
+import { randomBytes } from '@noble/hashes/utils';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64 } from '@scure/base';
-import { getConversationID, type ActionSendEncryptedMessage } from 'missiv-server-app';
+import { getConversationID, type ActionSendEncryptedMessage } from 'missiv-common';
 
 const sharedKeyCache: { [userAndOtherpublicKey: string]: Uint8Array } = {};
 const messageCache: { [idTimestamp: string]: string } = {};
@@ -71,6 +71,7 @@ export function openOneConversation(
 			}
 			const { messages } = await api.getMessages(
 				{
+					type: `getMessages`,
 					domain: config.domain,
 					namespace: config.namespace,
 					conversationID
@@ -111,6 +112,7 @@ export function openOneConversation(
 			if (markAsAcceptedAndRead) {
 				api.acceptConversation(
 					{
+						type: 'acceptConversation',
 						domain: config.domain,
 						namespace: config.namespace,
 						conversationID
@@ -169,6 +171,7 @@ export function openOneConversation(
 		if (!$store.otherUser.publicKey) {
 			await api.sendMessage(
 				{
+					type: 'sendMessage',
 					message: text,
 					messageType: 'clear',
 					domain: config.domain,
@@ -190,6 +193,7 @@ export function openOneConversation(
 			const ciphertext = chacha.encrypt(data);
 
 			const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
+				type: 'sendMessage',
 				domain: config.domain,
 				namespace: config.namespace,
 				signature: '0x', //TODO

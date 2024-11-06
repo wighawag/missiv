@@ -1,6 +1,7 @@
 {
 	"name": "missiv-client",
 	"version": "0.0.13",
+	"type": "module",
 	"files": [
 		"dist",
 		"!dist/**/*.test.*",
@@ -11,16 +12,18 @@
 	],
 	"svelte": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"type": "module",
 	"exports": {
 		".": {
+			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts",
 			"svelte": "./dist/index.js"
 		}
 	},
 	"dependencies": {
+		"@noble/ciphers": "^1.0.0",
 		"@noble/hashes": "^1.5.0",
-		"@noble/secp256k1": "^2.1.0"
+		"@noble/secp256k1": "^2.1.0",
+		"@scure/base": "^1.1.9"
 	},
 	"peerDependencies": {
 		"missiv-common": "workspace:*",

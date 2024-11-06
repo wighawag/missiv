@@ -4,22 +4,24 @@ export type PublicKey = String0x;
 
 export type Address = String0x;
 
-export type ActionSendMessage = {
+type ActionSendMessageBase = {
 	type: 'sendMessage';
 	domain: string;
 	namespace: string;
 	to: Address;
 	message: string;
 	signature: String0x;
-} & (
-	| {
-			toPublicKey: PublicKey;
-			messageType: 'encrypted';
-	  }
-	| {
-			messageType: 'clear';
-	  }
-);
+};
+
+export type ActionSendEncryptedMessage = ActionSendMessageBase & {
+	toPublicKey: PublicKey;
+	messageType: 'encrypted';
+};
+
+export type ActionSendInClearMessage = ActionSendMessageBase & {
+	messageType: 'clear';
+};
+export type ActionSendMessage = ActionSendEncryptedMessage | ActionSendInClearMessage;
 
 export type ResponseSendMessage = {
 	timestampMS: number;
