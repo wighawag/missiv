@@ -1,4 +1,5 @@
-name = "missiv-server-cf-worker-base"
+name = "missiv-server-cf-worker"
+main = "src/worker.ts"
 compatibility_date = "2023-08-14"
 
 compatibility_flags = [ "nodejs_compat" ] # for node:async_hooks
@@ -7,3 +8,15 @@ compatibility_flags = [ "nodejs_compat" ] # for node:async_hooks
 binding = "DB" # i.e. available in your Worker on env.DB
 database_name = "missiv-db-tmp"
 database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
+
+
+[durable_objects]
+bindings = [
+  { name = "ROOMS", class_name = "ChatRoom" },
+  #TODO { name = "LIMITERS", class_name = "RateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+# TODO new_classes = ["ChatRoom", "RateLimiter"]
+new_classes = ["ChatRoom"]

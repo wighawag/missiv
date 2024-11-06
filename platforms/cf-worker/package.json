@@ -15,7 +15,7 @@
     "wrangler": "^3.84.1"
   },
   "scripts": {
-    "dev": "wrangler dev src/index.ts",
-    "deploy": "wrangler deploy --minify src/index.ts"
+    "dev": "wrangler dev ",
+    "deploy": "wrangler deploy --minify"
   }
 }

@@ -7,13 +7,13 @@ import type {
 	CurrentConversation,
 	OtherUser
 } from '../types.js';
-import { getConversationID, type Address, type ActionSendEncryptedMessage } from 'missiv-common';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { hexToBytes, randomBytes } from '@noble/hashes/utils';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64 } from '@scure/base';
+import { getConversationID, type ActionSendEncryptedMessage } from 'missiv-server-app';
 
 const sharedKeyCache: { [userAndOtherpublicKey: string]: Uint8Array } = {};
 const messageCache: { [idTimestamp: string]: string } = {};
@@ -60,13 +60,13 @@ export function openOneConversation(
 	async function fetchMessages() {
 		if ($store.user) {
 			if (!$store.otherUser.publicKey) {
-				const { domainUser } = await api.getDomainUser({
+				const { completeUser } = await api.getCompleteUser({
 					address: otherUser.address,
 					domain: config.domain
 				});
-				if (domainUser?.publicKey) {
-					$store.otherUser.publicKey = domainUser.publicKey;
-					$store.otherUser.name = domainUser.domainUsername || domainUser.name;
+				if (completeUser?.publicKey) {
+					$store.otherUser.publicKey = completeUser.publicKey;
+					$store.otherUser.name = completeUser.domainUsername || completeUser.name;
 				}
 			}
 			const { messages } = await api.getMessages(
@@ -190,7 +190,6 @@ export function openOneConversation(
 			const ciphertext = chacha.encrypt(data);
 
 			const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
-				type: 'sendMessage',
 				domain: config.domain,
 				namespace: config.namespace,
 				signature: '0x', //TODO

@@ -1,6 +1,7 @@
 import {MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from './types.js';
-import {MessagesStorage} from './storage/index.js';
+import {Env} from './env.js';
+import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 
 // used to be hono Bindings but its type is now `object` which break compilation here
 type Bindings = Record<string, any>;
@@ -10,12 +11,14 @@ export type SetupOptions<Env extends Bindings = Record<string, any>> = {
 };
 
 export type Config = {
-	storage: MessagesStorage;
+	storage: RemoteSQLStorage;
+	env: Env;
 };
 
 declare module 'hono' {
 	interface ContextVariableMap {
 		config: Config;
+		env: Env;
 	}
 }
 
@@ -31,10 +34,11 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 		}
 
 		const db = getDB(c);
-		const storage = new MessagesStorage(db);
+		const storage = new RemoteSQLStorage(db);
 
 		c.set('config', {
 			storage,
+			env,
 		});
 
 		// auto setup

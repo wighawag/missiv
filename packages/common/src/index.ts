@@ -110,7 +110,7 @@ export type ActionGetMissivUser = {
 export type ResponseGetMissivUser = {user: MissivUser | undefined};
 
 export type DomainUser = {
-	address: Address;
+	user: Address;
 	domain: string;
 	domainUsername: string;
 	publicKey: PublicKey;
@@ -123,7 +123,7 @@ export type ActionGetDomainUser = {
 	domain: string;
 	address: Address;
 };
-export type ResponseGetDomainUser = {domainUser: (DomainUser & MissivUser) | undefined};
+export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
 
 export type ActionRegisterDomainUser = {
 	type: 'register';
@@ -134,6 +134,12 @@ export type ActionRegisterDomainUser = {
 	domainUsername?: string;
 };
 export type ResponseRegisterDomainUser = {timestampMS: number};
+
+export type ActionGetCompleteUser = {
+	domain: string;
+	address: Address;
+};
+export type ResponseGetCompleteUser = {completeUser: (DomainUser & MissivUser) | undefined};
 
 export type Action =
 	| ActionRegisterDomainUser

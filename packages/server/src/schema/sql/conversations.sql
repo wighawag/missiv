@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS Conversations;
-
 CREATE TABLE IF NOT EXISTS Conversations (
   domain text NOT NULL,
   namespace text NOT NULL,
@@ -17,8 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations 
 CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (domain, namespace, first, accepted, lastMessage);
 
 CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (domain, namespace, first, read, lastMessage);
-
-DROP TABLE IF EXISTS Messages;
 
 CREATE TABLE IF NOT EXISTS Messages (
   id integer PRIMARY KEY,
@@ -39,8 +35,6 @@ CREATE INDEX IF NOT EXISTS idx_Messsages_list ON Messages (domain, namespace, co
 
 CREATE INDEX IF NOT EXISTS idx_Messsages_id ON Messages (id, timestamp);
 
-DROP TABLE IF EXISTS DomainUsers;
-
 CREATE TABLE IF NOT EXISTS DomainUsers (
   user text NOT NULL,
   domain text NOT NULL,
@@ -57,8 +51,6 @@ CREATE TABLE IF NOT EXISTS DomainUsers (
 CREATE INDEX IF NOT EXISTS idx_DomainUsers_publicKey ON DomainUsers (publicKey);
 
 CREATE INDEX IF NOT EXISTS idx_DomainUsers_lastPresence ON DomainUsers (lastPresence);
-
-DROP TABLE IF EXISTS Users;
 
 CREATE TABLE IF NOT EXISTS Users (
   address text NOT NULL,
