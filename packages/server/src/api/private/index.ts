@@ -1,13 +1,11 @@
 import {Hono} from 'hono';
 import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
-import {eth_auth, getAuth} from '../auth.js';
-import {setup} from '../../setup.js';
+import {getAuth, setup} from '../../setup.js';
 
 export function getPrivateChatAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>()
 		.use(setup({serverOptions: options}))
-		.use(eth_auth({serverOptions: options}))
 		.post(
 			'/sendMessage',
 			// TODO typia Validation

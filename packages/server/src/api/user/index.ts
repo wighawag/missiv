@@ -3,12 +3,12 @@ import {Bindings} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {recoverMessageAddress} from 'viem';
 import {publicKeyAuthorizationMessage} from '../utils.js';
-import {eth_auth, getAuth} from '../auth.js';
 import {Address} from 'missiv-common';
+import {getAuth, setup} from '../../setup.js';
 
 export function getUserAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
 	const app = new Hono<{Bindings: Env & {}}>()
-		.use(eth_auth({serverOptions: options}))
+		.use(setup({serverOptions: options}))
 		.post(
 			'/register',
 			// TODO typia Validation

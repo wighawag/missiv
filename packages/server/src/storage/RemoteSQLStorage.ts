@@ -24,7 +24,7 @@ import {
 	ResponseSendMessage,
 } from 'missiv-common';
 import {Address} from 'viem';
-// import dropTables from '../schema/ts/drop.sql.js';
+import dropTables from '../schema/ts/drop.sql.js';
 
 type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};
 
@@ -227,9 +227,22 @@ export class RemoteSQLStorage implements Storage {
 
 	async setup() {
 		const statements = sqlToStatements(setupTables);
-		await this.db.batch(statements.map((v) => this.db.prepare(v)));
+		// The following do not work on bun sqlite:
+		//  (seems like prepared statement are partially executed and index cannot be prepared when table is not yet created)
+		// await this.db.batch(statements.map((v) => this.db.prepare(v)));
+		for (const statement of statements) {
+			await this.db.prepare(statement).all();
+		}
 	}
 	async reset() {
-		// TODO
+		const dropStatements = sqlToStatements(dropTables);
+		const statements = sqlToStatements(setupTables);
+		const allStatements = dropStatements.concat(statements);
+		// The following do not work on bun sqlite:
+		//  (seems like prepared statement are partially executed and index cannot be prepared when table is not yet created)
+		// await this.db.batch(allStatements.map((v) => this.db.prepare(v)));
+		for (const statement of allStatements) {
+			await this.db.prepare(statement).all();
+		}
 	}
 }

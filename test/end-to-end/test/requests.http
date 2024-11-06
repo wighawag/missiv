@@ -1,72 +1,125 @@
 
 # reset DB
-POST http://localhost:34003/api HTTP/1.1
+POST http://localhost:2000/api/admin/db-reset
 content-type: application/json
 
 {
-"type": "db:reset"
+"type": "db:reset",
+"reset": true
 }
-### 
+###
 
-# # reset DB
-# POST http://api.missiv.xyz/api HTTP/1.1
-# content-type: application/json
 
-# {
-# "type": "db:reset"
-# }
-# ### 
+# register 
+POST http://localhost:2000/api/user/register
+content-type: application/json
+SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
+{
+"type": "register",
+"domain": "conquest.game",
+"signature": "0xFAKE",
+"address": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
+###
+
+
+# getUser 
+POST http://localhost:2000/api/user/getUser
+content-type: application/json
+
+{
+"type": "getUser",
+"address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+###
 
 
 # sending "hello world"
 #  from 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 #  to 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:2000/api/private/sendMessage
 content-type: application/json
 SIGNATURE: FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 {
 "type": "sendMessage",
 "to": "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-"message": "hello world"
+"message": "hello world",
+"domain": "conquest.game",
+"namespace": "main",
+"messageType": "clear",
+"signature": "FAKE:0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 }
 ### 
 
 
 
+# register 
+POST http://localhost:2000/api/user/register
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "register",
+"domain": "conquest.game",
+"signature": "0xFAKE",
+"address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
+###
+
+
 # sending "Yo !"
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  to 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:2000/api/private/sendMessage
 content-type: application/json
-SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 {
 "type": "sendMessage",
-"to": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-"message": "Yo !"
+"to": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+"message": "Yo !",
+"domain": "conquest.game",
+"namespace": "main",
+"messageType": "clear",
+"signature": "FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }
 ### 
 
 
 # getting list of chats
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
-SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+POST http://localhost:2000/api/private/getConversations
 content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 {
-"type": "getConversations"
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
 }
 ### 
 
+
+# getting list of chats
+#  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+POST http://localhost:2000/api/private/getUnacceptedConversations
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
+}
+### 
 
 
 # getting messages from chat
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 #  with 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:8787/api
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -79,7 +132,7 @@ content-type: application/json
 
 # mark as read up to 01/01/2038
 #  from 0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-POST http://localhost:8787/api HTTP/1.1
+POST http://localhost:8787/api
 SIGNATURE: FAKE:0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 content-type: application/json
 
@@ -90,21 +143,3 @@ content-type: application/json
 ### 
 
 
-############################################################
-
-
-POST http://localhost:8787/api HTTP/1.1
-content-type: application/json
-
-{
-"type": "kv:list"
-}
-###
-
-POST http://localhost:8787/api HTTP/1.1
-content-type: application/json
-
-{
-"type": "kv:delete"
-}
-###

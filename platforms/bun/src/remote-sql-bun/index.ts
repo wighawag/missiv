@@ -1,12 +1,17 @@
 import {RemoteSQL, SQLPreparedStatement, SQLResult, SQLStatement} from 'remote-sql';
-import { Database, Statement } from "bun:sqlite";
+import {Database, Statement} from 'bun:sqlite';
 
 export class BunSQLPreparedStatement implements SQLPreparedStatement {
 	public readonly args: any[];
-    public readonly query: Statement; 
-	constructor(private client: Database, public readonly sql: string, args: any[] = []) {
+	public readonly query: Statement;
+	constructor(
+		private client: Database,
+		public readonly sql: string,
+		args: any[] = [],
+	) {
 		this.args = args;
-        this.query = client.query(sql);
+		console.log({sql});
+		this.query = client.query(sql);
 	}
 	bind(...values: any[]): SQLPreparedStatement {
 		return new BunSQLPreparedStatement(this.client, this.sql, this.args.concat(values));
@@ -31,13 +36,14 @@ export class RemoteBunSQL implements RemoteSQL {
 	}
 	async batch<T = any>(list: SQLPreparedStatement[]): Promise<SQLResult<T>[]> {
 		const transact = this.client.transaction(async (list: SQLPreparedStatement[]) => {
-            const result: any[] = [];
-            for (const statement of list) {
-                result.push(await statement.all());
-            }
-            return result;
-        });
-        const response = transact(list);
+			const result: any[] = [];
+			for (const statement of list) {
+				result.push(await statement.all());
+			}
+			return result;
+		});
+		const response = await transact(list);
+		console.log({response});
 		return response.map((res: any) => ({results: res})) as SQLResult<T>[];
 	}
 }
