@@ -28,11 +28,6 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 	return async (c, next) => {
 		const env = getEnv(c);
 
-		const mnemonic: string = env.HD_MNEMONIC as string;
-		if (!mnemonic) {
-			throw new Error(`no HD_MNEMONIC defined`);
-		}
-
 		const db = getDB(c);
 		const storage = new RemoteSQLStorage(db);
 

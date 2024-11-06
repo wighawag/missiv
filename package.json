@@ -28,6 +28,8 @@
     "client:dev:build": "pnpm --filter missiv-client dev:build",
     "cf-worker:dev": "pnpm --filter missiv-server-cf-worker dev",
     "bun:dev": "pnpm --filter missiv-server-bun dev",
+    "bun:build:watch": "pnpm --filter missiv-server-bun build:watch",
+    "nodejs:build:watch": "pnpm --filter missiv-server-nodejs build:watch",
     "server:dev": "pnpm --filter missiv-server dev",
     "common:dev": "pnpm --filter missiv-common dev",
     "---------------------- DEPLOY ----------------------": "",

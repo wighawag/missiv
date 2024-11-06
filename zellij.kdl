@@ -19,6 +19,14 @@ layout {
 		pane command="bash"  {
 			args "-c" "pnpm bun:dev; cd platforms/bun; ${SHELL-bash}"
 		}
+
+		pane command="bash"  {
+			args "-c" "pnpm bun:build:watch; cd platforms/bun; ${SHELL-bash}"
+		}
+
+		pane command="bash"  {
+			args "-c" "pnpm nodejs:build:watch; cd platforms/nodejs; ${SHELL-bash}"
+		}
 		
 		pane command="bash"  {
 			args "-c" "pnpm cf-worker:dev; cd platforms/cf-worker; ${SHELL-bash}"
