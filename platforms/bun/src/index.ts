@@ -2,14 +2,19 @@ import {Room, ServerObjectId, createServer} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {Context, Env} from 'hono';
-import { RemoteBunSQL } from './remote-sql-bun';
+import { RemoteBunSQL } from './remote-sql-bun/index.js';
 
 
 // TODO env.DB
 const db = new RemoteBunSQL(new Database(":memory:", { strict: true }));
 
+
 function getDB() {
 	return db;
+}
+
+function getEnv(): Env {
+	return process.env as Env;
 }
 
 const {upgradeWebSocket, websocket} = createBunWebSocket();
@@ -58,7 +63,7 @@ export function getRoom(c: Context<{Bindings: Env}>, idOrName: ServerObjectId | 
 	return new BunRoom(idOrName.toString()); // TODO check toString for ServerObjectId
 }
 
-const app = createServer({getDB, getRoom, upgradeWebSocket});
+const app = createServer({getDB, getRoom, getEnv, upgradeWebSocket});
 
 Bun.serve({
 	fetch: (request, server) => {
@@ -71,6 +76,9 @@ Bun.serve({
 			if (data?.room) {
 				console.log(`websocket:open: ${data.room}`);
 				const room = rooms.get(data.room);
+				if (!room) {
+					throw new Error(`np room for ${data.room}`);
+				}
 				room._addWebSocket(ws as any);
 			} else {
 				console.log(`global:websocket:open`);
@@ -82,6 +90,9 @@ Bun.serve({
 			if (data?.room) {
 				console.log(`websocket:close: ${data.room}`);
 				const room = rooms.get(data.room);
+				if (!room) {
+					throw new Error(`np room for ${data.room}`);
+				}
 				room._removeWebSocket(ws as any);
 				room.webSocketClose(ws as any, code, reason, true); // TODO wasClean == true ?
 			} else {
@@ -94,6 +105,9 @@ Bun.serve({
 			if (data?.room) {
 				console.log(`websocket:message: ${data.room}`);
 				const room = rooms.get(data.room);
+				if (!room) {
+					throw new Error(`np room for ${data.room}`);
+				}
 				room.webSocketMessage(ws as any, msg.toString());
 			} else {
 				console.log(`global:websocket:message`);
