@@ -1,25 +1,42 @@
 import {Context, Hono} from 'hono';
+import {cors} from 'hono/cors';
 import type {WSEvents} from 'hono/ws';
 import type {Bindings} from 'hono/types';
 import type {ServerOptions} from './types.js';
+import {setup} from './setup.js';
+import {getPublicAPI} from './api/index.js';
 
 export type WebsocketHandler<Env extends Bindings> = (c: Context<{Bindings: Env}>) => WSEvents | Promise<WSEvents>;
 
-export type Server<Env extends Bindings> = {app: Hono<{Bindings: Env}>; handleWebsocket: WebsocketHandler<Env>};
+export type Server<Env extends Bindings> = {
+	app: {fetch: any}; // TODO fetch
+	handleWebsocket: WebsocketHandler<Env>;
+};
 
-function createServerApp<Env extends Bindings>() {
-	const app = new Hono<{Bindings: Env & {}}>();
+function createAppWithPublicAPIOnly<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
+	const app = new Hono<{Bindings: Env & {}}>().use(
+		cors({
+			origin: '*',
+			allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE'],
+			allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
+			exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
+			maxAge: 600,
+			credentials: true,
+		}),
+	);
+	const publicAPI = getPublicAPI(options);
+	const api = new Hono<{Bindings: Env & {}}>().use(setup({serverOptions: options})).route('/', publicAPI);
+	return app.route('/api', api);
+}
 
-	app.get('/', (c) => {
-		return c.text('Hello dd!');
+function createServerApp<Env extends Bindings>(options: ServerOptions<Env>) {
+	return createAppWithPublicAPIOnly(options).get('/', (c) => {
+		return c.text(`missiv api`);
 	});
-	return app;
 }
 
 export function createServer<Env extends Bindings = Bindings>(options: ServerOptions<Env>): Server<Env> {
-	const {getDB} = options;
-
-	const app = createServerApp<Env>();
+	const app = createServerApp<Env>(options);
 	return {
 		app,
 		handleWebsocket(c: Context<{Bindings: Env}>): WSEvents | Promise<WSEvents> {

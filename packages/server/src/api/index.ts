@@ -1,283 +1,107 @@
-import { keccak_256 } from '@noble/hashes/sha3';
-import { Signature, verify as verifySignature } from '@noble/secp256k1';
-import { recoverMessageAddress } from 'viem';
-import { CorsResponse } from '../cors';
-import type { Env } from '../env';
-import {
-	Action,
-	ActionAcceptConversation,
-	ActionMarkAsRead,
-	ActionRegisterDomainUser,
-	ActionSendMessage,
-	PublicKey,
-	Conversation,
-	ResponseAcceptConversation,
-	ResponseGetConversations,
-	ResponseGetMessages,
-	ResponseSendMessage,
-	SchemaAction,
-	SchemaPublicKey,
-	parse,
-	Address,
-	SchemaAddress,
-	ResponseGetMissivUser,
-	MissivUser,
-	ResponseGetDomainUser,
-	DomainUser,
-	getConversationID,
-	ResponseGetUnacceptedConversations,
-	ResponseGetAcceptedConversations,
-	publicKeyAuthorizationMessage,
-	ActionGetMessages,
-} from 'missiv';
-import { toJSONResponse } from '../utils';
+import {keccak_256} from '@noble/hashes/sha3';
+import {Signature} from '@noble/secp256k1';
+import {Action, PublicKey, Conversation, SchemaAction, SchemaPublicKey, parse, Address, SchemaAddress} from 'missiv';
+import {Bindings} from 'hono/types';
+import {ServerOptions} from '../types.js';
+import {Hono} from 'hono';
+import {createErrorObject} from '../utils/response.js';
+import {Config} from '../setup.js';
 
-const NotImplementedResponse = () => new CorsResponse('Not Implemented', { status: 500 });
+type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};
 
-type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & { read: 0 | 1; accepted: 0 | 1 };
+export function getPublicAPI<Env extends Bindings = Bindings>(options: ServerOptions<Env>) {
+	const {getDB, getEnv} = options;
 
-function formatConversation(v: ConversationFromDB): Conversation {
-	return { ...v, state: v.accepted == 0 ? 'unaccepted' : v.read === 0 ? 'unread' : 'read' };
-}
+	return new Hono<{Bindings: Env & {}}>().post('/', async (c) => {
+		const env = getEnv(c);
+		const db = getDB(c);
+		try {
+			const config = c.get('config');
 
-export async function register(env: Env, publicKey: PublicKey, timestampMS: number, action: ActionRegisterDomainUser) {
-	let address: Address;
-	if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
-		if (env.WORKER_ENV !== 'dev') {
-			throw new Error(`FAKE authentication only allowed in dev mode`);
-		}
-		address = action.address;
-	} else {
-		const message = publicKeyAuthorizationMessage({ address: action.address, publicKey });
-		address = await recoverMessageAddress({
-			message,
-			signature: action.signature,
-		});
-		if (address.toLowerCase() != action.address.toLowerCase()) {
-			throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
-		}
-	}
+			const rawContent = await c.req.text();
+			const action: Action = parse(SchemaAction, JSON.parse(rawContent));
 
-	address = address.toLowerCase() as Address;
+			let publicKey: PublicKey | undefined;
+			let account: Address | undefined;
 
-	// const insertUser = env.DB.prepare(`INSERT OR IGNORE INTO Users(address,name,created)
-	// 	VALUES(?1,?2,?3)
-	// `);
-	const insertUser = env.DB.prepare(`INSERT INTO Users(address,name,created)
-		VALUES(?1,?2,?3)
-		ON CONFLICT(address) DO UPDATE SET name=coalesce(excluded.name,name)
-	`);
-	const insertDomainUser = env.DB.prepare(`INSERT INTO DomainUsers(user,domain,domainUsername,publicKey,signature,added,lastPresence)
-		VALUES(?1,?2,?3,?4,?5,?6,?7)
-		ON CONFLICT(user,domain) DO UPDATE SET domainUsername=coalesce(excluded.domainUsername,domainUsername), added=excluded.added, lastPresence=excluded.lastPresence
-	`);
-	// currently not possible to update publicKey: else  publicKey=excluded.publicKey,
+			const authentication = c.req.header('SIGNATURE');
+			if (authentication) {
+				if (authentication.startsWith('FAKE:')) {
+					if (!(env as any).DEV) {
+						throw new Error(`FAKE authentication only allowed in dev mode`);
+					}
+					const splitted = authentication.split(':');
+					publicKey = parse(SchemaPublicKey, splitted[1]);
+					if (!publicKey) {
+						throw new Error(`no publicKey provided in FAKE mode`);
+					}
+				} else {
+					const signatureString = authentication;
+					const splitted = signatureString.split(':');
+					const recoveryBit = Number(splitted[1]);
+					const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
+					const msgHash = keccak_256(rawContent);
+					const recoveredPubKey = signature.recoverPublicKey(msgHash);
+					publicKey = `0x${recoveredPubKey.toHex()}`;
+				}
 
-	const response = await env.DB.batch([
-		insertUser.bind(address, action.name || null, timestampMS),
-		insertDomainUser.bind(address, action.domain, action.domainUsername || null, publicKey, action.signature, timestampMS, timestampMS),
-	]);
+				// TODO move to storage
+				const response = await db.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
 
-	return response;
-}
+				if (response.results.length >= 1) {
+					const domainUser = response.results[0];
+					if ('domain' in action) {
+						if (domainUser.domain != action.domain) {
+							throw new Error(`the publicKey belongs to domain "${domainUser.domain}" and not "${action.domain}"`);
+						}
+					}
 
-export async function getMessages(env: Env, action: ActionGetMessages): Promise<ResponseGetMessages> {
-	const statement = env.DB.prepare(
-		`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 ORDER BY timestamp DESC`,
-	);
-	const { results } = await statement.bind(action.domain, action.namespace, action.conversationID).all();
-	return { messages: results } as ResponseGetMessages;
-}
-
-export async function getUser(env: Env, address: Address): Promise<ResponseGetMissivUser> {
-	const response = await env.DB.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
-
-	if (response.results.length === 1) {
-		return { user: response.results[0] as MissivUser };
-	}
-	return { user: undefined };
-}
-
-export async function getDomainUser(env: Env, domain: string, address: Address): Promise<ResponseGetDomainUser> {
-	const response = await env.DB.prepare(`SELECT * from DomainUsers INNER JOIN Users on Users.address = ?1 AND user = ?1 AND domain = ?2;`)
-		.bind(address, domain)
-		.all();
-
-	if (response.results.length === 1) {
-		return { domainUser: response.results[0] as DomainUser & MissivUser };
-	}
-	return { domainUser: undefined };
-}
-
-export async function getUserAddressByPublicKey(env: Env, publicKey: PublicKey): Promise<ResponseGetDomainUser> {
-	// const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
-	const response = await env.DB.prepare(
-		`SELECT * from DomainUsers INNER JOIN Users on Users.address = DomainUsers.user AND publicKey = ?1;`,
-	)
-		.bind(publicKey)
-		.all();
-
-	if (response.results.length === 1) {
-		return { domainUser: response.results[0] as DomainUser & MissivUser };
-	}
-	return { domainUser: undefined };
-}
-
-export async function markAsRead(env: Env, publicKey: PublicKey, action: ActionMarkAsRead) {
-	const statement = env.DB.prepare(
-		`UPDATE Conversations SET read = 1, accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
-	);
-	// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
-
-	const response = await statement.bind(action.domain, action.namespace, publicKey, action.conversationID).run();
-	return response;
-}
-
-export async function sendMessage(
-	env: Env,
-	publicKey: PublicKey,
-	account: Address,
-	timestampMS: number,
-	action: ActionSendMessage,
-): Promise<ResponseSendMessage> {
-	const conversationID = getConversationID(action.to, account);
-	const upsertConversation = env.DB
-		.prepare(`INSERT INTO Conversations(domain,namespace,first,second,conversationID,lastMessage,accepted,read)
-		VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
-		ON CONFLICT(domain,namespace,first,conversationID) DO UPDATE SET 
-			lastMessage=excluded.lastMessage,
-			accepted=1,
-			read=excluded.read
-	`);
-
-	const insertMessage = env.DB.prepare(
-		`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,type,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
-	);
-
-	const response = await env.DB.batch([
-		upsertConversation.bind(action.domain, action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
-		upsertConversation.bind(action.domain, action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
-		insertMessage.bind(
-			action.domain,
-			action.namespace,
-			conversationID,
-			account,
-			publicKey,
-			action.to,
-			action.toPublicKey ? action.toPublicKey : null,
-			timestampMS,
-			action.message,
-			action.messageType,
-			action.signature,
-		),
-	]);
-	return {
-		timestampMS,
-	};
-}
-
-export async function acceptConversation(
-	env: Env,
-	account: Address,
-	timestampMS: number,
-	action: ActionAcceptConversation,
-): Promise<ResponseAcceptConversation> {
-	const statement = env.DB.prepare(
-		`UPDATE Conversations SET accepted = 1, read = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
-	);
-	const response = await statement.bind(action.domain, action.namespace, account, action.conversationID).run();
-	return {
-		timestampMS,
-	};
-}
-
-export async function getConversations(env: Env, domain: string, namespace: string, address: Address): Promise<ResponseGetConversations> {
-	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
-	);
-	const { results } = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
-	return { conversations: results.map(formatConversation) };
-}
-
-export async function getUnacceptedConversations(
-	env: Env,
-	domain: string,
-	namespace: string,
-	account: Address,
-): Promise<ResponseGetUnacceptedConversations> {
-	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
-	);
-	const { results } = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
-	return { unacceptedConversations: results.map(formatConversation) };
-}
-
-export async function getAcceptedConversations(
-	env: Env,
-	domain: string,
-	namespace: string,
-	account: Address,
-): Promise<ResponseGetAcceptedConversations> {
-	const statement = env.DB.prepare(
-		`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
-	);
-	const { results } = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
-	return { acceptedConversations: results.map(formatConversation) };
-}
-
-export async function handleComversationsApiRequest(path: string[], request: Request, env: Env): Promise<Response> {
-	if (request.method == 'POST') {
-	} else {
-		return new CorsResponse('Method not allowed', { status: 405 });
-	}
-	const rawContent = await request.text();
-	const action: Action = parse(SchemaAction, JSON.parse(rawContent));
-	const timestampMS = Date.now();
-	let publicKey: PublicKey | undefined;
-	let account: Address | undefined;
-
-	const authentication = request.headers.get('SIGNATURE');
-	if (authentication) {
-		if (authentication.startsWith('FAKE:')) {
-			if (env.WORKER_ENV !== 'dev') {
-				throw new Error(`FAKE authentication only allowed in dev mode`);
-			}
-			const splitted = authentication.split(':');
-			publicKey = parse(SchemaPublicKey, splitted[1]);
-			if (!publicKey) {
-				throw new Error(`no publicKey provided in FAKE mode`);
-			}
-		} else {
-			const signatureString = authentication;
-			const splitted = signatureString.split(':');
-			const recoveryBit = Number(splitted[1]);
-			const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
-			const msgHash = keccak_256(rawContent);
-			const recoveredPubKey = signature.recoverPublicKey(msgHash);
-			publicKey = `0x${recoveredPubKey.toHex()}`;
-		}
-
-		const response = await env.DB.prepare(`SELECT * from DomainUsers WHERE publicKey = ?1`).bind(publicKey).all();
-
-		if (response.results.length >= 1) {
-			const domainUser = response.results[0];
-			if ('domain' in action) {
-				if (domainUser.domain != action.domain) {
-					throw new Error(`the publicKey belongs to domain "${domainUser.domain}" and not "${action.domain}"`);
+					account = parse(SchemaAddress, domainUser.user);
 				}
 			}
 
-			account = parse(SchemaAddress, domainUser.user);
+			const result = handleComversationsApiRequest(config, env, publicKey, account, action);
+			return c.json({success: true, result}, 200);
+		} catch (err) {
+			return c.json(createErrorObject(err), 500);
 		}
-	}
+	});
+}
 
+export async function handleComversationsApiRequest(
+	config: Config,
+	env: any, // TODO
+	publicKey: string,
+	account: string,
+	action: Action,
+) {
+	const storage = config.storage;
+	const timestampMS = Math.floor(Date.now());
 	switch (action.type) {
 		case 'register': {
 			if (!publicKey) {
 				throw new Error(`no publicKey authenticated`);
 			}
 
-			return toJSONResponse(register(env, publicKey, timestampMS, action));
+			let address: Address;
+			if (action.signature.startsWith('0xFAKE') || action.signature === '0x') {
+				if (!(env as any).DEV) {
+					throw new Error(`FAKE authentication only allowed in dev mode`);
+				}
+				address = action.address;
+			} else {
+				const message = publicKeyAuthorizationMessage({address: action.address, publicKey});
+				address = await recoverMessageAddress({
+					message,
+					signature: action.signature,
+				});
+				if (address.toLowerCase() != action.address.toLowerCase()) {
+					throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
+				}
+			}
+
+			address = address.toLowerCase() as Address;
+			return storage.register(env, address, publicKey, timestampMS, action);
 		}
 
 		case 'sendMessage': {
@@ -288,21 +112,21 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				throw new Error(`no publicKey authenticated`);
 			}
 
-			return toJSONResponse(sendMessage(env, publicKey, account, timestampMS, action));
+			return storage.sendMessage(env, publicKey, account, timestampMS, action);
 		}
 
 		case 'getConversations': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			return toJSONResponse(getConversations(env, action.domain, action.namespace, account));
+			return storage.getConversations(env, action.domain, action.namespace, account);
 		}
 
 		case 'getAcceptedConversations': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			return toJSONResponse(getAcceptedConversations(env, action.domain, action.namespace, account));
+			return storage.getAcceptedConversations(env, action.domain, action.namespace, account);
 		}
 
 		case 'getUnacceptedConversations': {
@@ -310,7 +134,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				throw new Error(`no account authenticated`);
 			}
 
-			return toJSONResponse(getUnacceptedConversations(env, action.domain, action.namespace, account));
+			return storage.getUnacceptedConversations(env, action.domain, action.namespace, account);
 		}
 
 		case 'markAsRead': {
@@ -318,22 +142,22 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				throw new Error(`no account authenticated`);
 			}
 
-			return toJSONResponse(markAsRead(env, account, action));
+			return storage.markAsRead(env, account, action);
 		}
 		case 'getMessages': {
-			return toJSONResponse(getMessages(env, action));
+			return storage.getMessages(env, action);
 		}
 		case 'getUser': {
-			return toJSONResponse(getUser(env, action.address));
+			return storage.getUser(env, action.address);
 		}
 		case 'getDomainUser': {
-			return toJSONResponse(getDomainUser(env, action.domain, action.address));
+			return storage.getDomainUser(env, action.domain, action.address);
 		}
 		case 'acceptConversation': {
 			if (!account) {
 				throw new Error(`no account authenticated`);
 			}
-			return toJSONResponse(acceptConversation(env, account, timestampMS, action));
+			return storage.acceptConversation(env, account, timestampMS, action);
 		}
 		case 'db:select': {
 			if (env.WORKER_ENV !== 'dev') {
@@ -341,8 +165,8 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 			}
 			const table = action.table;
 			const SQL_SELECT = env.DB.prepare('SELECT * FROM ?1');
-			const { results } = await SQL_SELECT.bind(table).all();
-			return toJSONResponse(results);
+			const {results} = await SQL_SELECT.bind(table).all();
+			return results;
 		}
 
 		case 'db:reset': {
@@ -367,11 +191,15 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				// FOREIGN KEY (first) REFERENCES Users (address),
 				// FOREIGN KEY (second) REFERENCES Users (address)
 
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);`),
+				env.DB.prepare(
+					`CREATE INDEX IF NOT EXISTS idx_Conversations_all_conversations ON Conversations (namespace, first, lastMessage);`,
+				),
 				env.DB.prepare(
 					`CREATE INDEX IF NOT EXISTS idx_Conversations_accepted ON Conversations (domain, namespace, first, accepted, lastMessage);`,
 				),
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (domain, namespace, first, read, lastMessage);`),
+				env.DB.prepare(
+					`CREATE INDEX IF NOT EXISTS idx_Conversations_read ON Conversations (domain, namespace, first, read, lastMessage);`,
+				),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS Messages;`),
 				env.DB.prepare(`CREATE TABLE IF NOT EXISTS  Messages
@@ -393,7 +221,9 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				// FOREIGN KEY (sender) REFERENCES Users (address)
 				// FOREIGN KEY (recipient) REFERENCES Users (address),
 
-				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages_list ON Messages (domain, namespace, conversationID, timestamp);`),
+				env.DB.prepare(
+					`CREATE INDEX IF NOT EXISTS idx_Messsages_list ON Messages (domain, namespace, conversationID, timestamp);`,
+				),
 				env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Messsages_id ON Messages (id, timestamp);`),
 
 				env.DB.prepare(`DROP TABLE IF EXISTS DomainUsers;`),
@@ -423,10 +253,7 @@ export async function handleComversationsApiRequest(path: string[], request: Req
 				);`),
 				// env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_Users ON Users (address);`),
 			]);
-			return toJSONResponse(response);
+			return response;
 		}
-
-		default:
-			return new CorsResponse('Not found', { status: 404 });
 	}
 }
