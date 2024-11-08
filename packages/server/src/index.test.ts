@@ -1,8 +1,38 @@
 import {beforeAll, expect, test} from 'vitest';
-import {App, createServer} from './index.js';
+import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
+import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
+import {publicKeyAuthorizationMessage} from 'missiv-common';
+import {App, createServer} from '../src/index.js';
 import {hc} from 'hono/client';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
+
+function toHex(arr: Uint8Array): `0x${string}` {
+	let str = `0x`;
+	for (const element of arr) {
+		str += element.toString(16).padStart(2, '0');
+	}
+	return str as `0x${string}`;
+}
+
+async function createUser() {
+	const userAPrivateKey = generatePrivateKey();
+	const userAAccount = privateKeyToAccount(userAPrivateKey);
+	const userADelegatePrivateKey = secpUtils.randomPrivateKey();
+	const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
+	const userAMessage = publicKeyAuthorizationMessage({
+		address: userAAccount.address,
+		publicKey: userADelegatePublicKey,
+	});
+	return {
+		publicKey: userADelegatePublicKey,
+		address: userAAccount.address,
+		signature: await userAAccount.signMessage({message: userAMessage}),
+	} as const;
+}
+
+const userA = await createUser();
+const userB = await createUser();
 
 const dbCLient = createClient({url: ':memory:'});
 const remoteSQL = new RemoteLibSQL(dbCLient);

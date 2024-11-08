@@ -53,7 +53,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 				}
 				const splitted = authentication.split(':');
 
-				publicKey = assert<PublicKey>(splitted[1]);
+				publicKey = assert<PublicKey>(splitted[1].toLowerCase());
 
 				if (!publicKey) {
 					throw new Error(`no publicKey provided in FAKE mode`);
@@ -65,7 +65,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 				const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
 				const msgHash = keccak_256(rawContent);
 				const recoveredPubKey = signature.recoverPublicKey(msgHash);
-				publicKey = `0x${recoveredPubKey.toHex()}` as PublicKey;
+				publicKey = `0x${recoveredPubKey.toHex().toLowerCase()}` as PublicKey;
 			}
 
 			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);

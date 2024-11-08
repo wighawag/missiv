@@ -37,11 +37,12 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				address = action.address;
 			} else {
 				const message = publicKeyAuthorizationMessage({address: action.address, publicKey});
-				address = await recoverMessageAddress({
+				const addressRecovered = await recoverMessageAddress({
 					message,
 					signature: action.signature as `0x${string}`, // TODO typia fix for pattern and 0xstring
 				});
-				if (address.toLowerCase() != action.address.toLowerCase()) {
+				address = addressRecovered.toLowerCase();
+				if (address != action.address) {
 					throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
 				}
 			}

@@ -1,10 +1,8 @@
-import {describe, expect, it, beforeEach} from 'vitest';
-import {webcrypto} from 'node:crypto';
-import {api, FAKE_SIG, USER_A, USER_B} from './setup';
-// @ts-ignore
-if (!globalThis.crypto) globalThis.crypto = webcrypto;
+import {describe, it, expect, beforeEach} from 'vitest';
 
-describe('hono client full conversation', () => {
+import {api, FAKE_SIG, USER_A, USER_B} from './setup.js';
+
+describe('full conversation flow', () => {
 	beforeEach(async () => {
 		await api.clear();
 		await api.register(

@@ -1,39 +1,12 @@
-
-import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { API, FetchFunction, getPublicKey } from 'missiv-client';
+import {describe, expect, it, beforeAll, beforeEach} from 'vitest';
 import {publicKeyAuthorizationMessage} from 'missiv-common';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { toHex } from 'viem';
-import { utils as secpUtils } from '@noble/secp256k1';
-import { webcrypto } from 'node:crypto';
-import { MISSIV_URL } from './prool/pool';
+import {webcrypto} from 'node:crypto';
+import {api, USER_B} from './setup';
 // @ts-ignore
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
-const userAPrivateKey = generatePrivateKey();
-const userAAccount = privateKeyToAccount(userAPrivateKey);
-const userADelegatePrivateKey = secpUtils.randomPrivateKey();
-const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
-const USER_A = {
-	publicKey: userADelegatePublicKey,
-	address: userAAccount.address,
-} as const;
-
-const userBPrivateKey = generatePrivateKey();
-const userBAccount = privateKeyToAccount(userBPrivateKey);
-const userBDelegatePrivateKey = secpUtils.randomPrivateKey();
-const userBDelegatePublicKey = toHex(getPublicKey(userBDelegatePrivateKey));
-
-const USER_B = {
-	publicKey: userBDelegatePublicKey,
-	address: userBAccount.address,
-} as const;
-
-const api = new API(MISSIV_URL);
-
 describe('Registration of keys', () => {
-	
-// --------------------------------------------------------------------------------------------
+	// --------------------------------------------------------------------------------------------
 	// wakeup worker
 	//   the first time the worker is called, it setups itself and this can take time
 	//   hence we have a dummy test to ensure the other tests have normal timeout
@@ -48,13 +21,12 @@ describe('Registration of keys', () => {
 		await api.clear();
 	});
 
-
 	it('should be able to register', async () => {
 		const userBMessage = publicKeyAuthorizationMessage({
-			address: userBAccount.address,
-			publicKey: userBDelegatePublicKey,
+			address: USER_B.address,
+			publicKey: USER_B.delegatePublicKey,
 		});
-		const signature = await userBAccount.signMessage({ message: userBMessage });
+		const signature = await USER_B.account.signMessage({message: userBMessage});
 		await api.register(
 			{
 				type: 'register',
@@ -62,18 +34,18 @@ describe('Registration of keys', () => {
 				signature: signature,
 				domain: 'test',
 			},
-			{ publicKey: USER_B.publicKey },
+			{publicKey: USER_B.delegatePublicKey}
 		);
 
-		const { user } = await api.getUser({
+		const {user} = await api.getUser({
 			type: 'getUser',
 			address: USER_B.address,
 		});
-		const { domainUser } = await api.getCompleteUser({
+		const {completeUser} = await api.getCompleteUser({
 			address: USER_B.address,
 			domain: 'test',
 		});
-		expect(user?.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
-		expect(domainUser?.publicKey.toLowerCase()).toEqual(USER_B.publicKey.toLowerCase());
+		expect(user.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
+		expect(completeUser.publicKey).toEqual(USER_B.delegatePublicKey);
 	});
 });
