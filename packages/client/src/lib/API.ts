@@ -2,6 +2,7 @@ import { signAsync } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import type {
 	ActionAcceptConversation,
+	ActionEditDomainUser,
 	ActionGetAcceptedConversations,
 	ActionGetCompleteUser,
 	ActionGetConversations,
@@ -11,6 +12,7 @@ import type {
 	ActionRegisterDomainUser,
 	ActionSendMessage,
 	ResponseAcceptConversation,
+	ResponseEditDomainUser,
 	ResponseGetAcceptedConversations,
 	ResponseGetCompleteUser,
 	ResponseGetConversations,
@@ -39,7 +41,8 @@ export class API {
 			fetch: FetchFunction;
 		}
 	) {
-		this.fetchFunction = options?.fetch || fetch;
+		this.fetchFunction =
+			options?.fetch || typeof window !== 'undefined' ? window.fetch.bind(window) : fetch;
 	}
 
 	async call<T>(path: string, action: any, options?: APIOptions): Promise<T> {
@@ -81,6 +84,10 @@ export class API {
 
 	async register(action: ActionRegisterDomainUser, options: APIOptions) {
 		return this.call<ResponseRegisterDomainUser>('/user/register', action, options);
+	}
+
+	async editUser(action: ActionEditDomainUser, options: APIOptions) {
+		return this.call<ResponseEditDomainUser>('/user/editUser', action, options);
 	}
 
 	async sendMessage(action: ActionSendMessage, options: APIOptions) {

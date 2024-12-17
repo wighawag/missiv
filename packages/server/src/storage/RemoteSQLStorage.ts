@@ -4,6 +4,7 @@ import setupTables from '../schema/ts/conversations.sql.js';
 import {sqlToStatements} from './utils.js';
 import {
 	ActionAcceptConversation,
+	ActionEditDomainUser,
 	ActionGetMessages,
 	ActionMarkAsRead,
 	ActionRegisterDomainUser,
@@ -38,28 +39,49 @@ export class RemoteSQLStorage implements Storage {
 		// const insertUser = this.db.prepare(`INSERT OR IGNORE INTO Users(address,name,created)
 		// 	VALUES(?1,?2,?3)
 		// `);
-		const insertUser = this.db.prepare(`INSERT INTO Users(address,name,created)
-		VALUES(?1,?2,?3)
-		ON CONFLICT(address) DO UPDATE SET name=coalesce(excluded.name,name)
+		const insertUser = this.db.prepare(`INSERT INTO Users(address,name,description,created)
+		VALUES(?1,?2,?3,?4)
+		ON CONFLICT(address) DO UPDATE SET
+			name=coalesce(excluded.name,name),
+			description=coalesce(excluded.description,description)
 	`);
 		const insertDomainUser = this.db
-			.prepare(`INSERT INTO DomainUsers(user,domain,domainUsername,publicKey,signature,added,lastPresence)
-		VALUES(?1,?2,?3,?4,?5,?6,?7)
-		ON CONFLICT(user,domain) DO UPDATE SET domainUsername=coalesce(excluded.domainUsername,domainUsername), added=excluded.added, lastPresence=excluded.lastPresence
+			.prepare(`INSERT INTO DomainUsers(user,domain,domainUsername,domainDescription,publicKey,signature,added,lastPresence)
+		VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+		ON CONFLICT(user,domain) DO UPDATE SET 
+			domainUsername=coalesce(excluded.domainUsername,domainUsername),
+			domainDescription=coalesce(excluded.domainDescription,domainDescription),
+			added=excluded.added, lastPresence=excluded.lastPresence
 	`);
 		// currently not possible to update publicKey: else  publicKey=excluded.publicKey,
 
 		const response = await this.db.batch([
-			insertUser.bind(address, action.name || null, timestampMS),
+			insertUser.bind(address, action.name || null, action.description || null, timestampMS),
 			insertDomainUser.bind(
 				address,
 				action.domain,
 				action.domainUsername || null,
+				action.domainDescription || null,
 				publicKey,
 				action.signature,
 				timestampMS,
 				timestampMS,
 			),
+		]);
+	}
+
+	async editUser(address: Address, timestampMS: number, action: ActionEditDomainUser) {
+		const editRootUser = this.db.prepare(
+			`UPDATE Users SET name = coalesce(?1, name), description = coalesce(?2, description) WHERE address = ?3`,
+		);
+		const editDomainUser = this.db.prepare(
+			`UPDATE DomainUsers SET domainUsername =  coalesce(?1, domainUsername), domainDescription = coalesce(?2, domainDescription) WHERE user = ?3 AND domain = ?4`,
+		);
+		// currently not possible to update publicKey
+
+		const response = await this.db.batch([
+			editRootUser.bind(action.name || null, action.description || null, address),
+			editDomainUser.bind(action.domainUsername || null, action.domainDescription || null, address, action.domain),
 		]);
 	}
 

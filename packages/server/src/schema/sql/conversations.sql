@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS DomainUsers (
   user text NOT NULL,
   domain text NOT NULL,
   domainUsername text NULL,
+  domainDescription text NULL,
   publicKey text NOT NULL,
   signature text NOT NULL,
   added timestamp NOT NULL,
@@ -55,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_DomainUsers_lastPresence ON DomainUsers (lastPres
 CREATE TABLE IF NOT EXISTS Users (
   address text NOT NULL,
   name text NULL,
+  description text NULL,
   created timestamp NOT NULL,
   PRIMARY KEY (address)
 );

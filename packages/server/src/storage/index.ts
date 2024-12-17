@@ -1,5 +1,6 @@
 import {
 	ActionAcceptConversation,
+	ActionEditDomainUser,
 	ActionGetMessages,
 	ActionMarkAsRead,
 	ActionRegisterDomainUser,
@@ -24,6 +25,7 @@ export interface Storage {
 		timestampMS: number,
 		action: ActionRegisterDomainUser,
 	): Promise<void>;
+	editUser(address: Address, timestampMS: number, action: ActionEditDomainUser): Promise<void>;
 	getMessages(action: ActionGetMessages): Promise<ResponseGetMessages>;
 	getUser(address: Address): Promise<ResponseGetMissivUser>;
 	getCompleteUser(domain: string, address: Address): Promise<ResponseGetCompleteUser>;

@@ -139,8 +139,22 @@ export type ActionRegisterDomainUser = {
 	address: Address;
 	name?: string;
 	domainUsername?: string;
+	description?: string;
+	domainDescription?: string;
 };
+
+export type ActionEditDomainUser = {
+	type: 'editUser';
+	domain: string;
+	name?: string;
+	domainUsername?: string;
+	description?: string;
+	domainDescription?: string;
+};
+
 export type ResponseRegisterDomainUser = {timestampMS: number};
+
+export type ResponseEditDomainUser = {timestampMS: number};
 
 export type ActionGetCompleteUser = {
 	domain: string;

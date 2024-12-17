@@ -2,6 +2,7 @@ import {Hono} from 'hono';
 import {ServerOptions} from '../../types.js';
 import {recoverMessageAddress} from 'viem';
 import {
+	ActionEditDomainUser,
 	ActionGetCompleteUser,
 	ActionGetMissivUser,
 	ActionRegisterDomainUser,
@@ -52,6 +53,28 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				{
 					ok: true,
 					message: 'Registered',
+				} as const,
+				201,
+			);
+		})
+		.post('/editUser', typiaValidator('json', createValidate<ActionEditDomainUser>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
+			const env = config.env;
+
+			const timestampMS = Date.now();
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+
+			const action = c.req.valid('json');
+
+			await storage.editUser(account, timestampMS, action);
+			return c.json(
+				{
+					ok: true,
+					message: 'Edited',
 				} as const,
 				201,
 			);

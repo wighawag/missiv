@@ -4,7 +4,7 @@ import { openConversationsView } from './list/index.js';
 import type { APIConfig, User } from '$lib/types.js';
 import { API } from '$lib/API.js';
 import type { ConversationsState } from './types.js';
-import type { Address } from 'missiv-common';
+import type { ActionGetCompleteUser, Address } from 'missiv-common';
 
 const $store: ConversationsState = { registered: { state: 'idle' } };
 
@@ -39,15 +39,17 @@ export function setup(config?: APIConfig) {
 
 		if (isNewUser && newUser) {
 			if (api && config) {
+				console.log(`new: api.getCompleteUser...`);
 				api
 					.getCompleteUser({
 						address: newUser.address,
 						domain: config.domain
 					})
 					.then(({ completeUser }) => {
+						console.log(`api.getCompleteUser`);
 						$store.registered = {
 							state: 'ready',
-							confirmed: completeUser ? true : false
+							user: completeUser
 						};
 						store.set($store);
 					});
@@ -57,7 +59,12 @@ export function setup(config?: APIConfig) {
 
 	async function register(
 		signature: Address,
-		options?: { name?: string; domainUsername?: string }
+		options?: {
+			name?: string;
+			domainUsername?: string;
+			domainDescription?: string;
+			description?: string;
+		}
 	) {
 		if (api && config && $store.currentUser) {
 			const user = $store.currentUser;
@@ -71,7 +78,9 @@ export function setup(config?: APIConfig) {
 					domain: config.domain,
 					signature,
 					domainUsername: options?.domainUsername,
-					name: options?.name
+					name: options?.name,
+					domainDescription: options?.domainDescription,
+					description: options?.description
 				},
 				{
 					privateKey: user.delegatePrivateKey
@@ -81,6 +90,7 @@ export function setup(config?: APIConfig) {
 			$store.registered = { state: 'loading' };
 			store.set($store);
 
+			console.log(`api.getCompleteUser...`);
 			const { completeUser } = await api.getCompleteUser({
 				address: user.address,
 				domain: config.domain
@@ -88,16 +98,59 @@ export function setup(config?: APIConfig) {
 
 			$store.registered = {
 				state: 'ready',
-				confirmed: completeUser ? true : false
+				user: completeUser
 			};
 			store.set($store);
 		}
 	}
 
+	async function editUser(options?: {
+		name?: string;
+		domainUsername?: string;
+		domainDescription?: string;
+		description?: string;
+	}) {
+		if (api && config && $store.currentUser) {
+			const user = $store.currentUser;
+
+			await api.editUser(
+				{
+					type: 'editUser',
+					domain: config.domain,
+					domainUsername: options?.domainUsername,
+					name: options?.name,
+					domainDescription: options?.domainDescription,
+					description: options?.description
+				},
+				{
+					privateKey: user.delegatePrivateKey
+				}
+			);
+
+			console.log(`api.getCompleteUser...`);
+			const { completeUser } = await api.getCompleteUser({
+				address: user.address,
+				domain: config.domain
+			});
+
+			$store.registered = {
+				state: 'ready',
+				user: completeUser
+			};
+			store.set($store);
+		}
+	}
+
+	function getUser(action: ActionGetCompleteUser) {
+		return api?.getCompleteUser(action);
+	}
+
 	return {
 		subscribe: store.subscribe,
 		register,
+		editUser,
 		setCurrentUser,
+		getUser,
 		// TODO remove: markAsAcceptedAndRead
 		//   once we handle accepted/naccepted conversation in the UI we do it automatically here
 		openConversation: (other: Address, markAsAcceptedAndRead?: boolean) => {
