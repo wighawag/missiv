@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "dependencies": {
-    "hono": "^4.6.9",
+    "hono": "^4.6.14",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
     "named-logs": "^0.3.0",
@@ -12,8 +12,8 @@
     "workers-logger": "npm:@bug-fix/workers-logger@0.2.0-fix.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241022.0",
-    "wrangler": "^3.84.1"
+    "@cloudflare/workers-types": "^4.20241216.0",
+    "wrangler": "^3.96.0"
   },
   "scripts": {
     "dev": "wrangler dev ",

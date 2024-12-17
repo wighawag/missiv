@@ -9,9 +9,9 @@ export abstract class Room extends AbstractServerObject {
 			// Retrieves all currently connected websockets accepted via `acceptWebSocket()`.
 			let numConnections: number = this.getWebSockets().length;
 			if (numConnections == 1) {
-				return new Response(`There is ${numConnections} WebSocket client connected to this Durable Object instance.`);
+				return new Response(`There is ${numConnections} WebSocket client connected to this Server Object instance.`);
 			}
-			return new Response(`There are ${numConnections} WebSocket clients connected to this Durable Object instance.`);
+			return new Response(`There are ${numConnections} WebSocket clients connected to this Server Object instance.`);
 		}
 
 		// Unknown path, reply with usage info.
@@ -28,7 +28,12 @@ export abstract class Room extends AbstractServerObject {
 		console.log(`message@: ${message}`);
 		// Upon receiving a message from the client, reply with the same message,
 		// but will prefix the message with "[Server Object]: ".
-		ws.send(`[Server Object]: ${message}`);
+		// ws.send(`[Server Object]: ${message}`);
+		const sockets = this.getWebSockets();
+		console.log(sockets.length);
+		for (const socket of sockets) {
+			socket.send(message);
+		}
 	}
 
 	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {

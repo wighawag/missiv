@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import {Room, ServerObjectId, createServer, type Env} from 'missiv-server';
+import {Room, ServerObject, ServerObjectId, createServer, type Env} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {Context} from 'hono';
@@ -87,17 +87,27 @@ async function main() {
 		}
 		_addWebSocket(ws: WebSocket) {
 			this.websockets.push(ws);
+			console.log(`one ws added: ${this.websockets.length} total`);
 		}
 		_removeWebSocket(ws: WebSocket) {
 			const index = this.websockets.indexOf(ws);
 			if (index >= 0) {
 				this.websockets.splice(index, 1);
+				console.log(`one ws removed at index (${index}): ${this.websockets.length} total`);
 			}
 		}
 	}
 
-	function getRoom(c: Context<{Bindings: BunEnv}>, idOrName: ServerObjectId | string) {
-		return new BunRoom(idOrName.toString()); // TODO check toString for ServerObjectId
+	const roomInstances: Map<string, ServerObject> = new Map();
+
+	function getRoom(c: Context<{Bindings: BunEnv}>, idOrName: ServerObjectId | string): ServerObject {
+		const name = idOrName.toString(); // TODO check toString for ServerObjectId
+		if (roomInstances.has(name)) {
+			return roomInstances.get(name)!;
+		}
+		const newRoom = new BunRoom(name);
+		roomInstances.set(name, newRoom);
+		return newRoom;
 	}
 
 	const app = createServer<BunEnv>({getDB, getRoom, getEnv, upgradeWebSocket});
