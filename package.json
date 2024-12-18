@@ -34,7 +34,8 @@
     "common:dev": "pnpm --filter missiv-common dev",
     "---------------------- DEPLOY ----------------------": "",
     "build": "ldenv pnpm run --filter missiv-common build && ldenv pnpm run --filter missiv-client build",
-    "serve": "pnpm --filter missiv-client serve",
+    "serve": "pnpm run --filter missiv-client serve",
+    "deploy:cf": "pnpm run --filter missiv-server-cf-worker deploy",
     "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
     "stop": "zellij kill-session $npm_package_name",
     "start": "zellij-launcher --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
