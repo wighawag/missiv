@@ -113,10 +113,15 @@ async function main() {
 	if (dbURL === ':memory:') {
 		console.log(`executing setup...`);
 		await app.fetch(
-			new Request('http://localhost/api/admin/setup', {
-				// headers: {
-				// 	Authorization: `Basic ${btoa(`admin:${TOKEN_ADMIN}`)}`,
-				// },
+			new Request('http://localhost/api/user/getUser?_initDB=true', {
+				method: 'POST',
+				body: JSON.stringify({
+					type: 'getUser',
+					address: '0xffffffffffffffffffffffffffffffffffffffff',
+				}),
+				headers: {
+					'content-type': 'application/json',
+				},
 			}),
 		);
 	}
