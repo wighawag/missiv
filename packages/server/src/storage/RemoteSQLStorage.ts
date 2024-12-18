@@ -73,10 +73,10 @@ export class RemoteSQLStorage implements Storage {
 
 	async editUser(address: Address, timestampMS: number, action: ActionEditDomainUser) {
 		const editRootUser = this.db.prepare(
-			`UPDATE Users SET name = coalesce(?1, name), description = coalesce(?2, description) WHERE address = ?3`,
+			`UPDATE Users SET name = coalesce(?1, name), description = coalesce(?2, description) WHERE address = ?3 AND (description <> ?2 OR name <> ?1)`,
 		);
 		const editDomainUser = this.db.prepare(
-			`UPDATE DomainUsers SET domainUsername =  coalesce(?1, domainUsername), domainDescription = coalesce(?2, domainDescription) WHERE user = ?3 AND domain = ?4`,
+			`UPDATE DomainUsers SET domainUsername =  coalesce(?1, domainUsername), domainDescription = coalesce(?2, domainDescription) WHERE user = ?3 AND domain = ?4 AND (domainDescription <> ?2 OR domainUsername <> ?1)`,
 		);
 		// currently not possible to update publicKey
 
