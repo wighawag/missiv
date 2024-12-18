@@ -56,14 +56,12 @@ async function main() {
 
 	const {upgradeWebSocket, websocket} = createBunWebSocket();
 
-	const rooms = new Map<string, BunRoom>();
 	class BunRoom extends Room {
 		websockets: WebSocket[] = [];
 		counter: number = 1;
 
 		constructor(private name: string) {
 			super();
-			rooms.set(this.name, this);
 		}
 
 		async upgradeWebsocket(request: Request): Promise<Response> {
@@ -134,11 +132,12 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					console.log(`websocket:open: ${data.room}`);
-					const room = rooms.get(data.room);
+					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
 						throw new Error(`np room for ${data.room}`);
 					}
 					room._addWebSocket(ws as any);
+					room.webSocketOpen(ws as any);
 				} else {
 					console.log(`global:websocket:open`);
 					return websocket.open(ws as any);
@@ -148,7 +147,7 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					console.log(`websocket:close: ${data.room}`);
-					const room = rooms.get(data.room);
+					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
 						throw new Error(`np room for ${data.room}`);
 					}
@@ -163,7 +162,7 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					console.log(`websocket:message: ${data.room}`);
-					const room = rooms.get(data.room);
+					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
 						throw new Error(`np room for ${data.room}`);
 					}

@@ -12,11 +12,11 @@ database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
 
 [durable_objects]
 bindings = [
-  { name = "ROOMS", class_name = "ChatRoom" },
+  { name = "ROOMS", class_name = "ServerObjectRoom" },
   #TODO { name = "LIMITERS", class_name = "RateLimiter" }
 ]
 
 [[migrations]]
 tag = "v1"
-# TODO new_classes = ["ChatRoom", "RateLimiter"]
-new_classes = ["ChatRoom"]
+# TODO new_classes = ["ServerObjectRoom", "RateLimiter"]
+new_classes = ["ServerObjectRoom"]

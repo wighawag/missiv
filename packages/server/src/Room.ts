@@ -24,15 +24,17 @@ export abstract class Room extends AbstractServerObject {
   `);
 	}
 
+	async webSocketOpen(ws: WebSocket) {
+		ws.send('welcome!');
+	}
+
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
-		console.log(`message@: ${message}`);
-		// Upon receiving a message from the client, reply with the same message,
-		// but will prefix the message with "[Server Object]: ".
-		// ws.send(`[Server Object]: ${message}`);
+		// console.log(`message@: ${message}`);
 		const sockets = this.getWebSockets();
-		console.log(sockets.length);
 		for (const socket of sockets) {
-			socket.send(message);
+			if (ws != socket) {
+				socket.send(message);
+			}
 		}
 	}
 

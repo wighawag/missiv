@@ -6,10 +6,11 @@ import {wrapWithLogger} from './logging';
 type Env = {
 	DB: D1Database;
 	ROOMS: DurableObjectNamespace;
+	DEV?: string;
 };
 
 // for each ServerObject we need a class that do the following:
-export class ChatRoom extends Room {
+export class ServerObjectRoom extends Room {
 	state: DurableObjectState;
 
 	constructor(state: DurableObjectState) {
@@ -39,6 +40,20 @@ export class ChatRoom extends Room {
 		// WebSocket receives a message, the runtime will recreate the Durable Object
 		// (run the `constructor`) and deliver the message to the appropriate handler.
 		this.state.acceptWebSocket(server);
+
+		this.webSocketOpen(client);
+
+		// Upon receiving a message from the client, the server replies with the same message,
+		// and the total number of connections with the "[Durable Object]: " prefix
+		server.addEventListener('message', (event) => {
+			this.webSocketMessage(client, event.data);
+		});
+
+		// If the client closes the connection, the runtime will close the connection too.
+		server.addEventListener('close', (cls) => {
+			server.close(cls.code, 'Durable Object is closing WebSocket');
+			this.webSocketClose(client, cls.code, cls.reason, cls.wasClean);
+		});
 
 		return new Response(null, {
 			status: 101,
