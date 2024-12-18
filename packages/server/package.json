@@ -1,6 +1,6 @@
 {
   "name": "missiv-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "missiv server",
   "publishConfig": {
     "access": "public"
@@ -28,6 +28,7 @@
     "named-logs": "^0.3.0",
     "remote-sql": "^0.0.6",
     "sha3": "link:@noble/hashes/sha3",
+    "typia": "^7.4.1",
     "viem": "^2.21.55"
   },
   "devDependencies": {
@@ -40,7 +41,6 @@
     "remote-sql-libsql": "^0.0.6",
     "ts-patch": "^3.3.0",
     "typescript": "^5.7.2",
-    "typia": "^7.4.1",
     "vitest": "^2.1.8"
   },
   "scripts": {
