@@ -1,4 +1,4 @@
-name = "missiv-server-cf-worker"
+name = "missiv-server"
 main = "src/worker.ts"
 compatibility_date = "2023-08-14"
 
@@ -6,9 +6,8 @@ compatibility_flags = [ "nodejs_compat" ] # for node:async_hooks
 
 [[d1_databases]]
 binding = "DB" # i.e. available in your Worker on env.DB
-database_name = "missiv-db-tmp"
-database_id = "6da64057-36bc-4e0b-b876-29eb53693f1e"
-
+database_name = "missiv-db"
+database_id = "1c8f2d0f-7cef-47a0-bc2e-cdb63d5a266b"
 
 [durable_objects]
 bindings = [
