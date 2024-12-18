@@ -1,6 +1,9 @@
 {
   "name": "missiv-server-cf-worker",
   "version": "0.0.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "dependencies": {
     "hono": "^4.6.14",
