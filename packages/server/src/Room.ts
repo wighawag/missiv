@@ -3,9 +3,10 @@ import {AbstractServerObject} from './types.js';
 export abstract class Room extends AbstractServerObject {
 	// Handle HTTP requests from clients.
 	async fetch(request: Request): Promise<Response> {
-		if (request.url.endsWith('/websocket')) {
+		if (request.url.endsWith('/ws')) {
 			return this.upgradeWebsocket(request);
 		} else if (request.url.endsWith('/getCurrentConnections')) {
+			// TODO cors ?
 			// Retrieves all currently connected websockets accepted via `acceptWebSocket()`.
 			let numConnections: number = this.getWebSockets().length;
 			if (numConnections == 1) {
@@ -25,11 +26,12 @@ export abstract class Room extends AbstractServerObject {
 	}
 
 	async webSocketOpen(ws: WebSocket) {
+		console.log('socket is open');
 		ws.send('welcome!');
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
-		// console.log(`message@: ${message}`);
+		console.log(`message@: ${message}`);
 		const sockets = this.getWebSockets();
 		for (const socket of sockets) {
 			if (ws != socket) {
@@ -39,7 +41,6 @@ export abstract class Room extends AbstractServerObject {
 	}
 
 	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-		// If the client closes the connection, the runtime will invoke the webSocketClose() handler.
-		ws.close(code, 'Server Object is closing WebSocket');
+		console.log(`closing...`, code, reason, wasClean);
 	}
 }

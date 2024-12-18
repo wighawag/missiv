@@ -72,7 +72,7 @@ async function main() {
 						id: this.counter++,
 					},
 				});
-				console.log(upgraded);
+				console.log('upgraded', upgraded);
 				if (upgraded) {
 					return new Response(); // TODO  ?
 				}

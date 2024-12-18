@@ -17,22 +17,19 @@ export type {ServerObject, ServerObjectId} from './types.js';
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
 
+const corsSetup = cors({
+	origin: '*',
+	allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE'],
+	allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
+	exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
+	maxAge: 600,
+	credentials: true,
+});
+
 export function createServer<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const app = new Hono<{Bindings: Bindings}>()
-		.use(
-			'/*',
-			cors({
-				origin: '*',
-				allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE'],
-				allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
-				exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
-				maxAge: 600,
-				credentials: true,
-			}),
-		)
-		.get('/', (c) => {
-			return c.text('Hello world!');
-		});
+	const app = new Hono<{Bindings: Bindings}>().get('/', (c) => {
+		return c.text('missiv');
+	});
 
 	const userAPI = getUserAPI(options);
 	const privateChatAPI = getPrivateChatAPI(options);
@@ -40,9 +37,10 @@ export function createServer<Bindings extends Env>(options: ServerOptions<Bindin
 	const adminAPI = getAdminAPI(options);
 
 	return app
+		.route('/api/public', publicChatAPI)
+		.use('/*', corsSetup)
 		.route('/api/user', userAPI)
 		.route('/api/private', privateChatAPI)
-		.route('/api/public', publicChatAPI)
 		.route('/api/admin', adminAPI)
 		.onError((err, c) => {
 			const config = c.get('config');

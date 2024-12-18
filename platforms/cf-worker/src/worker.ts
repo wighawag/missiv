@@ -41,19 +41,34 @@ export class ServerObjectRoom extends Room {
 		// (run the `constructor`) and deliver the message to the appropriate handler.
 		this.state.acceptWebSocket(server);
 
-		this.webSocketOpen(client);
-
 		// Upon receiving a message from the client, the server replies with the same message,
 		// and the total number of connections with the "[Durable Object]: " prefix
-		server.addEventListener('message', (event) => {
-			this.webSocketMessage(client, event.data);
+		server.addEventListener('message', async (event) => {
+			console.log('message', event);
+			await this.webSocketMessage(client, event.data);
 		});
 
 		// If the client closes the connection, the runtime will close the connection too.
-		server.addEventListener('close', (cls) => {
-			server.close(cls.code, 'Durable Object is closing WebSocket');
-			this.webSocketClose(client, cls.code, cls.reason, cls.wasClean);
+		server.addEventListener('close', async (event) => {
+			console.log('close', event);
+			try {
+				server.close(event.code, 'Durable Object is closing WebSocket');
+				// TODO client.close ?
+			} catch (err) {
+				console.error(`failed to close`, err);
+			}
+			try {
+				await this.webSocketClose(client, event.code, event.reason, event.wasClean);
+			} catch (err) {
+				console.error(`failed to handle close`, err);
+			}
 		});
+
+		try {
+			await this.webSocketOpen(server);
+		} catch (err) {
+			console.error(`failed to handle open`, err);
+		}
 
 		return new Response(null, {
 			status: 101,
