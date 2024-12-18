@@ -8,7 +8,7 @@
     "@noble/hashes": "^1.6.1",
     "@noble/secp256k1": "^2.1.0",
     "@types/node": "^22.10.2",
-    "bun-types": "^1.1.39",
+    "bun-types": "^1.1.40",
     "hono": "^4.6.14",
     "missiv-client": "workspace:*",
     "missiv-common": "workspace:*",
