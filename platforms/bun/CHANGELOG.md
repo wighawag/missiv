@@ -1,5 +1,11 @@
 # missiv-server-bun
 
+## 0.0.2
+
+### Patch Changes
+
+- missiv-server-bun
+
 ## 0.0.1
 
 ### Patch Changes
