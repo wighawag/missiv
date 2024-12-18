@@ -1,6 +1,7 @@
 import {Storage} from './index.js';
 import {RemoteSQL} from 'remote-sql';
-import setupTables from '../schema/ts/conversations.sql.js';
+import setupComversationsTables from '../schema/ts/02_conversations.sql.js';
+import setupUsersTables from '../schema/ts/01_users.sql.js';
 import {sqlToStatements} from './utils.js';
 import {
 	ActionAcceptConversation,
@@ -248,7 +249,7 @@ export class RemoteSQLStorage implements Storage {
 	}
 
 	async setup() {
-		const statements = sqlToStatements(setupTables);
+		const statements = sqlToStatements(setupUsersTables.concat(setupComversationsTables));
 		// The following do not work on bun sqlite:
 		//  (seems like prepared statement are partially executed and index cannot be prepared when table is not yet created)
 		// await this.db.batch(statements.map((v) => this.db.prepare(v)));
@@ -258,7 +259,7 @@ export class RemoteSQLStorage implements Storage {
 	}
 	async reset() {
 		const dropStatements = sqlToStatements(dropTables);
-		const statements = sqlToStatements(setupTables);
+		const statements = sqlToStatements(setupUsersTables.concat(setupComversationsTables));
 		const allStatements = dropStatements.concat(statements);
 		// The following do not work on bun sqlite:
 		//  (seems like prepared statement are partially executed and index cannot be prepared when table is not yet created)
