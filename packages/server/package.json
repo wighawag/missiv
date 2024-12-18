@@ -1,0 +1,60 @@
+{
+  "name": "missiv-server",
+  "version": "0.0.0",
+  "description": "missiv server",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "@hono/swagger-ui": "^0.5.0",
+    "@hono/typia-validator": "^0.1.0",
+    "@noble/hashes": "^1.6.1",
+    "@noble/secp256k1": "^2.1.0",
+    "hono": "^4.6.14",
+    "missiv-common": "workspace:*",
+    "named-logs": "^0.3.0",
+    "remote-sql": "^0.0.6",
+    "sha3": "link:@noble/hashes/sha3",
+    "viem": "^2.21.55"
+  },
+  "devDependencies": {
+    "@libsql/client": "^0.14.0",
+    "@ryoppippi/unplugin-typia": "^1.1.0",
+    "as-soon": "^0.0.11",
+    "hono-typia-openapi": "^0.2.0",
+    "ldenv": "^0.3.12",
+    "prettier": "^3.4.2",
+    "remote-sql-libsql": "^0.0.6",
+    "ts-patch": "^3.3.0",
+    "typescript": "^5.7.2",
+    "typia": "^7.4.1",
+    "vitest": "^2.1.8"
+  },
+  "scripts": {
+    "prepare": "ts-patch install && typia patch",
+    "openapi": "pnpm hto --app-file ./src/index.ts --title missiv-server --app-type PublicAPI --output ./doc/openapi.json --description API --app-version api --tsconfig ./tsconfig.json",
+    "build:ts": "tsc --project tsconfig.json",
+    "build": "pnpm openapi && pnpm sql2ts && pnpm build:ts && echo 'TODO: cp -R doc dist/doc && cp doc/openapi.json ../../docs/public/'",
+    "sql2ts": "node sql2ts.cjs ./src/schema/sql",
+    "sql2ts:watch": "pnpm sql2ts && as-soon -w ./src/schema/sql pnpm sql2ts",
+    "css2ts": "node css2ts.cjs global",
+    "css2ts:watch": "pnpm css2ts && as-soon -w ./src/schema/css pnpm css2ts",
+    "dev": "as-soon -w src pnpm build:ts",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest"
+  }
+}

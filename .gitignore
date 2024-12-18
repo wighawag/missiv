@@ -4,4 +4,7 @@
 # node modules
 node_modules/
 
+.vscode/*
+!.vscode/*.default
+
 database.sql

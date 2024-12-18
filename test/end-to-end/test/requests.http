@@ -1,0 +1,159 @@
+
+# reset DB
+POST http://localhost:2000/api/admin/db-reset
+content-type: application/json
+
+{
+"type": "db:reset",
+"reset": true
+}
+###
+
+
+# register 
+POST http://localhost:2000/api/user/register
+content-type: application/json
+SIGNATURE: FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+{
+"type": "register",
+"domain": "conquest.game",
+"signature": "0x0000000000000000000000000000000000000000000000000000000000000000",
+"address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+###
+
+
+# getUser 
+POST http://localhost:2000/api/user/getUser
+content-type: application/json
+
+{
+"type": "getUser",
+"address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+###
+
+
+# sending "hello world"
+#  from 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+#  to 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:2000/api/private/sendMessage
+content-type: application/json
+SIGNATURE: FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+{
+"type": "sendMessage",
+"to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+"message": "hello world",
+"domain": "conquest.game",
+"namespace": "main",
+"messageType": "clear",
+"signature": "FAKE:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+### 
+
+
+
+# register 
+POST http://localhost:2000/api/user/register
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "register",
+"domain": "conquest.game",
+"signature": "0x0000000000000000000000000000000000000000000000000000000000000000",
+"address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
+###
+
+
+# sending "Yo !"
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+#  to 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+POST http://localhost:2000/api/private/sendMessage
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "sendMessage",
+"to": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+"message": "Yo !",
+"domain": "conquest.game",
+"namespace": "main",
+"messageType": "clear",
+"signature": "FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
+### 
+
+
+# getting list of chats
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:2000/api/private/getConversations
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
+}
+### 
+
+
+# getting list of unaccepted chats
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:2000/api/private/getUnacceptedConversations
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
+}
+### 
+
+
+# getting list of accepted chats
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:2000/api/private/getAcceptedConversations
+content-type: application/json
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+{
+"type": "getConversations",
+"domain": "conquest.game",
+"namespace": "main"
+}
+### 
+
+
+# getting messages from chat
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+#  with 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+POST http://localhost:8787/api
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+content-type: application/json
+
+{
+"type": "getMessages",
+"with": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+### 
+
+
+# mark as read up to 01/01/2038
+#  from 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+POST http://localhost:8787/api
+SIGNATURE: FAKE:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+content-type: application/json
+
+{
+"type": "markAsRead",
+"lastMessageTimestampMS": 2145916800000
+}
+### 
+
+

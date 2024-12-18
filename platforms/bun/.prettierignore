@@ -5,16 +5,14 @@
 .env*.local
 
 # node modules
-node_modules/
+node_modules
+
+# data generated
+/dist
 #############################################
 
 # Ignore npm files
 pnpm-lock.yaml
 package.json
 
-.wrangler
-.svelte-kit
-dist
-*.md
-dist-tmp
-*.json
+*.sql.ts

@@ -1,19 +1,44 @@
 layout {
 	pane split_direction="vertical" {
 		pane command="bash"  {
-			args "-c" "pnpm types:dev; cd types; ${SHELL-bash}"
+			args "-c" "${SHELL-bash}"
+		}
+	}
+	pane split_direction="vertical" {
+		pane command="bash"  {
+			args "-c" "pnpm common:dev; cd packages/common; ${SHELL-bash}"
 		}
 		pane command="bash"  {
-			args "-c" "pnpm server:dev; cd server; ${SHELL-bash}"
+			args "-c" "pnpm server:dev; cd packages/server; ${SHELL-bash}"
+		}
+		pane name="server sql watch" command="bash" {
+			args "-c" "pnpm run --filter ./packages/server sql2ts:watch; cd packages/server; ${SHELL-bash}"
+		}
+	}
+	pane split_direction="vertical" {
+		pane command="bash"  {
+			args "-c" "pnpm bun:dev; cd platforms/bun; ${SHELL-bash}"
+		}
+
+		pane command="bash"  {
+			args "-c" "pnpm bun:build:watch; cd platforms/bun; ${SHELL-bash}"
+		}
+
+		pane command="bash"  {
+			args "-c" "pnpm nodejs:build:watch; cd platforms/nodejs; ${SHELL-bash}"
+		}
+		
+		pane command="bash"  {
+			args "-c" "pnpm cf-worker:dev; cd platforms/cf-worker; ${SHELL-bash}"
 		}
 		
 	}
 	pane split_direction="vertical" {
 		pane command="bash"  {
-			args "-c" "pnpm client:dev; cd client; ${SHELL-bash}"
+			args "-c" "pnpm client:dev; cd packages/client; ${SHELL-bash}"
 		}
 		pane command="bash"  {
-			args "-c" "pnpm client:dev:build; cd client; ${SHELL-bash}"
+			args "-c" "pnpm client:dev:build; cd packages/client; ${SHELL-bash}"
 		}
 	}
 

@@ -1,0 +1,39 @@
+{
+  "name": "missiv-common",
+  "version": "0.0.9",
+  "description": "A messaging system for ethereum addresses",
+  "keywords": [
+    "ethereum",
+    "message",
+    "inbox"
+  ],
+  "author": "Ronan Sandford",
+  "license": "AGPL-3.0-only",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "devDependencies": {
+    "as-soon": "^0.0.11",
+    "ldenv": "^0.3.12",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typia": "^7.4.1"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "as-soon -w src pnpm build",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write ."
+  }
+}
