@@ -157,6 +157,7 @@ export type ResponseRegisterDomainUser = {timestampMS: number};
 export type ResponseEditDomainUser = {timestampMS: number};
 
 export type ActionGetCompleteUser = {
+	// TODO "type": "getCompleteUser"
 	domain: string;
 	address: Address;
 };
