@@ -1,6 +1,6 @@
 {
   "name": "missiv-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "missiv server",
   "publishConfig": {
     "access": "public"

@@ -33,7 +33,7 @@
     "server:dev": "pnpm --filter missiv-server dev",
     "common:dev": "pnpm --filter missiv-common dev",
     "---------------------- DEPLOY ----------------------": "",
-    "build": "ldenv pnpm run --filter missiv-common build && ldenv pnpm run --filter missiv-client build",
+    "build": "ldenv pnpm run -r build",
     "serve": "pnpm run --filter missiv-client serve",
     "deploy:cf": "pnpm run --filter missiv-server-cf-worker deploy",
     "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
