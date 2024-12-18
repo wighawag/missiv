@@ -1,6 +1,9 @@
 {
 	"name": "missiv-client",
 	"version": "0.0.14",
+	"publishConfig": {
+		"access": "public"
+	},
 	"type": "module",
 	"files": [
 		"dist",
