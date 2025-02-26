@@ -13,13 +13,12 @@ type ActionSendMessageBase = {
 	type: 'sendMessage';
 	domain: string;
 	namespace: string;
-	to: Address;
-	message: string;
-	signature: String0x;
+	conversationID: string;
+	lastMessageReadTimestampMS: number;
+	messages: {to: Address; toPublicKey: PublicKey; content: string; signature: String0x}[];
 };
 
 export type ActionSendEncryptedMessage = ActionSendMessageBase & {
-	toPublicKey: PublicKey;
 	messageType: 'encrypted';
 };
 
@@ -37,6 +36,7 @@ export type ActionAcceptConversation = {
 	domain: string;
 	namespace: string;
 	conversationID: string;
+	lastMessageReadTimestampMS: number;
 };
 export type ResponseAcceptConversation = {
 	timestampMS: number;
@@ -78,7 +78,7 @@ export type ActionMarkAsRead = {
 	domain: string;
 	namespace: string;
 	conversationID: string;
-	lastMessageTimestampMS: number;
+	lastMessageReadTimestampMS: number;
 };
 export type ResponseMarkAsRead = {timestampMS: number};
 

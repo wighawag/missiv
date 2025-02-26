@@ -26,12 +26,12 @@ export interface Storage {
 		action: ActionRegisterDomainUser,
 	): Promise<void>;
 	editUser(address: Address, timestampMS: number, action: ActionEditDomainUser): Promise<void>;
-	getMessages(action: ActionGetMessages): Promise<ResponseGetMessages>;
+	getMessages(address: Address, action: ActionGetMessages): Promise<ResponseGetMessages>;
 	getUser(address: Address): Promise<ResponseGetMissivUser>;
 	getCompleteUser(domain: string, address: Address): Promise<ResponseGetCompleteUser>;
 	getCompleteUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetCompleteUser>;
 	getDomainUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser>;
-	markAsRead(publicKey: PublicKey, action: ActionMarkAsRead): Promise<void>;
+	markAsRead(address: Address, action: ActionMarkAsRead): Promise<void>;
 	sendMessage(
 		publicKey: PublicKey,
 		account: Address,

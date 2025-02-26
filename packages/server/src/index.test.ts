@@ -75,6 +75,9 @@ test('basic', async () => {
 			},
 		},
 	);
+	if (!response.ok) {
+		console.error(await response.text());
+	}
 	expect(response.ok).toBeTruthy();
 
 	const sendResponse = await client.api.private.sendMessage.$post(
@@ -83,10 +86,17 @@ test('basic', async () => {
 				type: 'sendMessage',
 				domain: 'test.com',
 				namespace: 'test',
-				to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-				message: 'hello world',
+				conversationID: '1', // TODO: this should be a hash of the participants // but this should be handled on server
+				lastMessageReadTimestampMS: 1,
 				messageType: 'clear',
-				signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
+				messages: [
+					{
+						to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+						toPublicKey: '0xff', // TODO
+						content: 'hello world',
+						signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
+					},
+				],
 			},
 		},
 		{
@@ -96,5 +106,8 @@ test('basic', async () => {
 		},
 	);
 
+	if (!sendResponse.ok) {
+		console.error(await sendResponse.text());
+	}
 	expect(sendResponse.ok).toBeTruthy();
 });

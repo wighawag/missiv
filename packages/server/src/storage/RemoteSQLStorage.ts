@@ -1,5 +1,5 @@
 import {Storage} from './index.js';
-import {RemoteSQL} from 'remote-sql';
+import {RemoteSQL, SQLPreparedStatement} from 'remote-sql';
 import setupComversationsTables from '../schema/ts/02_conversations.sql.js';
 import setupUsersTables from '../schema/ts/01_users.sql.js';
 import {sqlToStatements} from './utils.js';
@@ -88,14 +88,6 @@ export class RemoteSQLStorage implements Storage {
 		]);
 	}
 
-	async getMessages(action: ActionGetMessages): Promise<ResponseGetMessages> {
-		const statement = this.db.prepare(
-			`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 ORDER BY timestamp DESC`,
-		);
-		const {results} = await statement.bind(action.domain, action.namespace, action.conversationID).all();
-		return {messages: results} as ResponseGetMessages;
-	}
-
 	async getUser(address: Address): Promise<ResponseGetMissivUser> {
 		const response = await this.db.prepare(`SELECT * from Users WHERE address = ?1`).bind(address).all();
 
@@ -138,13 +130,22 @@ export class RemoteSQLStorage implements Storage {
 		return {domainUser: undefined};
 	}
 
-	async markAsRead(publicKey: PublicKey, action: ActionMarkAsRead) {
+	async getMessages(address: Address, action: ActionGetMessages): Promise<ResponseGetMessages> {
 		const statement = this.db.prepare(
-			`UPDATE Conversations SET read = 1, accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
+			`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND recipient = ?4  ORDER BY timestamp DESC`,
 		);
-		// TODO only if action.lastMessageTimestampMS >= Conversations.lastMessage
+		const {results} = await statement.bind(action.domain, action.namespace, action.conversationID, address).all();
+		return {messages: results} as ResponseGetMessages;
+	}
 
-		await statement.bind(action.domain, action.namespace, publicKey, action.conversationID).all();
+	async markAsRead(address: Address, action: ActionMarkAsRead) {
+		const statement = this.db.prepare(
+			`UPDATE ConversationViews SET lastRead = ?5, accepted = 1 WHERE domain = ?1 AND namespace = ?2 AND user = ?3 AND conversationID = ?4`,
+		);
+
+		await statement
+			.bind(action.domain, action.namespace, address, action.conversationID, action.lastMessageReadTimestampMS)
+			.all();
 	}
 
 	async sendMessage(
@@ -153,51 +154,74 @@ export class RemoteSQLStorage implements Storage {
 		timestampMS: number,
 		action: ActionSendMessage,
 	): Promise<ResponseSendMessage> {
-		const conversationID = getConversationID(action.to, account);
-		const upsertConversation = this.db
-			.prepare(`INSERT INTO Conversations(domain,namespace,first,second,conversationID,lastMessage,accepted,read)
-		VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
-		ON CONFLICT(domain,namespace,first,conversationID) DO UPDATE SET 
-			lastMessage=excluded.lastMessage,
-			accepted=1,
-			read=excluded.read
+		// 	const upsertConversation = this.db
+		// 		.prepare(`INSERT INTO Conversations(domain,namespace,first,second,conversationID,lastMessage,accepted,read)
+		// 	VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+		// 	ON CONFLICT(domain,namespace,first,conversationID) DO UPDATE SET
+		// 		lastMessage=excluded.lastMessage,
+		// 		accepted=1,
+		// 		read=excluded.read
+		// `);
+
+		const upsertLastMessageTimestampPerRecipient = this.db.prepare(`
+			INSERT INTO LastMessageTimestamp(domain, namespace, conversationID, recipient, timestamp) VALUES(?1,?2,?3,?4,?5)
+			ON CONFLICT(domain, namespace, conversationID, recipient) DO UPDATE SET
+				timestamp=excluded.timestamp
+			`);
+
+		const upsertConversationView = this.db
+			.prepare(`INSERT INTO ConversationViews(domain,namespace,user,conversationID,lastRead,accepted)
+		VALUES(?1,?2,?3,?4,?5,?6)
+		ON CONFLICT(domain,namespace,user,conversationID) DO UPDATE SET 
+			lastRead=excluded.lastRead
 	`);
 
 		const insertMessage = this.db.prepare(
-			`INSERT INTO Messages(domain,namespace,conversationID,sender,senderPublicKey,recipient,recipientPublicKey,timestamp,message,type,signature) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`,
+			`INSERT INTO Messages
+			(domain,namespace,conversationID,messageID,recipient,sender,content,timestamp)
+			VALUES(?1,?2,?3,?4,?5,?6,?7,?8)`,
 		);
 
-		const response = await this.db.batch([
-			upsertConversation.bind(action.domain, action.namespace, action.to, account, conversationID, timestampMS, 0, 0),
-			upsertConversation.bind(action.domain, action.namespace, account, action.to, conversationID, timestampMS, 1, 1),
-			action.messageType === 'clear'
-				? insertMessage.bind(
-						action.domain,
-						action.namespace,
-						conversationID,
-						account,
-						publicKey,
-						action.to,
-						null,
-						timestampMS,
-						action.message,
-						action.messageType,
-						action.signature,
-					)
-				: insertMessage.bind(
-						action.domain,
-						action.namespace,
-						conversationID,
-						account,
-						publicKey,
-						action.to,
-						action.toPublicKey,
-						timestampMS,
-						action.message,
-						action.messageType,
-						action.signature,
-					),
-		]);
+		const batch: SQLPreparedStatement[] = [];
+
+		// TODO this is not full proof
+		const messageID = Date.now();
+
+		for (const message of action.messages) {
+			const accepted = message.to === account ? 1 : 0;
+			batch.push(
+				upsertConversationView.bind(
+					action.domain,
+					action.namespace,
+					message.to,
+					action.conversationID,
+					action.lastMessageReadTimestampMS,
+					accepted,
+				),
+			);
+			batch.push(
+				insertMessage.bind(
+					action.domain,
+					action.namespace,
+					action.conversationID,
+					messageID,
+					message.to,
+					account,
+					JSON.stringify(message),
+					timestampMS,
+				),
+			);
+			batch.push(
+				upsertLastMessageTimestampPerRecipient.bind(
+					action.domain,
+					action.namespace,
+					action.conversationID,
+					message.to,
+					timestampMS,
+				),
+			);
+		}
+		const response = await this.db.batch(batch);
 		console.log({timestampMS});
 		return {
 			timestampMS,
@@ -210,9 +234,11 @@ export class RemoteSQLStorage implements Storage {
 		action: ActionAcceptConversation,
 	): Promise<ResponseAcceptConversation> {
 		const statement = this.db.prepare(
-			`UPDATE Conversations SET accepted = 1, read = 1 WHERE domain = ?1 AND namespace = ?2 AND first = ?3 AND conversationID = ?4`,
+			`UPDATE ConversationViews SET accepted = 1, lastRead = ?5 WHERE domain = ?1 AND namespace = ?2 AND user = ?3 AND conversationID = ?4`,
 		);
-		await statement.bind(action.domain, action.namespace, account, action.conversationID).all();
+		await statement
+			.bind(action.domain, action.namespace, account, action.conversationID, action.lastMessageReadTimestampMS)
+			.all();
 		return {
 			timestampMS,
 		};
@@ -220,7 +246,18 @@ export class RemoteSQLStorage implements Storage {
 
 	async getConversations(domain: string, namespace: string, address: Address): Promise<ResponseGetConversations> {
 		const statement = this.db.prepare(
-			`SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
+			// `SELECT * from Conversations WHERE domain = ?1 AND namespace = ?2 AND first = ?3 ORDER BY accepted DESC, read ASC, lastMessage DESC`,
+			`SELECT cv.*, lmt.timestamp AS lastMessageTimestamp
+			FROM ConversationViews cv
+			LEFT JOIN LastMessageTimestamp lmt ON cv.domain = lmt.domain 
+				AND cv.namespace = lmt.namespace 
+				AND cv.conversationID = lmt.conversationID 
+				AND cv.user = lmt.recipient
+			WHERE  cv.domain = ?1
+    		AND cv.namespace = ?2
+			AND cv.user = ?3
+			ORDER BY lmt.timestamp DESC NULLS LAST;
+`,
 		);
 		const {results} = await statement.bind(domain, namespace, address).all<ConversationFromDB>();
 		return {conversations: results.map(formatConversation)};
@@ -232,8 +269,21 @@ export class RemoteSQLStorage implements Storage {
 		account: Address,
 	): Promise<ResponseGetUnacceptedConversations> {
 		const statement = this.db.prepare(
-			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
+			// `SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 0 ORDER BY lastMessage DESC`,
+			`SELECT cv.*, lmt.timestamp AS lastMessageTimestamp
+			FROM ConversationViews cv
+			LEFT JOIN LastMessageTimestamp lmt ON cv.domain = lmt.domain 
+				AND cv.namespace = lmt.namespace 
+				AND cv.conversationID = lmt.conversationID 
+				AND cv.user = lmt.recipient
+			WHERE  cv.domain = ?1
+    		AND cv.namespace = ?2
+			AND cv.user = ?3
+			AND cv.accepted = 0
+			ORDER BY lmt.timestamp DESC NULLS LAST;
+`,
 		);
+
 		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
 		return {unacceptedConversations: results.map(formatConversation)};
 	}
@@ -244,7 +294,19 @@ export class RemoteSQLStorage implements Storage {
 		account: Address,
 	): Promise<ResponseGetAcceptedConversations> {
 		const statement = this.db.prepare(
-			`SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
+			// `SELECT * from Conversations WHERE domain = ?1 AND namespace =?2 AND first = ?3 AND accepted = 1 ORDER BY read ASC, lastMessage DESC`,
+			`SELECT cv.*, lmt.timestamp AS lastMessageTimestamp
+			FROM ConversationViews cv
+			LEFT JOIN LastMessageTimestamp lmt ON cv.domain = lmt.domain 
+				AND cv.namespace = lmt.namespace 
+				AND cv.conversationID = lmt.conversationID 
+				AND cv.user = lmt.recipient
+			WHERE  cv.domain = ?1
+    		AND cv.namespace = ?2
+			AND cv.user = ?3
+			AND cv.accepted = 1
+			ORDER BY lmt.timestamp DESC NULLS LAST;
+`,
 		);
 		const {results} = await statement.bind(domain, namespace, account).all<ConversationFromDB>();
 		return {acceptedConversations: results.map(formatConversation)};

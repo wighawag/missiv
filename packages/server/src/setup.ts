@@ -49,7 +49,9 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 		if (authentication) {
 			if (authentication.startsWith('FAKE:')) {
 				if (!env.DEV) {
-					throw new Error(`FAKE authentication only allowed in dev mode`);
+					const message = `FAKE authentication only allowed in dev mode`;
+					console.error(message);
+					throw new Error(message);
 				}
 				const splitted = authentication.split(':');
 

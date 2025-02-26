@@ -103,7 +103,12 @@ export function getPrivateChatAPI<Bindings extends Env>(options: ServerOptions<B
 
 			const action = c.req.valid('json');
 
-			const result = await storage.getMessages(action);
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+
+			const result = await storage.getMessages(account, action);
 			return c.json(result);
 		})
 		.post('/acceptConversation', typiaValidator('json', createValidate<ActionAcceptConversation>()), async (c) => {
