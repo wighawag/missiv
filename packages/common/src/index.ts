@@ -48,8 +48,9 @@ export type Conversation = {
 	user: Address;
 	conversationID: string;
 	members: Address[];
+	lastMessage: number;
 	lastRead: number;
-	accepted: boolean;
+	accepted: boolean; // TODO enum (notAccepted | accepted  | rejected)
 };
 
 export type ActionGetConversations = {
