@@ -52,8 +52,6 @@ export abstract class Room extends AbstractServerObject {
 	}
 
 	async webSocketOpen(ws: WebSocket, metadata: {ip?: string}) {
-		console.log('socket is open');
-
 		const storage = this.getStorage();
 
 		// Create our session and add it to the sessions map.
@@ -105,7 +103,6 @@ export abstract class Room extends AbstractServerObject {
 			const data: {address: string} | {message: string} = JSON.parse(
 				typeof message === 'string' ? message : new TextDecoder().decode(message),
 			);
-			console.log(`data: ${data}`);
 
 			if (!session.address) {
 				// TODO check signature (address
@@ -156,8 +153,6 @@ export abstract class Room extends AbstractServerObject {
 				message: data.message,
 			};
 			this.lastTimestamp = messageReformated.timestamp;
-
-			console.log(`message@: ${message}`);
 
 			let dataStr = JSON.stringify(messageReformated);
 			this.broadcast(dataStr);

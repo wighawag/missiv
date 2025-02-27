@@ -10,7 +10,7 @@ export class BunSQLPreparedStatement implements SQLPreparedStatement {
 		args: any[] = [],
 	) {
 		this.args = args;
-		console.log({sql});
+		// console.log({sql});
 		this.query = client.query(sql);
 	}
 	bind(...values: any[]): SQLPreparedStatement {
@@ -43,7 +43,7 @@ export class RemoteBunSQL implements RemoteSQL {
 			return result;
 		});
 		const response = await transact(list);
-		console.log({response});
+		// console.log({response});
 		return response.map((res: any) => ({results: res})) as SQLResult<T>[];
 	}
 }

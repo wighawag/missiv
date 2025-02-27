@@ -168,7 +168,6 @@ class SimpleObjectStorage implements ServerObjectStorage {
 	put<T>(entries: Record<string, T>): Promise<void>;
 	put<T>(key: string | Record<string, T>, value?: T): Promise<void> {
 		if (typeof key === 'string') {
-			console.log({key, value});
 			this.data.set(key, value);
 
 			this.list({reverse: true});
@@ -220,7 +219,6 @@ async function main() {
 		storage: ServerObjectStorage;
 
 		constructor(private name: string) {
-			console.log(`creating room ${name} on Bun`);
 			super();
 			this.storage = new SimpleObjectStorage();
 			this.instantiate();
@@ -231,11 +229,11 @@ async function main() {
 		}
 
 		saveSocketData(ws: WebSocket, data: any) {
-			console.log(`can't save data, but don't need as if server stop all stop`);
+			// console.log(`can't save data, but don't need as if server stop all stop`);
 		}
 
 		retrieveSocketData(ws: WebSocket) {
-			console.log(`can't retreve data, but don't need as if server stop all stop`);
+			// console.log(`can't retreve data, but don't need as if server stop all stop`);
 			return {};
 		}
 
@@ -247,7 +245,6 @@ async function main() {
 						id: this.counter++,
 					},
 				});
-				console.log('upgraded', upgraded);
 				if (upgraded) {
 					return new Response(); // TODO  ?
 				}
@@ -260,13 +257,13 @@ async function main() {
 		}
 		_addWebSocket(ws: WebSocket) {
 			this.websockets.push(ws);
-			console.log(`one ws added: ${this.websockets.length} total`);
+			// console.log(`one ws added: ${this.websockets.length} total`);
 		}
 		_removeWebSocket(ws: WebSocket) {
 			const index = this.websockets.indexOf(ws);
 			if (index >= 0) {
 				this.websockets.splice(index, 1);
-				console.log(`one ws removed at index (${index}): ${this.websockets.length} total`);
+				// console.log(`one ws removed at index (${index}): ${this.websockets.length} total`);
 			}
 		}
 	}
@@ -311,10 +308,10 @@ async function main() {
 			open(ws) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
-					console.log(`websocket:open: ${data.room}`);
+					// console.log(`websocket:open: ${data.room}`);
 					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
-						throw new Error(`np room for ${data.room}`);
+						throw new Error(`no room for ${data.room}`);
 					}
 					room._addWebSocket(ws as any);
 					// TODO ip with x-forwarded-for if available and if checked
@@ -327,10 +324,10 @@ async function main() {
 			close(ws, code, reason) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
-					console.log(`websocket:close: ${data.room}`);
+					// console.log(`websocket:close: ${data.room}`);
 					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
-						throw new Error(`np room for ${data.room}`);
+						throw new Error(`no room for ${data.room}`);
 					}
 					room._removeWebSocket(ws as any);
 					room.webSocketClose(ws as any, code, reason, true); // TODO wasClean == true ?
@@ -342,7 +339,7 @@ async function main() {
 			message(ws, msg) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
-					console.log(`room ${data.room}`);
+					// console.log(`room ${data.room}`);
 					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
 						throw new Error(`no room for ${data.room}`);

@@ -57,13 +57,13 @@ export class ServerObjectRoom extends Room {
 		// Upon receiving a message from the client, the server replies with the same message,
 		// and the total number of connections with the "[Durable Object]: " prefix
 		server.addEventListener('message', async (event) => {
-			console.log('message', event);
+			// console.log('message', event);
 			await this.webSocketMessage(client, event.data);
 		});
 
 		// If the client closes the connection, the runtime will close the connection too.
 		server.addEventListener('close', async (event) => {
-			console.log('close', event);
+			// console.log('close', event);
 			try {
 				server.close(event.code, 'Durable Object is closing WebSocket');
 				// TODO client.close ?
