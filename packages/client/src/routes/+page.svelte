@@ -1,3 +1,18 @@
-<h1>Welcome to your library project</h1>
-<p>Create your package using @sveltejs/package and preview/showcase your work with SvelteKit</p>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<script lang="ts">
+	import { openRoom } from '$lib/room';
+
+	function send() {}
+
+	let room = openRoom('conquest.game');
+</script>
+
+<div>
+	{#each $room.messages as message}
+		<p>{message.content}</p>
+	{/each}
+</div>
+
+<div>
+	<input type="text" />
+	<button onclick={send}>send</button>
+</div>

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS Messages (
     -----------------------------------------------------------------------------------------------
     
     sender TEXT NOT NULL, -- sender of the message
-    content TEXT NOT NULL, -- should be encrypted
+    message TEXT NOT NULL, -- should be encrypted
     timestamp TIMESTAMP NOT NULL,
     PRIMARY KEY (domain, namespace, conversationID, messageID, recipient)
 );
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS ConversationViews (
     user TEXT NOT NULL,
     conversationID TEXT NOT NULL,
     -----------------------------------------------------------------------------------------------
-
+    members TEXT NOT NULL,
     accepted BOOLEAN NOT NULL,
     lastRead INTEGER NOT NULL,
     PRIMARY KEY (domain, namespace, user, conversationID)

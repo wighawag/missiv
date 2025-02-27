@@ -30,10 +30,10 @@ import {
 } from 'missiv-common';
 import dropTables from '../schema/ts/drop.sql.js';
 
-type ConversationFromDB = Omit<Conversation, 'read' | 'accepted'> & {read: 0 | 1; accepted: 0 | 1};
+type ConversationFromDB = Omit<Conversation, 'accepted' | 'members'> & {accepted: 0 | 1; members: string};
 
 function formatConversation(v: ConversationFromDB): Conversation {
-	return {...v, state: v.accepted == 0 ? 'unaccepted' : v.read === 0 ? 'unread' : 'read'};
+	return {...v, accepted: v.accepted == 1 ? true : false, members: JSON.parse(v.members)};
 }
 export class RemoteSQLStorage implements Storage {
 	constructor(private db: RemoteSQL) {}
@@ -172,15 +172,15 @@ export class RemoteSQLStorage implements Storage {
 			`);
 
 		const upsertConversationView = this.db
-			.prepare(`INSERT INTO ConversationViews(domain,namespace,user,conversationID,lastRead,accepted)
-		VALUES(?1,?2,?3,?4,?5,?6)
+			.prepare(`INSERT INTO ConversationViews(domain,namespace,user,conversationID,members,lastRead,accepted)
+		VALUES(?1,?2,?3,?4,?5,?6,?7)
 		ON CONFLICT(domain,namespace,user,conversationID) DO UPDATE SET 
-			lastRead=excluded.lastRead
+			lastRead=MAX(lastRead, excluded.lastRead)
 	`);
 
 		const insertMessage = this.db.prepare(
 			`INSERT INTO Messages
-			(domain,namespace,conversationID,messageID,recipient,sender,content,timestamp)
+			(domain,namespace,conversationID,messageID,recipient,sender,message,timestamp)
 			VALUES(?1,?2,?3,?4,?5,?6,?7,?8)`,
 		);
 
@@ -189,16 +189,19 @@ export class RemoteSQLStorage implements Storage {
 		// TODO this is not full proof
 		const messageID = Date.now();
 
+		const members = action.messages.map((v) => v.to);
+
 		for (const message of action.messages) {
-			const accepted = message.to === account ? 1 : 0;
+			const myself = message.to === account ? 1 : 0;
 			batch.push(
 				upsertConversationView.bind(
 					action.domain,
 					action.namespace,
 					message.to,
 					action.conversationID,
-					action.lastMessageReadTimestampMS,
-					accepted,
+					JSON.stringify(members),
+					myself ? action.lastMessageReadTimestampMS : 0,
+					myself,
 				),
 			);
 			batch.push(

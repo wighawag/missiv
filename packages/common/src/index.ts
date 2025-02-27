@@ -45,11 +45,11 @@ export type ResponseAcceptConversation = {
 export type Conversation = {
 	domain: string;
 	namespace: string;
-	first: Address;
-	second: Address;
+	user: Address;
 	conversationID: string;
-	lastMessage: number;
-	state: 'unaccepted' | 'unread' | 'read';
+	members: Address[];
+	lastRead: number;
+	accepted: boolean;
 };
 
 export type ActionGetConversations = {
@@ -82,19 +82,26 @@ export type ActionMarkAsRead = {
 };
 export type ResponseMarkAsRead = {timestampMS: number};
 
+// domain TEXT NOT NULL,
+// namespace TEXT NOT NULL,
+// conversationID TEXT NOT NULL,
+// messageID INTEGER NOT NULL, -- shared id
+// recipient TEXT NOT NULL, -- recipient of the message (includes sender too)
+// -----------------------------------------------------------------------------------------------
+
+// sender TEXT NOT NULL, -- sender of the message
+// message TEXT NOT NULL, -- should be encrypted
+// timestamp TIMESTAMP NOT NULL,
 export type ConversationMessage = {
 	id: number;
 	donmain: string;
 	namespace: string;
 	conversationID: string;
 	sender: Address;
-	senderPublicKey: PublicKey;
-	recipient: Address;
-	recipientPublicKey: PublicKey;
+	// senderPublicKey: PublicKey; // TODO
 	timestamp: number;
 	message: string;
-	type: 'encrypted' | 'clear';
-	signature: string;
+	// type: 'encrypted' | 'clear';
 };
 
 export type ActionGetMessages = {
