@@ -64,12 +64,16 @@ class SimpleObjectStorage implements ServerObjectStorage {
 		return Promise.resolve(result);
 	}
 
-	list<T = unknown>(options?: {limit?: number}): Promise<Map<string, T>> {
+	list<T = unknown>(options?: {reverse?: boolean; limit?: number}): Promise<Map<string, T>> {
 		const result = new Map<string, T>();
 		// TODO: currently we load all the keys in memory without any limit
 		// we need a different strategies, an array + map for example
 		// but deletion would be tricy. or maybe a linked list
-		const keys = Object.keys(this.data).slice(0, options?.limit || 1000);
+		const allKeys = Object.keys(this.data);
+		const keys = options?.reverse ? allKeys.reverse() : allKeys;
+		if (options?.limit) {
+			keys.splice(options.limit);
+		}
 		for (const key of keys) {
 			const value = this.data.get(key) as T | undefined;
 			if (value) {
@@ -133,10 +137,20 @@ async function main() {
 		constructor(private name: string) {
 			super();
 			this.storage = new SimpleObjectStorage();
+			this.instantiate();
 		}
 
 		getStorage(): ServerObjectStorage {
 			return this.storage;
+		}
+
+		saveSocketData(ws: WebSocket, data: any) {
+			console.log(`can't save data, but don't need as if server stop all stop`);
+		}
+
+		retrieveSocketData(ws: WebSocket) {
+			console.log(`can't retreve data, but don't need as if server stop all stop`);
+			return {};
 		}
 
 		async upgradeWebsocket(request: Request): Promise<Response> {
@@ -217,7 +231,8 @@ async function main() {
 						throw new Error(`np room for ${data.room}`);
 					}
 					room._addWebSocket(ws as any);
-					room.webSocketOpen(ws as any);
+					// TODO ip with x-forwarded-for if available and if checked
+					room.webSocketOpen(ws as any, {ip: ws.remoteAddress});
 				} else {
 					console.log(`global:websocket:open`);
 					return websocket.open(ws as any);
@@ -239,6 +254,7 @@ async function main() {
 				}
 			},
 			message(ws, msg) {
+				console.log({ws, msg});
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					console.log(`websocket:message: ${data.room}`);

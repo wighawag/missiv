@@ -6,7 +6,7 @@ import {RemoteSQL} from 'remote-sql';
 export type ServerObjectStorage = {
 	get<T = unknown>(key: string): Promise<T | undefined>;
 	get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
-	list<T = unknown>(options?: {limit?: number}): Promise<Map<string, T>>;
+	list<T = unknown>(options?: {reverse?: boolean; limit?: number}): Promise<Map<string, T>>;
 	put<T>(key: string, value: T): Promise<void>;
 	put<T>(entries: Record<string, T>): Promise<void>;
 	delete(key: string): Promise<boolean>;
@@ -21,9 +21,12 @@ export type ServerObjectStorage = {
 };
 
 export abstract class AbstractServerObject {
+	abstract instantiate(): void;
 	abstract getStorage(): ServerObjectStorage;
 	abstract upgradeWebsocket(request: Request): Promise<Response>;
 	abstract getWebSockets(): WebSocket[];
+	abstract saveSocketData(ws: WebSocket, data: Record<string, unknown>): void;
+	abstract retrieveSocketData(ws: WebSocket): Record<string, unknown>;
 }
 
 export type ServerObjectId = {

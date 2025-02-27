@@ -16,10 +16,19 @@ export class ServerObjectRoom extends Room {
 	constructor(state: DurableObjectState) {
 		super();
 		this.state = state;
+		this.instantiate();
 	}
 
 	getStorage(): ServerObjectStorage {
 		return this.state.storage;
+	}
+
+	saveSocketData(ws: WebSocket, data: any) {
+		ws.serializeAttachment({...ws.deserializeAttachment(), ...data});
+	}
+
+	retrieveSocketData(ws: WebSocket) {
+		return ws.deserializeAttachment();
 	}
 
 	async upgradeWebsocket(request: Request): Promise<Response> {
@@ -69,7 +78,9 @@ export class ServerObjectRoom extends Room {
 		});
 
 		try {
-			await this.webSocketOpen(server);
+			// Get the client's IP address for use with the rate limiter.
+			let ip = request.headers.get('CF-Connecting-IP');
+			await this.webSocketOpen(server, {ip: ip ? ip : undefined});
 		} catch (err) {
 			console.error(`failed to handle open`, err);
 		}
