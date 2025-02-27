@@ -175,7 +175,8 @@ export class RemoteSQLStorage implements Storage {
 			.prepare(`INSERT INTO ConversationViews(domain,namespace,user,conversationID,members,lastRead,accepted)
 		VALUES(?1,?2,?3,?4,?5,?6,?7)
 		ON CONFLICT(domain,namespace,user,conversationID) DO UPDATE SET 
-			lastRead=MAX(lastRead, excluded.lastRead)
+			lastRead=MAX(lastRead, excluded.lastRead),
+			accepted=MAX(accepted, excluded.accepted)
 	`);
 
 		const insertMessage = this.db.prepare(

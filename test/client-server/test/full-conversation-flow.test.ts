@@ -1,203 +1,110 @@
 import {describe, it, expect, beforeEach} from 'vitest';
 
-import {api, FAKE_SIG, USER_A, USER_B} from './setup.js';
+import {
+	api,
+	USER_A,
+	USER_B,
+	USER_C,
+	setupTestUsers,
+	sendMessage,
+	createConversation,
+	getAcceptedConversations,
+	getUnacceptedConversations,
+	getMessages,
+	getMessageContents,
+	acceptConversation,
+} from './setup.js';
 
 describe('full conversation flow', () => {
 	beforeEach(async () => {
-		await api.clear();
-		await api.register(
-			{
-				type: 'register',
-				address: USER_B.address,
-				signature: USER_B.signatureForDelegation,
-				domain: 'test.com',
-			},
-			{privateKey: USER_B.delegatePrivateKey},
-		);
-		await api.register(
-			{
-				type: 'register',
-				address: USER_A.address,
-				signature: USER_A.signatureForDelegation,
-				domain: 'test.com',
-			},
-			{privateKey: USER_A.delegatePrivateKey},
-		);
+		await setupTestUsers([USER_A, USER_B]);
 	});
 
 	it('sending a message first time ends up in conversation request only', async () => {
 		const time = Date.now();
-		const sent = await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: 'test.com',
-				namespace: 'test',
-				messages: [
-					{content: 'Yo !', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'Yo !', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: Date.now(),
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		expect(sent.timestampMS).to.toBeGreaterThan(time);
-		const {acceptedConversations} = await api.getAcceptedConversations(
-			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+		const sent = await sendMessage({
+			from: USER_B,
+			to: USER_A,
+			content: 'Yo !',
+		});
+
+		expect(sent.timestampMS).toBeGreaterThan(time);
+
+		const acceptedConversations = await getAcceptedConversations(USER_A);
 		expect(acceptedConversations.length).toBe(0);
-		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+
+		const unacceptedConversations = await getUnacceptedConversations(USER_A);
 		expect(unacceptedConversations.length).toBe(1);
 	});
 
 	it('accepting a conversation request make it end up in conversations', async () => {
-		await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: 'test.com',
-				namespace: 'test',
-				messages: [
-					{content: 'Yo !', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'Yo !', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: Date.now(),
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		expect(unacceptedConversations.length).toBe(1);
+		const conversationID = await createConversation({
+			from: USER_B,
+			to: USER_A,
+			content: 'Yo !',
+		});
+
+		const unacceptedBefore = await getUnacceptedConversations(USER_A);
+		expect(unacceptedBefore.length).toBe(1);
+
 		await api.acceptConversation(
 			{
 				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
-				conversationID: unacceptedConversations[0].conversationID,
+				conversationID,
 				lastMessageReadTimestampMS: Date.now(),
 			},
 			{publicKey: USER_A.delegatePublicKey},
 		);
-		const {unacceptedConversations: unacceptedConversationsAfter} = await api.getUnacceptedConversations(
-			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		expect(unacceptedConversationsAfter.length).toBe(0);
-		const {acceptedConversations} = await api.getAcceptedConversations(
-			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+
+		const unacceptedAfter = await getUnacceptedConversations(USER_A);
+		expect(unacceptedAfter.length).toBe(0);
+
+		const acceptedConversations = await getAcceptedConversations(USER_A);
 		expect(acceptedConversations.length).toBe(1);
 	});
 
 	it('sending further message on an accepted conversation end up there', async () => {
-		await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: 'test.com',
-				namespace: 'test',
-				messages: [
-					{content: 'Yo !', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'Yo !', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: Date.now(),
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		expect(unacceptedConversations.length).toBe(1);
+		const conversationID = await createConversation({
+			from: USER_B,
+			to: USER_A,
+			content: 'Yo !',
+		});
 
-		await api.acceptConversation(
-			{
-				type: 'acceptConversation',
-				domain: 'test.com',
-				namespace: 'test',
-				conversationID: unacceptedConversations[0].conversationID,
-				lastMessageReadTimestampMS: Date.now(),
-			},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: 'test.com',
-				namespace: 'test',
-				messages: [
-					{content: 'Yo again !', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'Yo again !', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: Date.now(),
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		const {acceptedConversations} = await api.getAcceptedConversations(
-			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+		await acceptConversation({user: USER_A, conversationID});
+
+		await sendMessage({
+			from: USER_B,
+			to: USER_A,
+			content: 'Yo again !',
+			conversationID,
+		});
+
+		const acceptedConversations = await getAcceptedConversations(USER_A);
 		expect(acceptedConversations.length).toBe(1);
-		const {messages: messagesA} = await api.getMessages(
-			{
-				type: 'getMessages',
-				domain: 'test.com',
-				namespace: 'test',
-				conversationID: acceptedConversations[0].conversationID,
-			},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+
+		const messagesA = await getMessages(USER_A, conversationID);
 		expect(messagesA.length).toBe(2);
-		console.log(messagesA);
-		const messagesContentA = messagesA.map((v) => JSON.parse(v.message).content);
-		const {messages: messagesB} = await api.getMessages(
-			{
-				type: 'getMessages',
-				domain: 'test.com',
-				namespace: 'test',
-				conversationID: acceptedConversations[0].conversationID,
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		const messagesContentB = messagesB.map((v) => JSON.parse(v.message).content);
-		// console.log({ messagesA });
-		expect(messagesContentA).to.toEqual(messagesContentB);
+
+		const contentsA = await getMessageContents(USER_A, conversationID);
+		const contentsB = await getMessageContents(USER_B, conversationID);
+
+		expect(contentsA).toEqual(contentsB);
 	});
 
 	it('reply show up as unread', async () => {
 		const firstReadingTimeB = Date.now();
-		await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: 'test.com',
-				namespace: 'test',
-				messages: [
-					{content: 'Yo !', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'Yo !', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: firstReadingTimeB,
-			},
-			{publicKey: USER_B.delegatePublicKey},
-		);
-		const {unacceptedConversations} = await api.getUnacceptedConversations(
-			{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
+		await sendMessage({
+			from: USER_B,
+			to: USER_A,
+			content: 'Yo !',
+			timestamp: firstReadingTimeB,
+		});
+
+		const unacceptedConversations = await getUnacceptedConversations(USER_A);
 		expect(unacceptedConversations.length).toBe(1);
+
 		const acceptingTimeA = Date.now();
 		await api.acceptConversation(
 			{
@@ -211,59 +118,160 @@ describe('full conversation flow', () => {
 		);
 
 		const readingTimeB = Date.now();
-		await api.sendMessage(
+		await sendMessage({
+			from: USER_B,
+			to: USER_A,
+			content: 'How are you?',
+			conversationID: '1',
+			timestamp: readingTimeB,
+		});
+
+		const readingTimeA = Date.now();
+		await sendMessage({
+			from: USER_A,
+			to: USER_B,
+			content: 'I am good thanks',
+			conversationID: '1',
+			timestamp: readingTimeA,
+		});
+
+		const conversationsB = await getAcceptedConversations(USER_B);
+		expect(conversationsB.length).toBe(1);
+		expect(conversationsB[0].accepted).toBeTruthy();
+		expect(conversationsB[0].lastRead).toBeLessThan(readingTimeA);
+
+		const conversationsA = await getAcceptedConversations(USER_A);
+		expect(conversationsA.length).toBe(1);
+		expect(conversationsA[0].accepted).toBeTruthy();
+		expect(conversationsA[0].lastRead).toBe(readingTimeA); // read because by replying to B, we automatically consider A reading B message
+	});
+
+	// New tests
+	it('group conversations with multiple participants', async () => {
+		await setupTestUsers([USER_A, USER_B, USER_C]);
+
+		// Start a group conversation
+		await sendMessage({
+			from: USER_A,
+			to: [USER_B, USER_C],
+			content: 'Group chat started!',
+			conversationID: 'group1',
+		});
+
+		// Check all recipients have unaccepted conversations
+		const unacceptedB = await getUnacceptedConversations(USER_B);
+		const unacceptedC = await getUnacceptedConversations(USER_C);
+		expect(unacceptedB.length).toBe(1);
+		expect(unacceptedC.length).toBe(1);
+
+		// B accepts the conversation
+		await api.acceptConversation(
 			{
-				type: 'sendMessage',
+				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
-				messages: [
-					{content: 'How are you?', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-					{content: 'How are you?', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
+				conversationID: 'group1',
 				lastMessageReadTimestampMS: Date.now(),
 			},
 			{publicKey: USER_B.delegatePublicKey},
 		);
-		const readingTimeA = Date.now();
-		await api.sendMessage(
+
+		// B should now have the conversation in accepted
+		const acceptedB = await getAcceptedConversations(USER_B);
+		expect(acceptedB.length).toBe(1);
+
+		// C still has it in unaccepted
+		const stillUnacceptedC = await getUnacceptedConversations(USER_C);
+		expect(stillUnacceptedC.length).toBe(1);
+
+		// B replies to the group
+		await sendMessage({
+			from: USER_B,
+			to: [USER_A, USER_C],
+			content: 'Hi everyone!',
+			conversationID: 'group1',
+		});
+
+		// Check message counts
+		const messagesA = await getMessages(USER_A, 'group1');
+		const messagesB = await getMessages(USER_B, 'group1');
+		expect(messagesA.length).toBe(2);
+		expect(messagesB.length).toBe(2);
+
+		// C still hasn't accepted, but should still get messages
+		const messagesC = await getMessages(USER_C, 'group1');
+		expect(messagesC.length).toBe(2);
+	});
+
+	it('conversation with different message types', async () => {
+		// Create a conversation with a clear text message
+		const conversationID = await createConversation({
+			from: USER_A,
+			to: USER_B,
+			content: 'Initial clear message',
+		});
+
+		// User B accepts
+		await api.acceptConversation(
 			{
-				type: 'sendMessage',
+				type: 'acceptConversation',
 				domain: 'test.com',
 				namespace: 'test',
-				messages: [
-					{content: 'I am good thanks', to: USER_B.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_B.delegatePublicKey,
-					{content: 'I am good thanks', to: USER_A.address, signature: FAKE_SIG, toPublicKey: '0xff'}, //// toPublicKey: USER_A.delegatePublicKey,
-				],
-				messageType: 'clear',
-				conversationID: '1', // TODO not specified (generated from hash of user addresses)
-				lastMessageReadTimestampMS: readingTimeA,
+				conversationID,
+				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		const {acceptedConversations: conversationsB} = await api.getAcceptedConversations(
-			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
 			{publicKey: USER_B.delegatePublicKey},
 		);
-		expect(conversationsB.length).toBe(1);
-		expect(conversationsB[0].accepted).toBeTruthy();
 
-		// console.log({
-		// 	firstReadingTimeB,
-		// 	acceptingTimeA,
-		// 	readingTimeB,
-		// 	readingTimeA,
-		// });
-		// console.log(conversationsB);
+		// Send an "encrypted" message (just simulated with different message type)
+		await sendMessage({
+			from: USER_A,
+			to: USER_B,
+			content: '{"encrypted":"content"}',
+			conversationID,
+			messageType: 'encrypted',
+		});
 
-		expect(conversationsB[0].lastRead).toBeLessThan(readingTimeA);
-		const {acceptedConversations: conversationsA} = await api.getAcceptedConversations(
-			{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-			{publicKey: USER_A.delegatePublicKey},
-		);
-		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].accepted).toBeTruthy();
-		expect(conversationsA[0].lastRead).toBe(readingTimeA); // read because by replying to B, we automatically consider A reading B message
+		// Check messages
+		const messages = await getMessages(USER_B, conversationID);
+		expect(messages.length).toBe(2);
+
+		expect(messages[0].message).toMatch(/.*encrypted.*/);
+	});
+
+	it('rejecting conversation requests', async () => {
+		// User C attempts to message user A
+		await setupTestUsers([USER_A, USER_B, USER_C]);
+
+		await sendMessage({
+			from: USER_C,
+			to: USER_A,
+			content: 'Hello there!',
+			conversationID: 'reject-test',
+		});
+
+		// Check A has unaccepted conversation
+		const unacceptedA = await getUnacceptedConversations(USER_A);
+		expect(unacceptedA.length).toBe(1);
+
+		// A "rejects" by sending a message with rejection flag
+		// Note: API doesn't have explicit rejection so we simulate it
+		await sendMessage({
+			from: USER_A,
+			to: USER_C,
+			content: 'Sorry, not interested',
+			conversationID: 'reject-test',
+		});
+
+		// Even after "rejection" message, conversation should remain
+		const stillUnaccepted = await getUnacceptedConversations(USER_A);
+		expect(stillUnaccepted.length).toBe(1);
+
+		// Messages should be visible to both parties
+		const messagesA = await getMessageContents(USER_A, 'reject-test');
+		const messagesC = await getMessageContents(USER_C, 'reject-test');
+
+		expect(messagesA).toEqual(messagesC);
+		expect(messagesA).toContain('Sorry, not interested');
 	});
 });
