@@ -25,9 +25,97 @@ type Options = {
 	processInterval?: string;
 };
 
+type Entry<Key, Value> = {
+	prev: Entry<Key, Value> | null;
+	next: Entry<Key, Value> | null;
+	key: Key;
+	value: Value;
+};
+class BidirectionalMap<Key, Value> {
+	map: Map<Key, Entry<Key, Value>>;
+	first: Entry<Key, Value> | null;
+	last: Entry<Key, Value> | null;
+	constructor() {
+		this.map = new Map();
+		this.first = null;
+		this.last = null;
+	}
+
+	set(key: Key, value: Value) {
+		const entry: Entry<Key, Value> = {key, value, prev: this.last, next: null};
+
+		if (this.last) {
+			this.last.next = entry;
+		} else {
+			this.first = entry;
+		}
+
+		this.last = entry;
+		this.map.set(key, entry);
+		return this;
+	}
+
+	get(key: Key) {
+		const entry = this.map.get(key);
+		return entry ? entry.value : undefined;
+	}
+
+	delete(key: Key) {
+		if (!this.map.has(key)) {
+			return false;
+		}
+
+		const entry = this.map.get(key) as Entry<Key, Value>;
+
+		// Update the links of adjacent entries
+		if (entry.prev) {
+			entry.prev.next = entry.next;
+		} else {
+			// This was the first entry
+			this.first = entry.next;
+		}
+
+		if (entry.next) {
+			entry.next.prev = entry.prev;
+		} else {
+			// This was the last entry
+			this.last = entry.prev;
+		}
+
+		this.map.delete(key);
+		return true;
+	}
+
+	clear() {
+		this.map.clear();
+		this.first = null;
+		this.last = null;
+	}
+
+	// Forward iterator
+	*[Symbol.iterator](): IterableIterator<[Key, Value]> {
+		let current = this.first;
+		while (current) {
+			yield [current.key, current.value];
+			current = current.next;
+		}
+	}
+
+	// Reverse iterator
+	*reverseIterator(): IterableIterator<[Key, Value]> {
+		let current = this.last;
+		while (current) {
+			yield [current.key, current.value];
+			current = current.prev;
+		}
+	}
+}
+
 class SimpleObjectStorage implements ServerObjectStorage {
-	data: Map<string, unknown> = new Map();
-	constructor() {}
+	data: BidirectionalMap<string, unknown>;
+	constructor() {
+		this.data = new BidirectionalMap();
+	}
 
 	delete(key: string): Promise<boolean>;
 	delete(keys: string[]): Promise<number>;
@@ -66,19 +154,12 @@ class SimpleObjectStorage implements ServerObjectStorage {
 
 	list<T = unknown>(options?: {reverse?: boolean; limit?: number}): Promise<Map<string, T>> {
 		const result = new Map<string, T>();
-		// TODO: currently we load all the keys in memory without any limit
-		// we need a different strategies, an array + map for example
-		// but deletion would be tricy. or maybe a linked list
-		const allKeys = Object.keys(this.data);
-		const keys = options?.reverse ? allKeys.reverse() : allKeys;
-		if (options?.limit) {
-			keys.splice(options.limit);
-		}
-		for (const key of keys) {
-			const value = this.data.get(key) as T | undefined;
-			if (value) {
-				result.set(key, value);
-			}
+
+		let count = 0;
+		for (const item of options?.reverse ? this.data.reverseIterator() : this.data) {
+			if (options?.limit && count >= options.limit) break;
+			result.set(item[0], item[1] as T);
+			count++;
 		}
 		return Promise.resolve(result);
 	}
@@ -87,7 +168,11 @@ class SimpleObjectStorage implements ServerObjectStorage {
 	put<T>(entries: Record<string, T>): Promise<void>;
 	put<T>(key: string | Record<string, T>, value?: T): Promise<void> {
 		if (typeof key === 'string') {
+			console.log({key, value});
 			this.data.set(key, value);
+
+			this.list({reverse: true});
+			this.list();
 			return Promise.resolve();
 		}
 		const entries = Object.entries(key);
@@ -135,6 +220,7 @@ async function main() {
 		storage: ServerObjectStorage;
 
 		constructor(private name: string) {
+			console.log(`creating room ${name} on Bun`);
 			super();
 			this.storage = new SimpleObjectStorage();
 			this.instantiate();
@@ -254,13 +340,12 @@ async function main() {
 				}
 			},
 			message(ws, msg) {
-				console.log({ws, msg});
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
-					console.log(`websocket:message: ${data.room}`);
+					console.log(`room ${data.room}`);
 					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
 					if (!room) {
-						throw new Error(`np room for ${data.room}`);
+						throw new Error(`no room for ${data.room}`);
 					}
 					room.webSocketMessage(ws as any, msg.toString());
 				} else {
