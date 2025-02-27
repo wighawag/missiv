@@ -2,6 +2,7 @@ import {AbstractServerObject} from './types.js';
 
 export type Session = {
 	address?: string;
+	challenge?: string;
 	quit?: boolean;
 	blockedMessages?: string[];
 };
@@ -14,16 +15,16 @@ export abstract class Room extends AbstractServerObject {
 		this.getWebSockets().forEach((webSocket) => {
 			// The constructor may have been called when waking up from hibernation,
 			// so get previously serialized metadata for any existing WebSockets.
-			// this apply to system like service worker that can recover
-			// other implementation like bun, do nothing here, but it is fine sicne they do not hibernate
+			// this apply to system like cloudflare worker that can recover from hibernation
+			// other implementation like bun, do nothing here, but it is fine since they do not hibernate
 			// TODO implement hibernation for bun ?
-			let meta = this.retrieveSocketData(webSocket);
+			let hibernatedData = this.retrieveSocketData(webSocket);
 
 			// We don't send any messages to the client until it has sent us the initial user info
 			// message. Until then, we will queue messages in `session.blockedMessages`.
 			// This could have been arbitrarily large, so we won't put it in the attachment.
 			let blockedMessages: string[] = [];
-			this.sessions.set(webSocket, {...meta, blockedMessages});
+			this.sessions.set(webSocket, {...hibernatedData, blockedMessages});
 		});
 	}
 
@@ -54,8 +55,12 @@ export abstract class Room extends AbstractServerObject {
 	async webSocketOpen(ws: WebSocket, metadata: {ip?: string}) {
 		const storage = this.getStorage();
 
+		const challenge: string = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+			.map((b) => b.toString(16).padStart(2, '0'))
+			.join('');
+
 		// Create our session and add it to the sessions map.
-		let session: Session & {blockedMessages: string[]} = {blockedMessages: []};
+		let session: Session & {blockedMessages: string[]} = {blockedMessages: [], challenge};
 		this.sessions.set(ws, session);
 
 		// Queue "join" messages for all online users, to populate the client's roster.
@@ -75,7 +80,7 @@ export abstract class Room extends AbstractServerObject {
 		});
 
 		// TODO use this message as replay protection to require signing
-		ws.send(JSON.stringify({type: 'welcome'}));
+		ws.send(JSON.stringify({challenge}));
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
@@ -100,21 +105,49 @@ export abstract class Room extends AbstractServerObject {
 				return;
 			}
 
-			const data: {address: string} | {message: string} = JSON.parse(
+			const data: {signature: string; address: string} | {message: string} = JSON.parse(
 				typeof message === 'string' ? message : new TextDecoder().decode(message),
 			);
 
 			if (!session.address) {
-				// TODO check signature (address
+				if (!('signature' in data && data.signature)) {
+					ws.send(JSON.stringify({error: 'Expected signature'}));
+					return;
+				}
+
 				if (!('address' in data && data.address)) {
 					ws.send(JSON.stringify({error: 'Expected address'}));
 					return;
 				}
+
+				// TODO remove
+				const DEBUG = true;
+				if (DEBUG && data.signature === '0x') {
+					session.address = data.address;
+				} else {
+					// const user = storage.getUser(data.address);
+					// if (!user) {
+					// 	ws.send(JSON.stringify({error: 'User not found'}));
+					// 	return;
+					// }
+					// const publicKey = user.publicKey;
+					// const recoveredPublicKey = recoverPublicKey(session.challenge, data.signature, data.address);
+					// if (recoveredPublicKey !== publicKey) {
+					// 	ws.send(JSON.stringify({error: 'Invalid signature'}));
+					// }
+					const address = undefined; // TODO await this.verifySignature(data.signature);
+					if (!address) {
+						ws.send(JSON.stringify({error: 'Invalid signature'}));
+						return;
+					}
+					session.address = address;
+				}
+
 				// TODO use signature prevent replay ?
 
 				// The first message the client sends is the user info message with their name. Save it
 				// into their session object.
-				session.address = data.address;
+
 				// attach name to the webSocket so it survives hibernation
 				this.saveSocketData(ws, {address: session.address});
 
