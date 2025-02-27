@@ -81,7 +81,16 @@ export type ActionMarkAsRead = {
 	conversationID: string;
 	lastMessageReadTimestampMS: number;
 };
-export type ResponseMarkAsRead = {timestampMS: number};
+export type ResponseMarkAsRead = {success: boolean};
+
+export type ActionRejectConversation = {
+	type: 'rejectConversation';
+	domain: string;
+	namespace: string;
+	conversationID: string;
+};
+
+export type ResponseRejectConversation = {success: boolean};
 
 // domain TEXT NOT NULL,
 // namespace TEXT NOT NULL,

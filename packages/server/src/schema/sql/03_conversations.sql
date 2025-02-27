@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS Conversations (
     namespace TEXT NOT NULL,
     conversationID TEXT NOT NULL,
     -----------------------------------------------------------------------------------------------
-
+    -- TODO? firstMessage (clear or encrypted for all ) // denormalization for preview
     creationDate TIMESTAMP NOT NULL,
     members TEXT NOT NULL,
     name TEXT,

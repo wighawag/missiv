@@ -13,6 +13,7 @@ import {
 	getMessages,
 	getMessageContents,
 	acceptConversation,
+	rejectConversation,
 } from './setup.js';
 
 describe('full conversation flow', () => {
@@ -247,31 +248,26 @@ describe('full conversation flow', () => {
 			from: USER_C,
 			to: USER_A,
 			content: 'Hello there!',
-			conversationID: 'reject-test',
 		});
 
 		// Check A has unaccepted conversation
 		const unacceptedA = await getUnacceptedConversations(USER_A);
 		expect(unacceptedA.length).toBe(1);
 
-		// A "rejects" by sending a message with rejection flag
-		// Note: API doesn't have explicit rejection so we simulate it
-		await sendMessage({
+		await rejectConversation({
 			from: USER_A,
-			to: USER_C,
-			content: 'Sorry, not interested',
-			conversationID: 'reject-test',
+			conversationID: unacceptedA[0].conversationID,
 		});
 
-		// Even after "rejection" message, conversation should remain
+		// after "rejection" message, conversation should be no more
 		const stillUnaccepted = await getUnacceptedConversations(USER_A);
-		expect(stillUnaccepted.length).toBe(1);
+		expect(stillUnaccepted.length).toBe(0);
 
-		// Messages should be visible to both parties
-		const messagesA = await getMessageContents(USER_A, 'reject-test');
-		const messagesC = await getMessageContents(USER_C, 'reject-test');
+		const fromC = await getAcceptedConversations(USER_C);
+		const messagesC = await getMessageContents(USER_C, fromC[0].conversationID);
 
-		expect(messagesA).toEqual(messagesC);
-		expect(messagesA).toContain('Sorry, not interested');
+		expect(messagesC).toContain('Hello there!');
+		// reject by all ?
+		// expect(fromC.)
 	});
 });

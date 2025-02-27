@@ -10,7 +10,9 @@ import type {
 	ActionGetMissivUser,
 	ActionGetUnacceptedConversations,
 	ActionRegisterDomainUser,
+	ActionRejectConversation,
 	ActionSendMessage,
+	ResponseRejectConversation,
 	ResponseAcceptConversation,
 	ResponseEditDomainUser,
 	ResponseGetAcceptedConversations,
@@ -116,6 +118,14 @@ export class API {
 	async acceptConversation(conversation: ActionAcceptConversation, options: APIOptions) {
 		return this.call<ResponseAcceptConversation>(
 			'/private/acceptConversation',
+			conversation,
+			options
+		);
+	}
+
+	async rejectConversation(conversation: ActionRejectConversation, options: APIOptions) {
+		return this.call<ResponseRejectConversation>(
+			'/private/rejectConversation',
 			conversation,
 			options
 		);

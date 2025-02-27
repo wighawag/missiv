@@ -11,6 +11,7 @@ import {
 	ActionGetMessages,
 	ActionMarkAsRead,
 	ActionRegisterDomainUser,
+	ActionRejectConversation,
 	ActionSendMessage,
 	Address,
 	Conversation,
@@ -211,6 +212,13 @@ export class RemoteSQLStorage implements Storage {
 		await statement
 			.bind(action.domain, action.namespace, address, action.conversationID, action.lastMessageReadTimestampMS)
 			.all();
+	}
+
+	async rejectConversation(address: Address, action: ActionRejectConversation): Promise<void> {
+		const statement = this.db.prepare(
+			`UPDATE ConversationParticipants SET status = 1 WHERE domain = ?1 AND namespace = ?2 AND user = ?3 AND conversationID = ?4`,
+		);
+		await statement.bind(action.domain, action.namespace, address, action.conversationID).all();
 	}
 
 	async sendMessage(

@@ -11,6 +11,7 @@ import {
 	ActionGetUnacceptedConversations,
 	ActionMarkAsRead,
 	ActionSendMessage,
+	ActionRejectConversation,
 } from 'missiv-common';
 import {Env} from '../../env.js';
 
@@ -95,6 +96,21 @@ export function getPrivateChatAPI<Bindings extends Env>(options: ServerOptions<B
 			const action = c.req.valid('json');
 
 			await storage.markAsRead(account, action);
+			return c.json({success: true});
+		})
+
+		.post('/rejectConversation', typiaValidator('json', createValidate<ActionRejectConversation>()), async (c) => {
+			const config = c.get('config');
+			const storage = config.storage;
+
+			const {account} = getAuth(c);
+			if (!account) {
+				throw new Error(`no account authenticated`);
+			}
+
+			const action = c.req.valid('json');
+
+			await storage.rejectConversation(account, action);
 			return c.json({success: true});
 		})
 		.post('/getMessages', typiaValidator('json', createValidate<ActionGetMessages>()), async (c) => {

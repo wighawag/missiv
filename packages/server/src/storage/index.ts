@@ -3,6 +3,7 @@ import {
 	ActionEditDomainUser,
 	ActionGetMessages,
 	ActionMarkAsRead,
+	ActionRejectConversation,
 	ActionRegisterDomainUser,
 	ActionSendMessage,
 	Address,
@@ -32,6 +33,7 @@ export interface Storage {
 	getCompleteUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetCompleteUser>;
 	getDomainUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser>;
 	markAsRead(address: Address, action: ActionMarkAsRead): Promise<void>;
+	rejectConversation(address: Address, action: ActionRejectConversation): Promise<void>;
 	sendMessage(
 		publicKey: PublicKey,
 		account: Address,

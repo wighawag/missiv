@@ -135,6 +135,18 @@ export async function sendMessage({
 	);
 }
 
+export async function rejectConversation({from, conversationID}: {from: TestUser; conversationID: string}) {
+	await api.rejectConversation(
+		{
+			type: 'rejectConversation',
+			domain: 'test.com',
+			namespace: 'test',
+			conversationID,
+		},
+		{publicKey: from.delegatePublicKey},
+	);
+}
+
 /**
  * Creates and returns a conversation between two users
  */
