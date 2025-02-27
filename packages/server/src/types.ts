@@ -3,7 +3,25 @@ import {Bindings, MiddlewareHandler} from 'hono/types';
 import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
 
+export type ServerObjectStorage = {
+	get<T = unknown>(key: string): Promise<T | undefined>;
+	get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
+	list<T = unknown>(options?: {limit?: number}): Promise<Map<string, T>>;
+	put<T>(key: string, value: T): Promise<void>;
+	put<T>(entries: Record<string, T>): Promise<void>;
+	delete(key: string): Promise<boolean>;
+	delete(keys: string[]): Promise<number>;
+	deleteAll(): Promise<void>;
+	//   transaction<T>(
+	// 	closure: (txn: DurableObjectTransaction) => Promise<T>,
+	//   ): Promise<T>;
+	//   sync(): Promise<void>;
+	//   sql: SqlStorage;
+	//   transactionSync<T>(closure: () => T): T;
+};
+
 export abstract class AbstractServerObject {
+	abstract getStorage(): ServerObjectStorage;
 	abstract upgradeWebsocket(request: Request): Promise<Response>;
 	abstract getWebSockets(): WebSocket[];
 }

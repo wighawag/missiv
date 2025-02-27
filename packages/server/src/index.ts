@@ -12,7 +12,7 @@ import {Env} from './env.js';
 
 export type {Env};
 
-export type {ServerObject, ServerObjectId} from './types.js';
+export type {ServerObject, ServerObjectId, AbstractServerObject, ServerObjectStorage} from './types.js';
 
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';

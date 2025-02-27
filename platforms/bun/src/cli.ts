@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import {Room, ServerObject, ServerObjectId, createServer, type Env} from 'missiv-server';
+import {Room, ServerObject, ServerObjectId, ServerObjectStorage, createServer, type Env} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {Context} from 'hono';
@@ -24,6 +24,75 @@ type Options = {
 	port?: string;
 	processInterval?: string;
 };
+
+class SimpleObjectStorage implements ServerObjectStorage {
+	data: Map<string, unknown> = new Map();
+	constructor() {}
+
+	delete(key: string): Promise<boolean>;
+	delete(keys: string[]): Promise<number>;
+	delete(keys: string[] | string): Promise<boolean> | Promise<number> {
+		if (Array.isArray(keys)) {
+			for (const key of keys) {
+				this.data.delete(key);
+			}
+			return Promise.resolve(keys.length);
+		}
+		this.data.delete(keys);
+		return Promise.resolve(true);
+	}
+
+	deleteAll(): Promise<void> {
+		this.data.clear();
+		return Promise.resolve();
+	}
+
+	get<T = unknown>(key: string): Promise<T | undefined>;
+	get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
+	get<T = unknown>(keys: string[] | string): Promise<T | undefined> | Promise<Map<string, T>> {
+		if (Array.isArray(keys)) {
+			const result = new Map<string, T>();
+			for (const key of keys) {
+				const value = this.data.get(key) as T | undefined;
+				if (value) {
+					result.set(key, value);
+				}
+			}
+			return Promise.resolve(result);
+		}
+		const result = this.data.get(keys) as T | undefined;
+		return Promise.resolve(result);
+	}
+
+	list<T = unknown>(options?: {limit?: number}): Promise<Map<string, T>> {
+		const result = new Map<string, T>();
+		// TODO: currently we load all the keys in memory without any limit
+		// we need a different strategies, an array + map for example
+		// but deletion would be tricy. or maybe a linked list
+		const keys = Object.keys(this.data).slice(0, options?.limit || 1000);
+		for (const key of keys) {
+			const value = this.data.get(key) as T | undefined;
+			if (value) {
+				result.set(key, value);
+			}
+		}
+		return Promise.resolve(result);
+	}
+
+	put<T>(key: string, value: T): Promise<void>;
+	put<T>(entries: Record<string, T>): Promise<void>;
+	put<T>(key: string | Record<string, T>, value?: T): Promise<void> {
+		if (typeof key === 'string') {
+			this.data.set(key, value);
+			return Promise.resolve();
+		}
+		const entries = Object.entries(key);
+		for (const [key, value] of entries) {
+			this.data.set(key, value);
+		}
+		return Promise.resolve();
+	}
+}
 
 async function main() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
@@ -59,9 +128,15 @@ async function main() {
 	class BunRoom extends Room {
 		websockets: WebSocket[] = [];
 		counter: number = 1;
+		storage: ServerObjectStorage;
 
 		constructor(private name: string) {
 			super();
+			this.storage = new SimpleObjectStorage();
+		}
+
+		getStorage(): ServerObjectStorage {
+			return this.storage;
 		}
 
 		async upgradeWebsocket(request: Request): Promise<Response> {
