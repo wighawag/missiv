@@ -135,21 +135,17 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				typeof message === 'string' ? message : new TextDecoder().decode(message),
 			);
 
-			if (!session.address) {
+			if ('address' in data) {
 				if (!('signature' in data && data.signature)) {
 					ws.send(JSON.stringify({error: 'Expected signature'}));
 					return;
 				}
 
-				if (!('address' in data && data.address)) {
-					ws.send(JSON.stringify({error: 'Expected address'}));
-					return;
-				}
-
+				let newAddress: string;
 				// TODO remove
 				const DEBUG = true;
 				if (DEBUG && data.signature === '0x') {
-					session.address = data.address;
+					newAddress = data.address;
 				} else {
 					const user = await this.dbStorage.getUser(data.address);
 					console.log({user});
@@ -169,7 +165,17 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 						ws.send(JSON.stringify({error: 'Invalid signature'}));
 						return;
 					}
-					session.address = address;
+					newAddress = address;
+				}
+
+				if (!session.address) {
+					session.address = newAddress;
+				} else if (session.address === newAddress) {
+					// we ignore this request
+					return;
+				} else {
+					this.broadcast({quit: session.address});
+					session.address = newAddress;
 				}
 
 				// TODO use signature prevent replay ?
@@ -192,6 +198,11 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				this.broadcast({joined: session.address});
 
 				ws.send(JSON.stringify({ready: true}));
+				return;
+			}
+
+			if (!session.address) {
+				ws.send(JSON.stringify({error: 'Not Logged In!'}));
 				return;
 			}
 
