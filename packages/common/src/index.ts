@@ -212,3 +212,16 @@ export function getConversationID(accountA: Address, accountB: Address) {
 export function publicKeyAuthorizationMessage({address, publicKey}: {address: Address; publicKey: PublicKey}): string {
 	return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
 }
+
+export type ClientMessageType =
+	| {address: string; signature: string}
+	| {message: string; signature: string}
+	| {logout: true};
+
+export type ServerMessageType =
+	| {challenge: string}
+	| {ready: true}
+	| {joined: string}
+	| {timestamp: number; message: string; from: string; signature: string}
+	| {quit: string}
+	| {error: string; cause?: any; stack?: string};

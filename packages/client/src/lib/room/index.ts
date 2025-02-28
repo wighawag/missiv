@@ -1,18 +1,21 @@
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
+import type { ClientMessageType, ServerMessageType } from 'missiv-common';
 import type { Readable } from 'svelte/store';
 
 type Signer = { address: string; privateKey: string };
 type AccountWithSigner = { address: string; signer: Signer };
 type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
+// TODO use ServerMessageType
 export type Message = { message: string };
+export type User = { address: string };
 
 export type Room = { error?: { message: string; cause?: any } } & (
 	| {
-			address?: string;
 			loading: true;
+			address?: string;
 	  }
-	| { messages: Message[]; address?: string; loading: false }
+	| { loading: false; messages: Message[]; address?: string; users: User[] } // & ({loggedIn: false} | {loggedInd: true})
 );
 
 export function openRoom(params: { url: string; account: Readable<Account> }) {
@@ -41,6 +44,7 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 		set({
 			...$room,
 			messages: [],
+			users: [],
 			loading: false
 		});
 	}
@@ -54,11 +58,24 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 		}
 	}
 	function onWebsocketMessage(event: MessageEvent) {
+		const msgFromServer: ServerMessageType = JSON.parse(event.data);
 		if ($room && 'messages' in $room) {
-			set({
-				...$room,
-				messages: [...$room.messages, JSON.parse(event.data)]
-			});
+			if ('message' in msgFromServer) {
+				set({
+					...$room,
+					messages: [...$room.messages, msgFromServer]
+				});
+			} else if ('joined' in msgFromServer) {
+				set({
+					...$room,
+					users: [...$room.users, { address: msgFromServer.joined }]
+				});
+			} else if ('quit' in msgFromServer) {
+				set({
+					...$room,
+					users: $room.users.filter((v) => v.address != msgFromServer.quit)
+				});
+			}
 		} else {
 			console.error(`no room`);
 		}
@@ -86,9 +103,8 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 			});
 		} else {
 			set({
-				address,
-				messages: $room.messages,
-				loading: false
+				...$room,
+				address
 			});
 		}
 	}
@@ -126,7 +142,26 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 		}
 	);
 
-	function sendMessage(message: string) {}
+	function sendMessage(message: string) {
+		if (!$room || $room?.loading) {
+			throw new Error(`not loaded`);
+		}
+
+		if (!websocket) {
+			throw new Error(`no websocket`);
+		}
+
+		let address = _account?.address;
+		if (!address) {
+			// TODO
+			// throw new Error(`no account`);
+			address = 'fsadfs';
+		}
+
+		const msg: ClientMessageType = { message, address, signature: '0x' };
+
+		websocket.send(JSON.stringify(msg));
+	}
 
 	return {
 		subscribe,

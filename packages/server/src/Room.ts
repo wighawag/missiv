@@ -2,7 +2,7 @@ import {Bindings} from 'hono/types';
 import {AbstractServerObject, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
-import {String0x} from 'missiv-common';
+import {ClientMessageType, ServerMessageType} from 'missiv-common';
 
 export type Session = {
 	address?: string;
@@ -11,19 +11,6 @@ export type Session = {
 	blockedMessages?: string[];
 	limiter?: RateLimiterClient;
 };
-
-export type ClientMessageType =
-	| {address: string; signature: string}
-	| {message: string; signature: string}
-	| {logout: true};
-
-export type ServerMessageType =
-	| {challenge: string}
-	| {ready: true}
-	| {joined: string}
-	| {timestamp: number; message: string; from: string; signature: string}
-	| {quit: string}
-	| {error: string; cause?: any; stack?: string};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
