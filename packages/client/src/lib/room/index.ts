@@ -4,7 +4,7 @@ import type { Readable } from 'svelte/store';
 
 type Signer = { address: string; privateKey: string };
 type AccountWithSigner = { address: string; signer: Signer };
-type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
+export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
 // TODO use ServerMessageType
 export type Message = { message: string };
@@ -15,7 +15,14 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loading: true;
 			address?: string;
 	  }
-	| { loading: false; messages: Message[]; address?: string; users: User[] } // & ({loggedIn: false} | {loggedInd: true})
+	| {
+			loading: false;
+			messages: Message[];
+			address?: string;
+			users: User[];
+			loggedIn: boolean;
+			loggingIn: boolean;
+	  } // & ({loggedIn: false} | {loggedInd: true})
 );
 
 export function openRoom(params: { url: string; account: Readable<Account> }) {
@@ -45,7 +52,9 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 			...$room,
 			messages: [],
 			users: [],
-			loading: false
+			loading: false,
+			loggedIn: false,
+			loggingIn: false
 		});
 	}
 	function onWebsocketClosed(event: CloseEvent) {
@@ -66,14 +75,21 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 					messages: [...$room.messages, msgFromServer]
 				});
 			} else if ('joined' in msgFromServer) {
+				const justLoggedIn = msgFromServer.joined === _account?.address;
+
 				set({
 					...$room,
-					users: [...$room.users, { address: msgFromServer.joined }]
+					users: [...$room.users, { address: msgFromServer.joined }],
+					loggingIn: justLoggedIn ? false : $room.loggingIn,
+					loggedIn: justLoggedIn ? true : $room.loggedIn
 				});
 			} else if ('quit' in msgFromServer) {
+				const justLoggedOut = msgFromServer.quit === _account?.address;
 				set({
 					...$room,
-					users: $room.users.filter((v) => v.address != msgFromServer.quit)
+					users: $room.users.filter((v) => v.address != msgFromServer.quit),
+					loggingIn: justLoggedOut ? false : $room.loggingIn,
+					loggedIn: justLoggedOut ? false : $room.loggedIn
 				});
 			}
 		} else {
@@ -151,20 +167,43 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 			throw new Error(`no websocket`);
 		}
 
-		let address = _account?.address;
+		const address = _account?.address;
 		if (!address) {
-			// TODO
-			// throw new Error(`no account`);
-			address = 'fsadfs';
+			throw new Error(`no account`);
 		}
 
-		const msg: ClientMessageType = { message, address, signature: '0x' };
+		const msg: ClientMessageType = { message, signature: '0x' };
 
+		websocket.send(JSON.stringify(msg));
+	}
+
+	function login() {
+		if (!$room || $room?.loading) {
+			throw new Error(`not loaded`);
+		}
+
+		if (!websocket) {
+			throw new Error(`no websocket`);
+		}
+
+		const address = _account?.address;
+		if (!address) {
+			throw new Error(`no account`);
+		}
+
+		const msg: ClientMessageType = { address, signature: '0x' };
+
+		set({
+			...$room,
+			loggedIn: false,
+			loggingIn: true
+		});
 		websocket.send(JSON.stringify(msg));
 	}
 
 	return {
 		subscribe,
-		sendMessage
+		sendMessage,
+		login
 	};
 }

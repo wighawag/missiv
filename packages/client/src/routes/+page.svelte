@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { openRoom } from '$lib/room/index.js';
+	import { openRoom, type Account } from '$lib/room/index.js';
 	import { onMount } from 'svelte';
+	import { writable } from 'svelte/store';
 
 	let messagesContainer: HTMLDivElement;
 	let messageInput: HTMLInputElement;
@@ -21,13 +22,17 @@
 		scrollToBottom();
 	});
 
+	const account = writable<Account>({
+		address: 'fsasadsad',
+		signer: {
+			address: 'signer',
+			privateKey: '0xff'
+		}
+	});
+
 	let room = openRoom({
 		url: 'ws://localhost:8787/api/public/room/test/ws',
-		account: {
-			subscribe() {
-				return () => {};
-			}
-		} as any
+		account
 	});
 
 	// Auto-scroll when new messages arrive
@@ -70,8 +75,15 @@
 	</div>
 
 	<div class="input-container">
-		<input type="text" bind:this={messageInput} onkeydown={(e) => e.key === 'Enter' && send()} />
-		<button onclick={send}>send</button>
+		<input
+			disabled={!$room || !('loggedIn' in $room) || !$room.loggedIn}
+			type="text"
+			bind:this={messageInput}
+			onkeydown={(e) => e.key === 'Enter' && send()}
+		/>
+		{#if !$room || !('loggedIn' in $room) || !$room.loggedIn}
+			<button onclick={() => room.login()}>connect</button>
+		{:else}<button onclick={send}>send</button>{/if}
 	</div>
 </div>
 
