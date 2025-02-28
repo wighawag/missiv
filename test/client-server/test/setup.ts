@@ -47,16 +47,18 @@ export const USER_C = await createUser();
 const dbCLient = createClient({url: ':memory:'});
 const remoteSQL = new RemoteLibSQL(dbCLient);
 const app = createServer({
-	getDB() {
-		return remoteSQL;
+	services: {
+		getDB() {
+			return remoteSQL;
+		},
+		getRoom() {
+			throw new Error(`no getRoom implemented in test`);
+		},
 	},
 	getEnv() {
 		return {
 			DEV: 'true',
 		};
-	},
-	getRoom() {
-		throw new Error(`no getRoom implemented in test`);
 	},
 	upgradeWebSocket() {
 		// throw new Error(`no websocket implemented in test`);
