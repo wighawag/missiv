@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
+import type {Services} from 'missiv-server';
 import {Room, ServerObject, ServerObjectId, ServerObjectStorage, createServer, type Env} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
-import {Context} from 'hono';
 import {RemoteBunSQL} from './remote-sql-bun/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
 import {loadEnv} from 'ldenv';
+import {Context} from 'hono';
 
 const __dirname = import.meta.dirname;
 
@@ -219,7 +220,7 @@ async function main() {
 		storage: ServerObjectStorage;
 
 		constructor(private name: string) {
-			super();
+			super(env);
 			this.storage = new SimpleObjectStorage();
 			this.instantiate();
 		}
@@ -268,19 +269,21 @@ async function main() {
 		}
 	}
 
-	const roomInstances: Map<string, ServerObject> = new Map();
+	const roomInstances: Map<string, BunRoom> = new Map();
 
-	function getRoom(c: Context<{Bindings: BunEnv}>, idOrName: ServerObjectId | string): ServerObject {
+	function getRoom(env: BunEnv, idOrName: ServerObjectId | string): ServerObject {
 		const name = idOrName.toString(); // TODO check toString for ServerObjectId
+		let roomInstance: BunRoom;
 		if (roomInstances.has(name)) {
-			return roomInstances.get(name)!;
+			roomInstance = roomInstances.get(name)!;
+		} else {
+			roomInstance = new BunRoom(name);
+			roomInstances.set(name, roomInstance);
 		}
-		const newRoom = new BunRoom(name);
-		roomInstances.set(name, newRoom);
-		return newRoom;
+		return roomInstance;
 	}
 
-	const app = createServer<BunEnv>({getDB, getRoom, getEnv, upgradeWebSocket});
+	const app = createServer<BunEnv>({services: {getDB, getRoom}, getEnv, upgradeWebSocket});
 
 	if (dbURL === ':memory:') {
 		console.log(`executing setup...`);

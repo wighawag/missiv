@@ -1,7 +1,8 @@
-import {createServer, Room, ServerObjectStorage} from 'missiv-server';
+import {createServer, Room, ServerObjectId, ServerObjectStorage, Services} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging';
+import {Context} from 'hono';
 
 type Env = {
 	DB: D1Database;
@@ -10,11 +11,11 @@ type Env = {
 };
 
 // for each ServerObject we need a class that do the following:
-export class ServerObjectRoom extends Room {
+export class ServerObjectRoom extends Room<Env> {
 	state: DurableObjectState;
 
-	constructor(state: DurableObjectState) {
-		super();
+	constructor(state: DurableObjectState, env: Env) {
+		super(env);
 		this.state = state;
 		this.instantiate();
 	}
@@ -96,15 +97,19 @@ export class ServerObjectRoom extends Room {
 	}
 }
 
-export const app = createServer<Env>({
-	getDB: (c) => new RemoteD1(c.env.DB),
-	getEnv: (c) => c.env,
-	getRoom: (c, idOrName) => {
+const services = {
+	getDB: (env: Env) => new RemoteD1(env.DB),
+	getRoom: (env: Env, idOrName: ServerObjectId | string) => {
 		if (typeof idOrName == 'string') {
-			idOrName = c.env.ROOMS.idFromName(idOrName);
+			idOrName = env.ROOMS.idFromName(idOrName);
 		}
-		return c.env.ROOMS.get(idOrName);
+		return env.ROOMS.get(idOrName);
 	},
+};
+
+export const app = createServer<Env>({
+	services,
+	getEnv: (c: Context<{Bindings: Env}>) => c.env,
 	upgradeWebSocket,
 });
 

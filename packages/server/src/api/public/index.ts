@@ -2,6 +2,7 @@ import {Context, Hono} from 'hono';
 import {BlankInput, MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from '../../types.js';
 import {Env} from '../../env.js';
+import {Room} from '../../Room.js';
 
 export type {ServerObject, ServerObjectId} from '../../types.js';
 export type {Storage} from '../../storage/index.js';
@@ -16,7 +17,7 @@ type WebsocketResponse = MiddlewareHandler<
 >;
 
 export function getPublicChatAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const {getRoom, upgradeWebSocket} = options;
+	const {services, upgradeWebSocket} = options;
 
 	const app = new Hono<{Bindings: Bindings}>()
 		.get('/', async (c) => {
@@ -25,7 +26,8 @@ export function getPublicChatAPI<Bindings extends Env>(options: ServerOptions<Bi
 		// we need to cast the function as WebsocketResponse so client get the correct type
 		// but by doing so. we then need to also type the context manually
 		.get('/room/:name/ws', ((c: Context<{Bindings: Bindings}, '/room/:name/ws', BlankInput>) => {
-			const room = getRoom(c, c.req.param().name);
+			const room = services.getRoom(c.env, c.req.param().name);
+			Room.services = services;
 			return room.fetch(c.req.raw);
 		}) as WebsocketResponse)
 		.get(

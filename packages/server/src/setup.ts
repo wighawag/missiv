@@ -33,12 +33,13 @@ export const getAuth = (c: Context) => {
 };
 
 export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env>): MiddlewareHandler {
-	const {getDB, getEnv} = options.serverOptions;
+	const {services, getEnv} = options.serverOptions;
+	const {getDB} = services;
 
 	return async (c, next) => {
 		const env = getEnv(c);
 
-		const db = getDB(c);
+		const db = getDB(env);
 		const storage = new RemoteSQLStorage(db);
 
 		const rawContent = await c.req.text();

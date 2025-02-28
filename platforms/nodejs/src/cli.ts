@@ -50,11 +50,13 @@ async function main() {
 	const remoteSQL = new RemoteLibSQL(client);
 
 	const app = createServer<NodeJSEnv>({
-		getDB: () => remoteSQL,
-		getEnv: () => env,
-		getRoom: () => {
-			throw new Error(`getRoom not implemented for nodejs`);
+		services: {
+			getDB: () => remoteSQL,
+			getRoom: () => {
+				throw new Error(`getRoom not implemented for nodejs`);
+			},
 		},
+		getEnv: () => env,
 		upgradeWebSocket: () => {
 			throw new Error(`upgradeWebSocket not implemented for nodejs`);
 		},

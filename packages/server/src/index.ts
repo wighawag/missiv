@@ -1,6 +1,5 @@
 import {Hono} from 'hono';
 import {cors} from 'hono/cors';
-import {Bindings} from 'hono/types';
 import {ServerOptions} from './types.js';
 import {getPrivateChatAPI} from './api/private/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
@@ -12,7 +11,14 @@ import {Env} from './env.js';
 
 export type {Env};
 
-export type {ServerObject, ServerObjectId, AbstractServerObject, ServerObjectStorage} from './types.js';
+export type {
+	Services,
+	ServerOptions,
+	ServerObject,
+	ServerObjectId,
+	AbstractServerObject,
+	ServerObjectStorage,
+} from './types.js';
 
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
@@ -25,6 +31,10 @@ const corsSetup = cors({
 	maxAge: 600,
 	credentials: true,
 });
+
+// export let serverHandle: {
+// 	options: ServerOptions<Env>
+// };
 
 export function createServer<Bindings extends Env>(options: ServerOptions<Bindings>) {
 	const app = new Hono<{Bindings: Bindings}>().get('/', (c) => {

@@ -1,4 +1,6 @@
-import {AbstractServerObject} from './types.js';
+import {Bindings} from 'hono/types';
+import {AbstractServerObject, Services} from './types.js';
+import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 
 export type Session = {
 	address?: string;
@@ -7,10 +9,21 @@ export type Session = {
 	blockedMessages?: string[];
 };
 
-export abstract class Room extends AbstractServerObject {
+export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject<Env> {
 	lastTimestamp: number = 0;
 	sessions: Map<WebSocket, Session> = new Map();
 
+	dbStorage: RemoteSQLStorage;
+	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
+
+	constructor(env: Env) {
+		super();
+
+		const db = Room.services.getDB(env);
+		this.dbStorage = new RemoteSQLStorage(db);
+	}
+
+	// as this is an abstract class, we defer instantiation logic to the subclass
 	instantiate() {
 		this.getWebSockets().forEach((webSocket) => {
 			// The constructor may have been called when waking up from hibernation,
@@ -125,6 +138,9 @@ export abstract class Room extends AbstractServerObject {
 				if (DEBUG && data.signature === '0x') {
 					session.address = data.address;
 				} else {
+					const user = await this.dbStorage.getUser(data.address);
+					console.log({user});
+
 					// const user = storage.getUser(data.address);
 					// if (!user) {
 					// 	ws.send(JSON.stringify({error: 'User not found'}));
