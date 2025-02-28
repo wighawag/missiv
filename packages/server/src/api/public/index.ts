@@ -26,8 +26,8 @@ export function getPublicChatAPI<Bindings extends Env>(options: ServerOptions<Bi
 		// we need to cast the function as WebsocketResponse so client get the correct type
 		// but by doing so. we then need to also type the context manually
 		.get('/room/:name/ws', ((c: Context<{Bindings: Bindings}, '/room/:name/ws', BlankInput>) => {
-			const room = services.getRoom(c.env, c.req.param().name);
 			Room.services = services;
+			const room = services.getRoom(c.env, c.req.param().name);
 			return room.fetch(c.req.raw);
 		}) as WebsocketResponse)
 		.get(
