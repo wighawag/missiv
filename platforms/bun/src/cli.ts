@@ -1,7 +1,15 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
 import type {Services} from 'missiv-server';
-import {Room, ServerObject, ServerObjectId, ServerObjectStorage, createServer, type Env} from 'missiv-server';
+import {
+	RateLimiter,
+	Room,
+	ServerObject,
+	ServerObjectId,
+	ServerObjectStorage,
+	createServer,
+	type Env,
+} from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {RemoteBunSQL} from './remote-sql-bun/index.js';
@@ -183,6 +191,129 @@ class SimpleObjectStorage implements ServerObjectStorage {
 	}
 }
 
+class BunRoom extends Room {
+	websockets: WebSocket[] = [];
+	counter: number = 1;
+	storage: ServerObjectStorage;
+
+	constructor(
+		private name: string,
+		env: Env,
+	) {
+		super(env);
+		this.storage = new SimpleObjectStorage();
+		this.instantiate();
+	}
+
+	getStorage(): ServerObjectStorage {
+		return this.storage;
+	}
+
+	saveSocketData(ws: WebSocket, data: any) {
+		// console.log(`can't save data, but don't need as if server stop all stop`);
+	}
+
+	retrieveSocketData(ws: WebSocket) {
+		// console.log(`can't retreve data, but don't need as if server stop all stop`);
+		return {};
+	}
+
+	async upgradeWebsocket(request: Request): Promise<Response> {
+		if ((request as any).server) {
+			const upgraded = (request as any).server.upgrade(request, {
+				data: {
+					room: this.name,
+					id: this.counter++,
+				},
+			});
+			if (upgraded) {
+				return new Response(); // TODO  ?
+			}
+		}
+
+		return new Response('Upgrade failed :(', {status: 500});
+	}
+	getWebSockets(): WebSocket[] {
+		return this.websockets; // TODO
+	}
+	_addWebSocket(ws: WebSocket) {
+		this.websockets.push(ws);
+		// console.log(`one ws added: ${this.websockets.length} total`);
+	}
+	_removeWebSocket(ws: WebSocket) {
+		const index = this.websockets.indexOf(ws);
+		if (index >= 0) {
+			this.websockets.splice(index, 1);
+			// console.log(`one ws removed at index (${index}): ${this.websockets.length} total`);
+		}
+	}
+
+	async handleErrors(request: Request, func: () => Promise<Response>): Promise<Response> {
+		try {
+			return await func();
+		} catch (err: any) {
+			return new Response(err.stack, {status: 500});
+		}
+	}
+
+	// this is required to work like a Cloudflare worker
+	async fetch(requestInfo: RequestInfo, requestInit?: RequestInit): Promise<Response> {
+		if (requestInfo instanceof Request) {
+			return super.fetch(requestInfo);
+		}
+		return super.fetch(new Request(requestInfo, requestInit));
+	}
+}
+
+class BunRateLimiter extends RateLimiter {
+	storage: ServerObjectStorage;
+
+	constructor(
+		private name: string,
+		env: Env,
+	) {
+		super(env);
+		this.storage = new SimpleObjectStorage();
+		this.instantiate();
+	}
+
+	getStorage(): ServerObjectStorage {
+		return this.storage;
+	}
+
+	saveSocketData(ws: WebSocket, data: any) {
+		// console.log(`can't save data, but don't need as if server stop all stop`);
+	}
+
+	retrieveSocketData(ws: WebSocket) {
+		// console.log(`can't retreve data, but don't need as if server stop all stop`);
+		return {};
+	}
+
+	async upgradeWebsocket(request: Request): Promise<Response> {
+		throw new Error(`no websocket connection expected`);
+	}
+	getWebSockets(): WebSocket[] {
+		return [];
+	}
+
+	async handleErrors(request: Request, func: () => Promise<Response>): Promise<Response> {
+		try {
+			return await func();
+		} catch (err: any) {
+			return new Response(err.stack, {status: 500});
+		}
+	}
+
+	// this is required to work like a Cloudflare worker
+	async fetch(requestInfo: RequestInfo, requestInit?: RequestInit): Promise<Response> {
+		if (requestInfo instanceof Request) {
+			return super.fetch(requestInfo);
+		}
+		return super.fetch(new Request(requestInfo, requestInit));
+	}
+}
+
 async function main() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
 	const program = new Command();
@@ -214,61 +345,6 @@ async function main() {
 
 	const {upgradeWebSocket, websocket} = createBunWebSocket();
 
-	class BunRoom extends Room {
-		websockets: WebSocket[] = [];
-		counter: number = 1;
-		storage: ServerObjectStorage;
-
-		constructor(private name: string) {
-			super(env);
-			this.storage = new SimpleObjectStorage();
-			this.instantiate();
-		}
-
-		getStorage(): ServerObjectStorage {
-			return this.storage;
-		}
-
-		saveSocketData(ws: WebSocket, data: any) {
-			// console.log(`can't save data, but don't need as if server stop all stop`);
-		}
-
-		retrieveSocketData(ws: WebSocket) {
-			// console.log(`can't retreve data, but don't need as if server stop all stop`);
-			return {};
-		}
-
-		async upgradeWebsocket(request: Request): Promise<Response> {
-			if ((request as any).server) {
-				const upgraded = (request as any).server.upgrade(request, {
-					data: {
-						room: this.name,
-						id: this.counter++,
-					},
-				});
-				if (upgraded) {
-					return new Response(); // TODO  ?
-				}
-			}
-
-			return new Response('Upgrade failed :(', {status: 500});
-		}
-		getWebSockets(): WebSocket[] {
-			return this.websockets; // TODO
-		}
-		_addWebSocket(ws: WebSocket) {
-			this.websockets.push(ws);
-			// console.log(`one ws added: ${this.websockets.length} total`);
-		}
-		_removeWebSocket(ws: WebSocket) {
-			const index = this.websockets.indexOf(ws);
-			if (index >= 0) {
-				this.websockets.splice(index, 1);
-				// console.log(`one ws removed at index (${index}): ${this.websockets.length} total`);
-			}
-		}
-	}
-
 	const roomInstances: Map<string, BunRoom> = new Map();
 
 	function getRoom(env: BunEnv, idOrName: ServerObjectId | string): ServerObject {
@@ -277,13 +353,27 @@ async function main() {
 		if (roomInstances.has(name)) {
 			roomInstance = roomInstances.get(name)!;
 		} else {
-			roomInstance = new BunRoom(name);
+			roomInstance = new BunRoom(name, env);
 			roomInstances.set(name, roomInstance);
 		}
 		return roomInstance;
 	}
 
-	const app = createServer<BunEnv>({services: {getDB, getRoom}, getEnv, upgradeWebSocket});
+	const rateLimiterInstances: Map<string, BunRateLimiter> = new Map();
+
+	function getRateLimiter(env: BunEnv, idOrName: ServerObjectId | string): ServerObject {
+		const name = idOrName.toString(); // TODO check toString for ServerObjectId
+		let instance: BunRateLimiter;
+		if (rateLimiterInstances.has(name)) {
+			instance = rateLimiterInstances.get(name)!;
+		} else {
+			instance = new BunRateLimiter(name, env);
+			rateLimiterInstances.set(name, instance);
+		}
+		return instance;
+	}
+
+	const app = createServer<BunEnv>({services: {getDB, getRoom, getRateLimiter}, getEnv, upgradeWebSocket});
 
 	if (dbURL === ':memory:') {
 		console.log(`executing setup...`);

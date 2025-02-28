@@ -20,13 +20,15 @@ export type ServerObjectStorage = {
 	//   transactionSync<T>(closure: () => T): T;
 };
 
-export abstract class AbstractServerObject<Env extends Bindings = Bindings> {
+export abstract class AbstractServerObject {
 	abstract instantiate(): void;
 	abstract getStorage(): ServerObjectStorage;
 	abstract upgradeWebsocket(request: Request): Promise<Response>;
 	abstract getWebSockets(): WebSocket[];
 	abstract saveSocketData(ws: WebSocket, data: Record<string, unknown>): void;
 	abstract retrieveSocketData(ws: WebSocket): Record<string, unknown>;
+	abstract handleErrors(request: Request, func: () => Promise<Response>): Promise<Response>;
+	abstract fetch(request: Request): Promise<Response>;
 }
 
 export type ServerObjectId = {
@@ -53,6 +55,7 @@ export type ServerObjectId = {
 export type Services<Env extends Bindings = Bindings> = {
 	getDB: (env: Env) => RemoteSQL;
 	getRoom: (env: Env, idOrName: ServerObjectId | string) => ServerObject;
+	getRateLimiter: (env: Env, idOrName: ServerObjectId | string) => ServerObject;
 };
 
 export type ServerOptions<Env extends Bindings = Bindings> = {

@@ -1,25 +1,29 @@
 import {Bindings} from 'hono/types';
 import {AbstractServerObject, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
+import {RateLimiterClient} from './RateLimiter.js';
 
 export type Session = {
 	address?: string;
 	challenge?: string;
 	quit?: boolean;
 	blockedMessages?: string[];
+	limiter?: RateLimiterClient;
 };
 
-export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject<Env> {
+export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
 	sessions: Map<WebSocket, Session> = new Map();
 
 	dbStorage: RemoteSQLStorage;
 	requireLogin: boolean;
+	env: Env;
 
 	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
 
 	constructor(env: Env) {
 		super();
+		this.env = env;
 		this.requireLogin = false; // TODO env ?
 		const db = Room.services.getDB(env);
 		this.dbStorage = new RemoteSQLStorage(db);
@@ -35,11 +39,21 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			// TODO implement hibernation for bun ?
 			let hibernatedData = this.retrieveSocketData(webSocket);
 
+			// Set up our rate limiter client.
+			// The client itself can't have been in the attachment, because structured clone doesn't work on functions.
+			// DO ids aren't cloneable, restore the ID from its hex string
+			let limiter = hibernatedData
+				? new RateLimiterClient(
+						() => Room.services.getRateLimiter(this.env, hibernatedData.limiterId as string),
+						(err: any) => webSocket.close(1011, err.stack),
+					)
+				: undefined;
+
 			// We don't send any messages to the client until it has sent us the initial user info
 			// message. Until then, we will queue messages in `session.blockedMessages`.
 			// This could have been arbitrarily large, so we won't put it in the attachment.
 			let blockedMessages: string[] = [];
-			this.sessions.set(webSocket, {...hibernatedData, blockedMessages});
+			this.sessions.set(webSocket, {...hibernatedData, limiter, blockedMessages});
 		});
 	}
 
@@ -85,8 +99,25 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			.map((b) => b.toString(16).padStart(2, '0'))
 			.join('');
 
+		// Set up our rate limiter client.
+		const limiterId = metadata.ip || 'no-ip';
+		if (!metadata.ip) {
+			console.warn(`no ip`);
+		}
+
+		// TODO find another mechanism if ip is not available for some reason ?
+		let limiter = limiterId
+			? new RateLimiterClient(
+					() => Room.services.getRateLimiter(this.env, limiterId),
+					(err: any) => ws.close(1011, err.stack),
+				)
+			: undefined;
+
 		// Create our session and add it to the sessions map.
-		let session: Session & {blockedMessages: string[]} = {blockedMessages: [], challenge};
+		let session: Session & {blockedMessages: string[]} = {blockedMessages: [], limiter, challenge};
+		if (limiterId) {
+			this.saveSocketData(ws, {limiterId});
+		}
 		this.sessions.set(ws, session);
 
 		// Queue "join" messages for all online users, to populate the client's roster.
@@ -128,6 +159,16 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				// throw, and whatever, at least we won't accept the message. (This probably can't
 				// actually happen. This is defensive coding.)
 				ws.close(1011, 'WebSocket broken.');
+				return;
+			}
+
+			// Check if the user is over their rate limit and reject the message if so.
+			if (session.limiter && !session.limiter.checkLimit()) {
+				ws.send(
+					JSON.stringify({
+						error: 'Your IP is being rate-limited, please try again later.',
+					}),
+				);
 				return;
 			}
 

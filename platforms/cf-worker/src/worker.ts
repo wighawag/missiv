@@ -1,4 +1,4 @@
-import {createServer, Room, ServerObjectId, ServerObjectStorage, Services} from 'missiv-server';
+import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging';
@@ -7,8 +7,59 @@ import {Context} from 'hono';
 type Env = {
 	DB: D1Database;
 	ROOMS: DurableObjectNamespace;
+	LIMITERS: DurableObjectNamespace;
 	DEV?: string;
 };
+
+export class ServerObjectRateLimiter extends RateLimiter<Env> {
+	state: DurableObjectState;
+
+	constructor(state: DurableObjectState, env: Env) {
+		super(env);
+		this.state = state;
+		this.instantiate();
+	}
+
+	getStorage(): ServerObjectStorage {
+		return this.state.storage;
+	}
+
+	saveSocketData(ws: WebSocket, data: any) {}
+
+	retrieveSocketData(ws: WebSocket) {
+		return {};
+	}
+
+	async upgradeWebsocket(request: Request): Promise<Response> {
+		throw new Error(`no websocket connection expected`);
+	}
+
+	getWebSockets(tag?: string): WebSocket[] {
+		return [];
+	}
+
+	// `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
+	// try/catch and return errors to the client. You probably wouldn't want to use this in production
+	// code but it is convenient when debugging and iterating.
+	async handleErrors(request: Request, func: () => Promise<Response>): Promise<Response> {
+		try {
+			return await func();
+		} catch (err: any) {
+			if (request.headers.get('Upgrade') == 'websocket') {
+				// Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
+				// won't show us the response body! So... let's send a WebSocket response with an error
+				// frame instead.
+				let pair = new WebSocketPair();
+				pair[1].accept();
+				pair[1].send(JSON.stringify({error: err.stack}));
+				pair[1].close(1011, 'Uncaught exception during session setup');
+				return new Response(null, {status: 101, webSocket: pair[0]});
+			} else {
+				return new Response(err.stack, {status: 500});
+			}
+		}
+	}
+}
 
 // for each ServerObject we need a class that do the following:
 export class ServerObjectRoom extends Room<Env> {
@@ -95,6 +146,28 @@ export class ServerObjectRoom extends Room<Env> {
 	getWebSockets(tag?: string): WebSocket[] {
 		return this.state.getWebSockets(tag);
 	}
+
+	// `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
+	// try/catch and return errors to the client. You probably wouldn't want to use this in production
+	// code but it is convenient when debugging and iterating.
+	async handleErrors(request: Request, func: () => Promise<Response>): Promise<Response> {
+		try {
+			return await func();
+		} catch (err: any) {
+			if (request.headers.get('Upgrade') == 'websocket') {
+				// Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
+				// won't show us the response body! So... let's send a WebSocket response with an error
+				// frame instead.
+				let pair = new WebSocketPair();
+				pair[1].accept();
+				pair[1].send(JSON.stringify({error: err.stack}));
+				pair[1].close(1011, 'Uncaught exception during session setup');
+				return new Response(null, {status: 101, webSocket: pair[0]});
+			} else {
+				return new Response(err.stack, {status: 500});
+			}
+		}
+	}
 }
 
 const services = {
@@ -104,6 +177,12 @@ const services = {
 			idOrName = env.ROOMS.idFromName(idOrName);
 		}
 		return env.ROOMS.get(idOrName);
+	},
+	getRateLimiter: (env: Env, idOrName: ServerObjectId | string) => {
+		if (typeof idOrName == 'string') {
+			idOrName = env.LIMITERS.idFromName(idOrName);
+		}
+		return env.LIMITERS.get(idOrName);
 	},
 };
 

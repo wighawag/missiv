@@ -45,6 +45,9 @@ const app = createServer({
 		getRoom() {
 			throw new Error(`no getRoom implemented in test`);
 		},
+		getRateLimiter() {
+			throw new Error(`no getRateLimiter implemented in test`);
+		},
 	},
 	getEnv() {
 		return {

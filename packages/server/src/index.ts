@@ -22,6 +22,7 @@ export type {
 
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
+export {RateLimiter} from './RateLimiter.js';
 
 const corsSetup = cors({
 	origin: '*',

@@ -55,6 +55,9 @@ async function main() {
 			getRoom: () => {
 				throw new Error(`getRoom not implemented for nodejs`);
 			},
+			getRateLimiter: () => {
+				throw new Error(`getRateLimiter not implemented for nodejs`);
+			},
 		},
 		getEnv: () => env,
 		upgradeWebSocket: () => {
