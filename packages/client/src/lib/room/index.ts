@@ -1,4 +1,5 @@
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
+import { wait } from '$lib/utils/time.js';
 import type { ClientMessageType, ServerMessageType } from 'missiv-common';
 import type { Readable } from 'svelte/store';
 
@@ -7,7 +8,7 @@ type AccountWithSigner = { address: string; signer: Signer };
 export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
 // TODO use ServerMessageType
-export type Message = { message: string };
+export type Message = { message: string; pending?: boolean };
 export type User = { address: string };
 
 export type Room = { error?: { message: string; cause?: any } } & (
@@ -76,7 +77,10 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 			if ('message' in msgFromServer) {
 				set({
 					...$room,
-					messages: [...$room.messages, msgFromServer]
+					messages: [
+						...$room.messages.filter((v) => !(v.pending && v.message === msgFromServer.message)),
+						msgFromServer
+					]
 				});
 			} else if ('joined' in msgFromServer) {
 				const justLoggedIn = msgFromServer.joined === _account?.address;
@@ -95,6 +99,22 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 					loggingIn: justLoggedOut ? false : $room.loggingIn,
 					loggedIn: justLoggedOut ? false : $room.loggedIn
 				});
+			} else if ('error' in msgFromServer) {
+				// id for message or message.message + address is the id ?
+				// rate limit erro should then return the message
+				// or any other error too
+				// so maybe best is to pass a message field for message failure
+				// now handling multiple of these failed message in the frontend would require flaging them as to retry
+				// else we can wait to allow further message until last one is acknowledge,much eaiser that way
+				// if (msgFromServer.type === 'RATE_LIMITED') {
+				// 	// TODO return message to input
+				// }
+				// set({
+				// 	...$room,
+				// 	loggingIn: false,
+				// 	loggedIn: false,
+				// 	error: msgFromServer.error
+				// });
 			}
 		} else {
 			console.error(`no room`);
@@ -165,7 +185,7 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		}
 	);
 
-	function sendMessage(message: string) {
+	async function sendMessage(message: string) {
 		if (!$room || $room?.loading) {
 			throw new Error(`not loaded`);
 		}
@@ -181,6 +201,11 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 
 		const msg: ClientMessageType = { message, signature: '0x' };
 
+		set({
+			...$room,
+			messages: [...$room.messages, { ...msg, pending: true }]
+		});
+		// await wait(3);
 		websocket.send(JSON.stringify(msg));
 	}
 

@@ -55,7 +55,12 @@
 				<p class="loading">loading..</p>
 			{:else}
 				{#each $room.messages as message}
-					<p class="message">{message.message}</p>
+					<p class="message">
+						{message.message}
+						{#if message.pending}
+							<span class="spinner">⟳</span>
+						{/if}
+					</p>
 				{/each}
 			{/if}
 		</div>
