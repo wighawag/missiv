@@ -25,7 +25,7 @@ export type Room = { error?: { message: string; cause?: any } } & (
 	  } // & ({loggedIn: false} | {loggedInd: true})
 );
 
-export function openRoom(params: { url: string; account: Readable<Account> }) {
+export function openRoom(params: { url: string; account: Readable<Account>; autoLogin?: boolean }) {
 	let $room: Room | undefined = undefined;
 	let _set: (value: Room | undefined) => void;
 	let _account: Account | undefined;
@@ -56,6 +56,10 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 			loggedIn: false,
 			loggingIn: false
 		});
+
+		if (params.autoLogin && _account?.signer) {
+			login();
+		}
 	}
 	function onWebsocketClosed(event: CloseEvent) {
 		websocketEstablished = false;
@@ -122,6 +126,9 @@ export function openRoom(params: { url: string; account: Readable<Account> }) {
 				...$room,
 				address
 			});
+			if (params.autoLogin && _account?.signer) {
+				login();
+			}
 		}
 	}
 
