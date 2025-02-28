@@ -39,14 +39,34 @@
 </script>
 
 <div class="chat-container">
-	<div class="messages-container" bind:this={messagesContainer}>
-		{#if !$room || $room?.loading}
-			<p class="loading">loading..</p>
-		{:else}
-			{#each $room.messages as message}
-				<p class="message">{message.message}</p>
-			{/each}
-		{/if}
+	<div class="app-layout">
+		<div class="messages-container" bind:this={messagesContainer}>
+			{#if !$room || $room?.loading}
+				<p class="loading">loading..</p>
+			{:else}
+				{#each $room.messages as message}
+					<p class="message">{message.message}</p>
+				{/each}
+			{/if}
+		</div>
+
+		<div class="users-panel">
+			<h3>Connected Users</h3>
+			{#if !$room || $room?.loading}
+				<p class="loading">loading..</p>
+			{:else}
+				<ul class="users-list">
+					{#each $room.users as user}
+						<li class="user-item">
+							<span class="user-address">{user.address}</span>
+						</li>
+					{/each}
+				</ul>
+				{#if $room.users.length === 0}
+					<p class="no-users">No users connected</p>
+				{/if}
+			{/if}
+		</div>
 	</div>
 
 	<div class="input-container">
@@ -63,6 +83,12 @@
 		max-height: 100vh;
 	}
 
+	.app-layout {
+		display: flex;
+		flex: 1;
+		overflow: hidden;
+	}
+
 	.messages-container {
 		flex: 1;
 		overflow-y: auto;
@@ -70,6 +96,45 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+
+	.users-panel {
+		width: 250px;
+		border-left: 1px solid #eee;
+		padding: 1rem;
+		overflow-y: auto;
+	}
+
+	.users-panel h3 {
+		margin-top: 0;
+		margin-bottom: 1rem;
+		font-size: 1.1rem;
+		color: #333;
+	}
+
+	.users-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+
+	.user-item {
+		padding: 0.5rem;
+		margin-bottom: 0.5rem;
+		background-color: #f9f9f9;
+		border-radius: 4px;
+		font-size: 0.9rem;
+	}
+
+	.user-address {
+		word-break: break-all;
+		font-family: monospace;
+	}
+
+	.no-users {
+		color: #888;
+		font-style: italic;
+		text-align: center;
 	}
 
 	.input-container {
