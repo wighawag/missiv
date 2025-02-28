@@ -2,6 +2,7 @@ import {Bindings} from 'hono/types';
 import {AbstractServerObject, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
+import {String0x} from 'missiv-common';
 
 export type Session = {
 	address?: string;
@@ -10,6 +11,19 @@ export type Session = {
 	blockedMessages?: string[];
 	limiter?: RateLimiterClient;
 };
+
+export type ClientMessageType =
+	| {address: string; signature: string}
+	| {message: string; signature: string}
+	| {logout: true};
+
+export type ServerMessageType =
+	| {challenge: string}
+	| {ready: true}
+	| {joined: string}
+	| {timestamp: number; message: string; from: string; signature: string}
+	| {quit: string}
+	| {error: string; cause?: any; stack?: string};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
@@ -81,7 +95,10 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
   `);
 	}
 
-	pendingSessionSend(session: Session, ws: WebSocket, message: string) {
+	pendingSessionSend(session: Session, ws: WebSocket, message: string | ServerMessageType) {
+		if (typeof message !== 'string') {
+			message = JSON.stringify(message);
+		}
 		if (this.requireLogin) {
 			if (!session.blockedMessages) {
 				session.blockedMessages = [];
@@ -123,7 +140,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		// Queue "join" messages for all online users, to populate the client's roster.
 		for (let otherSession of this.sessions.values()) {
 			if (otherSession.address) {
-				this.pendingSessionSend(session, ws, JSON.stringify({joined: otherSession.address}));
+				this.pendingSessionSend(session, ws, {joined: otherSession.address});
 			}
 		}
 
@@ -137,7 +154,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		});
 
 		// TODO use this message as replay protection to require signing
-		ws.send(JSON.stringify({challenge}));
+		this.send(ws, {challenge});
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
@@ -148,7 +165,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			if (!session) {
 				// This should never happen.
 				console.error('WebSocket message received for unknown client.');
-				ws.send(JSON.stringify({error: 'WebSocket message received for unknown client.'}));
+				this.send(ws, {error: 'WebSocket message received for unknown client.'});
 				ws.close(1011, 'WebSocket broken.');
 				return;
 			}
@@ -164,21 +181,27 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 			// Check if the user is over their rate limit and reject the message if so.
 			if (session.limiter && !session.limiter.checkLimit()) {
-				ws.send(
-					JSON.stringify({
-						error: 'Your IP is being rate-limited, please try again later.',
-					}),
-				);
+				this.send(ws, {
+					error: 'Your IP is being rate-limited, please try again later.',
+				});
 				return;
 			}
 
-			const data: {signature: string; address: string} | {message: string; signature: string} = JSON.parse(
+			const data: ClientMessageType = JSON.parse(
 				typeof message === 'string' ? message : new TextDecoder().decode(message),
 			);
 
-			if ('address' in data) {
+			if ('logout' in data) {
+				if (session.address) {
+					this.broadcast({quit: session.address});
+					delete session.address;
+				} else {
+					// ignore
+					return;
+				}
+			} else if ('address' in data) {
 				if (!('signature' in data && data.signature)) {
-					ws.send(JSON.stringify({error: 'Expected signature'}));
+					this.send(ws, {error: 'Expected signature'});
 					return;
 				}
 
@@ -193,17 +216,17 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 					// const user = storage.getUser(data.address);
 					// if (!user) {
-					// 	ws.send(JSON.stringify({error: 'User not found'}));
+					// 	this.send(ws, {error: 'User not found'});
 					// 	return;
 					// }
 					// const publicKey = user.publicKey;
 					// const recoveredPublicKey = recoverPublicKey(session.challenge, data.signature, data.address);
 					// if (recoveredPublicKey !== publicKey) {
-					// 	ws.send(JSON.stringify({error: 'Invalid signature'}));
+					// 	this.send(ws, {error: 'Invalid signature'});
 					// }
 					const address = undefined; // TODO await this.verifySignature(data.signature);
 					if (!address) {
-						ws.send(JSON.stringify({error: 'Invalid signature'}));
+						this.send(ws, {error: 'Invalid signature'});
 						return;
 					}
 					newAddress = address;
@@ -238,31 +261,31 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				// Broadcast to all other connections that this user has joined.
 				this.broadcast({joined: session.address});
 
-				ws.send(JSON.stringify({ready: true}));
+				this.send(ws, {ready: true});
 				return;
 			}
 
 			if (!session.address) {
-				ws.send(JSON.stringify({error: 'Not Logged In!'}));
+				this.send(ws, {error: 'Not Logged In!'});
 				return;
 			}
 
 			if (!('message' in data && data.message)) {
-				ws.send(JSON.stringify({error: 'Expected message field'}));
+				this.send(ws, {error: 'Expected message field'});
 				return;
 			}
 
 			// Block people from sending overly long messages. This is also enforced on the client,
 			// so to trigger this the user must be bypassing the client code.
 			if (data.message.length > 256) {
-				ws.send(JSON.stringify({error: 'Message too long.'}));
+				this.send(ws, {error: 'Message too long.'});
 				return;
 			}
 
 			// Add timestamp. Here's where this.lastTimestamp comes in -- if we receive a bunch of
 			// messages at the same time (or if the clock somehow goes backwards????), we'll assign
 			// them sequential timestamps, so at least the ordering is maintained.
-			const messageReformated = {
+			const messageReformated: ServerMessageType = {
 				timestamp: Math.max(Date.now(), this.lastTimestamp + 1),
 				message: data.message,
 				from: session.address,
@@ -278,8 +301,12 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		} catch (err: any) {
 			// Report any exceptions directly back to the client. As with our handleErrors() this
 			// probably isn't what you'd want to do in production, but it's convenient when testing.
-			ws.send(JSON.stringify({error: 'failed to establish connection', cause: err.message || err, stack: err.stack}));
+			this.send(ws, {error: 'failed to establish connection', cause: err.message || err, stack: err.stack});
 		}
+	}
+
+	send(ws: WebSocket, msg: ServerMessageType) {
+		ws.send(JSON.stringify(msg));
 	}
 
 	// On "close" and "error" events, remove the WebSocket from the sessions list and broadcast
@@ -304,7 +331,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	// }
 
 	// broadcast() broadcasts a message to all clients.
-	broadcast(message: string | Record<string, unknown>) {
+	broadcast(message: string | ServerMessageType) {
 		// Apply JSON if we weren't given a string to start with.
 		if (typeof message !== 'string') {
 			message = JSON.stringify(message);
