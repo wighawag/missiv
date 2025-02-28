@@ -40,6 +40,10 @@
 		autoLogin: true
 	});
 
+	if (typeof window !== 'undefined') {
+		(window as any).room = room;
+	}
+
 	// Auto-scroll when new messages arrive
 	$effect(() => {
 		if ($room && 'messages' in $room && $room?.messages) {

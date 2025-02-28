@@ -69,6 +69,7 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		// TODO
 		if (running) {
 			// try again
+			// onStart();
 		}
 	}
 	function onWebsocketMessage(event: MessageEvent) {
@@ -233,9 +234,14 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		websocket.send(JSON.stringify(msg));
 	}
 
+	function debug_forceClose() {
+		websocket?.close();
+	}
+
 	return {
 		subscribe,
 		sendMessage,
-		login
+		login,
+		debug_forceClose
 	};
 }
