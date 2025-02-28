@@ -14,11 +14,13 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	sessions: Map<WebSocket, Session> = new Map();
 
 	dbStorage: RemoteSQLStorage;
+	requireLogin: boolean;
+
 	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
 
 	constructor(env: Env) {
 		super();
-
+		this.requireLogin = false; // TODO env ?
 		const db = Room.services.getDB(env);
 		this.dbStorage = new RemoteSQLStorage(db);
 	}
@@ -65,6 +67,17 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
   `);
 	}
 
+	pendingSessionSend(session: Session, ws: WebSocket, message: string) {
+		if (this.requireLogin) {
+			if (!session.blockedMessages) {
+				session.blockedMessages = [];
+			}
+			session.blockedMessages.push(message);
+		} else {
+			ws.send(message);
+		}
+	}
+
 	async webSocketOpen(ws: WebSocket, metadata: {ip?: string}) {
 		const storage = this.getStorage();
 
@@ -79,7 +92,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		// Queue "join" messages for all online users, to populate the client's roster.
 		for (let otherSession of this.sessions.values()) {
 			if (otherSession.address) {
-				session.blockedMessages.push(JSON.stringify({joined: otherSession.address}));
+				this.pendingSessionSend(session, ws, JSON.stringify({joined: otherSession.address}));
 			}
 		}
 
@@ -89,7 +102,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		let backlog = [...fromStorage.values()];
 		backlog.reverse();
 		backlog.forEach((value) => {
-			session.blockedMessages.push(value);
+			this.pendingSessionSend(session, ws, value);
 		});
 
 		// TODO use this message as replay protection to require signing
@@ -118,7 +131,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				return;
 			}
 
-			const data: {signature: string; address: string} | {message: string} = JSON.parse(
+			const data: {signature: string; address: string} | {message: string; signature: string} = JSON.parse(
 				typeof message === 'string' ? message : new TextDecoder().decode(message),
 			);
 
@@ -200,6 +213,8 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			const messageReformated = {
 				timestamp: Math.max(Date.now(), this.lastTimestamp + 1),
 				message: data.message,
+				from: session.address,
+				signature: data.signature,
 			};
 			this.lastTimestamp = messageReformated.timestamp;
 
@@ -257,10 +272,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 					this.sessions.delete(ws);
 				}
 			} else {
-				const blockedMessages = (session.blockedMessages = session.blockedMessages || []);
-				// This session hasn't sent the initial user info message yet, so we're not sending them
-				// messages yet (no secret lurking!). Queue the message to be sent later.
-				blockedMessages.push(message);
+				this.pendingSessionSend(session, ws, message);
 			}
 		});
 
