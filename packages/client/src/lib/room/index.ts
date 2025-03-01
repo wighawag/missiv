@@ -8,8 +8,8 @@ type AccountWithSigner = { address: string; signer: Signer };
 export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
 // TODO use ServerMessageType
-export type Message = { message: string; pending?: boolean };
-export type User = { address: string };
+export type ChatMessage = { message: string; pending?: boolean };
+export type ChatUser = { address: string };
 
 export type Room = { error?: { message: string; cause?: any } } & (
 	| {
@@ -18,9 +18,9 @@ export type Room = { error?: { message: string; cause?: any } } & (
 	  }
 	| {
 			loading: false;
-			messages: Message[];
+			messages: ChatMessage[];
 			address?: string;
-			users: User[];
+			users: ChatUser[];
 			loggedIn: boolean;
 			loggingIn: boolean;
 	  } // & ({loggedIn: false} | {loggedInd: true})
