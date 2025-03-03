@@ -209,8 +209,21 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export function publicKeyAuthorizationMessage({address, publicKey}: {address: Address; publicKey: PublicKey}): string {
-	return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
+export function publicKeyAuthorizationMessage({
+	address,
+	publicKey,
+	useOrigin,
+}: {
+	address: Address;
+	publicKey: PublicKey;
+	useOrigin?: string;
+}): string {
+	if (useOrigin) {
+		// TODO EIP: Request for ${origin}:\n
+		return `Signing Request for ${useOrigin}:\n\n I authorize the following Public Key to represent me:\n ${publicKey}\n\n Others can use this key to write me messages`;
+	} else {
+		return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
+	}
 }
 
 export type ClientMessageType =
