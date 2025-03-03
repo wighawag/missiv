@@ -11,15 +11,24 @@ export type MissivAccount = { error?: { message: string; cause?: any } } & (
 			settled: false;
 			registered: false;
 			registering: false;
-			loading: boolean;
+			loading: false;
+	  }
+	| {
+			settled: false;
+			registered: false;
+			registering: false;
+			loading: true;
+			address: string;
 	  }
 	| {
 			settled: true;
+			address: string;
 			registered: false;
 			registering: false;
 	  }
 	| {
 			settled: true;
+			address: string;
 			registered: false;
 			registering: true;
 	  }
@@ -67,6 +76,7 @@ export function createMissivAccount(params: {
 		if (address && signer) {
 			set({
 				settled: false,
+				address,
 				loading: true,
 				registered: false,
 				registering: false
@@ -90,7 +100,8 @@ export function createMissivAccount(params: {
 				set({
 					settled: true,
 					registered: false,
-					registering: false
+					registering: false,
+					address
 				});
 			}
 		} else {
@@ -154,7 +165,8 @@ export function createMissivAccount(params: {
 		set({
 			settled: true,
 			registered: false,
-			registering: true
+			registering: true,
+			address
 		});
 
 		// TODO try catch
@@ -197,7 +209,8 @@ export function createMissivAccount(params: {
 			set({
 				settled: true,
 				registering: false,
-				registered: false
+				registered: false,
+				address
 			});
 		}
 	}
@@ -264,7 +277,8 @@ export function createMissivAccount(params: {
 			set({
 				settled: true,
 				registering: false,
-				registered: false
+				registered: false,
+				address
 			});
 		}
 	}
