@@ -2,7 +2,7 @@ import { API } from '$lib/API.js';
 import type { DomainUser, MissivUser } from 'missiv-common';
 import { derived, type Readable } from 'svelte/store';
 
-type Signer = { address: string; privateKey: string };
+type Signer = { address: string; privateKey: string; publicKey: string };
 type AccountWithSigner = { address: string; signer: Signer };
 export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
@@ -19,18 +19,21 @@ export type MissivAccount = { error?: { message: string; cause?: any } } & (
 			registering: false;
 			loading: true;
 			address: string;
+			signer: Signer;
 	  }
 	| {
 			settled: true;
-			address: string;
 			registered: false;
 			registering: false;
+			address: string;
+			signer: Signer;
 	  }
 	| {
 			settled: true;
-			address: string;
 			registered: false;
 			registering: true;
+			address: string;
+			signer: Signer;
 	  }
 	| {
 			settled: true;
@@ -76,10 +79,11 @@ export function createMissivAccount(params: {
 		if (address && signer) {
 			set({
 				settled: false,
-				address,
 				loading: true,
 				registered: false,
-				registering: false
+				registering: false,
+				address,
+				signer
 			});
 			const registeredUser = await getRegisteredUser(address);
 			if (address !== _account?.address) {
@@ -101,7 +105,8 @@ export function createMissivAccount(params: {
 					settled: true,
 					registered: false,
 					registering: false,
-					address
+					address,
+					signer
 				});
 			}
 		} else {
@@ -166,7 +171,8 @@ export function createMissivAccount(params: {
 			settled: true,
 			registered: false,
 			registering: true,
-			address
+			address,
+			signer
 		});
 
 		// TODO try catch
@@ -204,14 +210,15 @@ export function createMissivAccount(params: {
 				editing: false
 			});
 		} else {
-			// TODO error ?
-			// retry ?
 			set({
 				settled: true,
 				registering: false,
 				registered: false,
-				address
+				address,
+				signer,
+				error: { message: `failed to get registered user` }
 			});
+			throw new Error(`fauled to get registered user`);
 		}
 	}
 
@@ -272,14 +279,17 @@ export function createMissivAccount(params: {
 				editing: false
 			});
 		} else {
-			// TODO error ?
-			// retry ?
 			set({
 				settled: true,
 				registering: false,
-				registered: false,
-				address
+				registered: true,
+				address,
+				signer,
+				editing: false,
+				user: $missivAccount.user,
+				error: { message: `failed to get registered user` }
 			});
+			throw new Error(`fauled to get registered user`);
 		}
 	}
 

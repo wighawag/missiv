@@ -3,7 +3,7 @@ import type { MissivAccount, MissivAccountStore } from './index.js';
 import { publicKeyAuthorizationMessage } from 'missiv-common';
 
 export type RegistrationFlow = {
-	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Done';
+	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';
 	address: string;
 	error?: { message: string; cause?: any };
 };
@@ -16,19 +16,25 @@ export function createRegistrationFlow(
 	let $missivAccount: MissivAccount | undefined = undefined;
 	const _store = writable<RegistrationFlow | undefined>($flow, () => {
 		const unsubscribeFromAccount = missivAccount.subscribe(($newMissivAccount) => {
+			const $oldMissivAccount = $missivAccount;
 			$missivAccount = $newMissivAccount;
-			let interuptedByChangeOfAccount = false;
-			if (!$newMissivAccount.settled && $newMissivAccount.loading) {
-				if ($flow?.address && $flow.address != $newMissivAccount.address) {
+			if ($flow) {
+				let interuptedByChangeOfAccount = false;
+				if (!$newMissivAccount.settled && $newMissivAccount.loading) {
+					if ($flow?.address && $flow.address != $newMissivAccount.address) {
+						interuptedByChangeOfAccount = true;
+					}
+				} else {
 					interuptedByChangeOfAccount = true;
 				}
-			} else {
-				interuptedByChangeOfAccount = true;
-			}
-			if (interuptedByChangeOfAccount) {
-				// we close
-				// TODO intermediary state to warn user of flow interuption ?
-				set(undefined);
+				if (interuptedByChangeOfAccount) {
+					// we close
+					// TODO intermediary state to warn user of flow interuption ?
+					set({
+						...$flow,
+						step: 'Interupted'
+					});
+				}
 			}
 		});
 		return () => {
@@ -61,33 +67,42 @@ export function createRegistrationFlow(
 		});
 	}
 
-	function requestSignature() {
-		if ($flow?.step !== 'NeedInformation') {
-			throw new Error(`not in NeedInformation step`);
+	async function completeRegistration(options?: {
+		name?: string;
+		domainUsername?: string;
+		domainDescription?: string;
+		description?: string;
+		closeOnComplete?: boolean;
+	}) {
+		if (!$missivAccount?.settled && !$missivAccount?.loading) {
+			throw new Error(`not settled`);
 		}
+
+		if ($flow?.step !== 'NeedInformation') {
+			throw new Error(`not in WaitingForSignature step`);
+		}
+
 		set({
 			step: 'WaitingForSignature',
 			address: $flow.address
 		});
-        // TODO in missivAccount
-		const userAAccount = privateKeyToAccount($missivAccount.);
-		const userADelegatePrivateKey = secpUtils.randomPrivateKey();
-		const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
-		await params.requestSignature($flow.address, publicKeyAuthorizationMessage({}));
-	}
 
-	async function completeRegistration(
-		signature: string,
-		options?: {
-			name?: string;
-			domainUsername?: string;
-			domainDescription?: string;
-			description?: string;
-			closeOnComplete?: boolean;
-		}
-	) {
-		if ($flow?.step !== 'WaitingForSignature') {
-			throw new Error(`not in WaitingForSignature step`);
+		let signature: string;
+		try {
+			signature = await params.requestSignature(
+				$flow.address,
+				publicKeyAuthorizationMessage({
+					address: $missivAccount.address,
+					publicKey: $missivAccount.signer.publicKey
+				})
+			);
+		} catch (err) {
+			set({
+				step: 'NeedInformation',
+				address: $flow.address,
+				error: { message: 'failed to get signature', cause: err }
+			});
+			throw new Error(`failed to get signature`);
 		}
 
 		set({
@@ -113,10 +128,14 @@ export function createRegistrationFlow(
 		}
 	}
 
+	function cancel() {
+		set(undefined);
+	}
+
 	return {
 		subscribe: _store.subscribe,
 		start,
-		requestSignature,
-		completeRegistration
+		completeRegistration,
+		cancel
 	};
 }
