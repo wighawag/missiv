@@ -11,6 +11,11 @@
     "syncpack": "^13.0.0",
     "zellij-launcher": "^0.0.1"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "scripts": {
     "prepare": "set-defaults .vscode",
     "preinstall": "npx only-allow pnpm",
