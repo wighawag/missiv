@@ -1,5 +1,5 @@
 import { derived, writable, type Readable } from 'svelte/store';
-import type { MissivAccount, MissivAccountStore } from './index.js';
+import type { CompleteUser, MissivAccount, MissivAccountStore } from './index.js';
 import { publicKeyAuthorizationMessage } from 'missiv-common';
 
 export type RegistrationFlow = {
@@ -41,11 +41,37 @@ export function createRegistrationFlow(
 			unsubscribeFromAccount();
 		};
 	});
-	function set(flow: RegistrationFlow | undefined) {
+	function set(flow: RegistrationFlow) {
 		$flow = flow;
 		_store.set($flow);
 		return $flow;
 	}
+	function rejectFlow() {
+		$flow = undefined;
+		_store.set($flow);
+		if (_promise) {
+			_promise.reject({ message: 'cancelled' });
+			_promise = undefined;
+		} else {
+			throw new Error(`no promise`);
+		}
+	}
+
+	function resolveFlow() {
+		const missivAccount = $missivAccount;
+		if (!missivAccount?.registered) {
+			throw new Error(`not registered`);
+		}
+		$flow = undefined;
+		_store.set($flow);
+		if (_promise) {
+			_promise.resolve(missivAccount.user);
+			_promise = undefined;
+		} else {
+			throw new Error(`no promise`);
+		}
+	}
+
 	function setError(error: { message: string; cause?: any }) {
 		if ($flow) {
 			set({
@@ -57,13 +83,29 @@ export function createRegistrationFlow(
 		}
 	}
 
-	function start() {
+	let _promise:
+		| {
+				resolve: (user: CompleteUser) => void;
+				reject: (error: { message: string; cause?: any }) => void;
+		  }
+		| undefined;
+
+	function execute(): Promise<CompleteUser> {
 		if (!$missivAccount?.settled && !$missivAccount?.loading) {
 			throw new Error(`not settled`);
 		}
+
+		if (_promise) {
+			// cancel existing flow
+			cancel();
+		}
+
 		set({
 			step: 'NeedInformation',
 			address: $missivAccount.address
+		});
+		return new Promise((resolve, reject) => {
+			_promise = { resolve, reject };
 		});
 	}
 
@@ -112,7 +154,7 @@ export function createRegistrationFlow(
 		try {
 			await missivAccount.register(signature, options);
 			if (options?.closeOnComplete) {
-				set(undefined);
+				resolveFlow();
 			} else {
 				set({
 					step: 'Done',
@@ -129,13 +171,18 @@ export function createRegistrationFlow(
 	}
 
 	function cancel() {
-		set(undefined);
+		rejectFlow();
+	}
+
+	function acknowledgeCompletion() {
+		resolveFlow();
 	}
 
 	return {
 		subscribe: _store.subscribe,
-		start,
+		execute,
 		completeRegistration,
-		cancel
+		cancel,
+		acknowledgeCompletion
 	};
 }
