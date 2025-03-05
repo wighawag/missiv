@@ -6,17 +6,17 @@
   },
   "type": "module",
   "dependencies": {
-    "hono": "^4.6.14",
+    "hono": "^4.7.4",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
-    "named-logs": "^0.3.0",
+    "named-logs": "^0.3.2",
     "named-logs-context": "^0.1.1",
     "remote-sql-d1": "^0.0.6",
     "workers-logger": "npm:@bug-fix/workers-logger@0.2.0-fix.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241216.0",
-    "wrangler": "^3.97.0"
+    "@cloudflare/workers-types": "^4.20250303.0",
+    "wrangler": "^3.112.0"
   },
   "scripts": {
     "dev": "wrangler dev ",

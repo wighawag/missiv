@@ -154,6 +154,8 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 			});
 			if (params.autoLogin && _account?.signer) {
 				login();
+			} else {
+				logout();
 			}
 		}
 	}
@@ -182,6 +184,7 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 				_account = $account;
 				onAccountChanged();
 			}
+			return $room;
 		},
 		$room,
 		(set) => {
@@ -239,6 +242,25 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		websocket.send(JSON.stringify(msg));
 	}
 
+	function logout() {
+		if (!$room || $room?.loading) {
+			throw new Error(`not loaded`);
+		}
+
+		if (!websocket) {
+			throw new Error(`no websocket`);
+		}
+
+		const msg: ClientMessageType = { logout: true };
+
+		set({
+			...$room,
+			loggedIn: false,
+			loggingIn: true
+		});
+		websocket.send(JSON.stringify(msg));
+	}
+
 	function debug_forceClose() {
 		websocket?.close();
 	}
@@ -250,3 +272,5 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		debug_forceClose
 	};
 }
+
+export type RoomStore = ReturnType<typeof openRoom>;

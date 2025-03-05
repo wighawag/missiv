@@ -14,19 +14,19 @@
     ".env.default"
   ],
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^1.13.8",
     "@libsql/client": "^0.14.0",
-    "commander": "^12.1.0",
+    "commander": "^13.1.0",
     "ldenv": "^0.3.12",
     "missiv-server": "workspace:*",
     "named-logs-context": "^0.1.1",
     "remote-sql-libsql": "^0.0.6"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.13.9",
     "as-soon": "^0.0.11",
     "set-defaults": "^0.0.5",
-    "tsx": "^4.19.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.2"
   },
   "scripts": {

@@ -1,5 +1,5 @@
 import { derived, writable, type Readable } from 'svelte/store';
-import type { CompleteUser, MissivAccount, MissivAccountStore } from './index.js';
+import type { CompleteUser, MissivAccount, MissivAccountStore } from '$lib/registration/index.js';
 import { publicKeyAuthorizationMessage } from 'missiv-common';
 
 export type RegistrationFlow = {
