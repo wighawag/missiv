@@ -125,7 +125,7 @@
 
 {#if $registrationFlow}
 	<Modal oncancel={() => registrationFlow.cancel()} title="Registration" description="">
-		<div>
+		<div class="modal-content">
 			{#if $registrationFlow.step === 'Done'}
 				<p>Registration complete</p>
 				<button onclick={() => registrationFlow.acknowledgeCompletion()}>continue</button>
@@ -137,10 +137,17 @@
 {/if}
 
 <style>
-	div {
+	.menu {
 		position: absolute;
 		top: 0;
 		left: 0;
 		background-color: white;
+	}
+
+	.modal-content {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 1rem;
 	}
 </style>
