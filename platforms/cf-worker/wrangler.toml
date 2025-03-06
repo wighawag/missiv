@@ -1,4 +1,4 @@
-name = "missiv-server"
+name = "missiv-server-old-for-conquest-2025-1"
 main = "src/worker.ts"
 compatibility_date = "2023-08-14"
 
