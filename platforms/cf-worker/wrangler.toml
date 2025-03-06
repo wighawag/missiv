@@ -9,8 +9,8 @@ enabled = true
 
 [[d1_databases]]
 binding = "DB" # i.e. available in your Worker on env.DB
-database_name = "missiv-db"
-database_id = "1c8f2d0f-7cef-47a0-bc2e-cdb63d5a266b"
+database_name = "missiv-conquest-2025-1-db"
+database_id = "fbbf9858-63d8-4b56-a869-fe5be0fe4fde"
 
 [durable_objects]
 bindings = [

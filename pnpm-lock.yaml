@@ -129,6 +129,9 @@ importers:
       sha3:
         specifier: link:@noble/hashes/sha3
         version: link:@noble/hashes/sha3
+      typia:
+        specifier: ^7.4.1
+        version: 7.4.1(@samchon/openapi@2.3.0)(typescript@5.7.2)
       viem:
         specifier: ^2.21.55
         version: 2.21.55(typescript@5.7.2)(zod@3.24.1)
@@ -160,9 +163,6 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.7.2
-      typia:
-        specifier: ^7.4.1
-        version: 7.4.1(@samchon/openapi@2.3.0)(typescript@5.7.2)
       vitest:
         specifier: ^2.1.8
         version: 2.1.8(@types/node@22.10.2)
