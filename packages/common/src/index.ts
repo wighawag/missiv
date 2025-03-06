@@ -209,21 +209,8 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export function publicKeyAuthorizationMessage({
-	address,
-	publicKey,
-	useOrigin,
-}: {
-	address: Address;
-	publicKey: PublicKey;
-	useOrigin?: string;
-}): string {
-	if (useOrigin) {
-		// TODO EIP: Request for ${origin}:\n
-		return `Signing Request for ${useOrigin}:\n\n I authorize the following Public Key to represent me:\n ${publicKey}\n\n Others can use this key to write me messages`;
-	} else {
-		return `I authorize the following Public Key to represent me:\n ${publicKey}\n\n  Others can use this key to write me messages`;
-	}
+export function originPublicKeyPublicationMessage(orig: string, publicKey: `0x${string}`): string {
+	return `Origin: ${orig}\n\nIMPORTANT: Only sign on trusted websites.\n\nThis authorizes the following Public Key to represent your account:\n\n${publicKey}\n\nOthers can use this key to write encrypted messages to you securely.`;
 }
 
 export type ClientMessageType =

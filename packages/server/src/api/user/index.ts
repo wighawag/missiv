@@ -7,7 +7,7 @@ import {
 	ActionGetMissivUser,
 	ActionRegisterDomainUser,
 	Address,
-	publicKeyAuthorizationMessage,
+	originPublicKeyPublicationMessage,
 } from 'missiv-common';
 import {getAuth, setup} from '../../setup.js';
 import {typiaValidator} from '@hono/typia-validator';
@@ -37,7 +37,7 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				}
 				address = action.address;
 			} else {
-				const message = publicKeyAuthorizationMessage({address: action.address, publicKey});
+				const message = originPublicKeyPublicationMessage(`https://${action.domain}`, publicKey as `0x${string}`);
 				const addressRecovered = await recoverMessageAddress({
 					message,
 					signature: action.signature as `0x${string}`, // TODO typia fix for pattern and 0xstring

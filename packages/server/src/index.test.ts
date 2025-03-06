@@ -1,7 +1,7 @@
 import {beforeAll, expect, test} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {publicKeyAuthorizationMessage} from 'missiv-common';
+import {originPublicKeyPublicationMessage} from 'missiv-common';
 import {App, createServer} from '../src/index.js';
 import {hc} from 'hono/client';
 import {RemoteLibSQL} from 'remote-sql-libsql';
@@ -20,10 +20,7 @@ async function createUser() {
 	const userAAccount = privateKeyToAccount(userAPrivateKey);
 	const userADelegatePrivateKey = secpUtils.randomPrivateKey();
 	const userADelegatePublicKey = toHex(getPublicKey(userADelegatePrivateKey));
-	const userAMessage = publicKeyAuthorizationMessage({
-		address: userAAccount.address,
-		publicKey: userADelegatePublicKey,
-	});
+	const userAMessage = originPublicKeyPublicationMessage('http://test.com', userADelegatePublicKey);
 	return {
 		publicKey: userADelegatePublicKey,
 		address: userAAccount.address,

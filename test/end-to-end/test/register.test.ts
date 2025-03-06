@@ -1,5 +1,5 @@
 import {describe, expect, it, beforeAll, beforeEach} from 'vitest';
-import {publicKeyAuthorizationMessage} from 'missiv-common';
+import {originPublicKeyPublicationMessage} from 'missiv-common';
 import {webcrypto} from 'node:crypto';
 import {api, USER_B} from './setup';
 // @ts-ignore
@@ -22,10 +22,7 @@ describe('Registration of keys', () => {
 	});
 
 	it('should be able to register', async () => {
-		const userBMessage = publicKeyAuthorizationMessage({
-			address: USER_B.address,
-			publicKey: USER_B.delegatePublicKey,
-		});
+		const userBMessage = originPublicKeyPublicationMessage(`https://test.com`, USER_B.delegatePublicKey);
 		const signature = await USER_B.account.signMessage({message: userBMessage});
 		await api.register(
 			{

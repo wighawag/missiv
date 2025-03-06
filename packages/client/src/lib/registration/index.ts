@@ -8,12 +8,14 @@ export type Account = AccountWithSigner | { address: string; signer: undefined }
 
 export type MissivRegistration = { error?: { message: string; cause?: any } } & (
 	| {
+			domain: string;
 			settled: false;
 			registered: false;
 			registering: false;
 			loading: false;
 	  }
 	| {
+			domain: string;
 			settled: false;
 			registered: false;
 			registering: false;
@@ -22,6 +24,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			signer: Signer;
 	  }
 	| {
+			domain: string;
 			settled: true;
 			registered: false;
 			registering: false;
@@ -29,6 +32,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			signer: Signer;
 	  }
 	| {
+			domain: string;
 			settled: true;
 			registered: false;
 			registering: true;
@@ -36,6 +40,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			signer: Signer;
 	  }
 	| {
+			domain: string;
 			settled: true;
 			registered: true;
 			registering: false;
@@ -56,6 +61,7 @@ export function createMissivRegistration(params: {
 	const api: API = new API(params.endpoint);
 
 	let $missivRegistration: MissivRegistration = {
+		domain: params.domain,
 		settled: false,
 		registered: false,
 		registering: false,
@@ -78,6 +84,7 @@ export function createMissivRegistration(params: {
 
 		if (address && signer) {
 			set({
+				domain: params.domain,
 				settled: false,
 				loading: true,
 				registered: false,
@@ -92,6 +99,7 @@ export function createMissivRegistration(params: {
 			}
 			if (registeredUser) {
 				set({
+					domain: params.domain,
 					settled: true,
 					registered: true,
 					registering: false,
@@ -102,6 +110,7 @@ export function createMissivRegistration(params: {
 				});
 			} else {
 				set({
+					domain: params.domain,
 					settled: true,
 					registered: false,
 					registering: false,
@@ -111,6 +120,7 @@ export function createMissivRegistration(params: {
 			}
 		} else {
 			set({
+				domain: params.domain,
 				settled: false,
 				loading: false,
 				registered: false,
@@ -168,6 +178,7 @@ export function createMissivRegistration(params: {
 		}
 
 		set({
+			domain: params.domain,
 			settled: true,
 			registered: false,
 			registering: true,
@@ -201,6 +212,7 @@ export function createMissivRegistration(params: {
 
 		if (registeredUser) {
 			set({
+				domain: params.domain,
 				settled: true,
 				registering: false,
 				registered: true,
@@ -211,6 +223,7 @@ export function createMissivRegistration(params: {
 			});
 		} else {
 			set({
+				domain: params.domain,
 				settled: true,
 				registering: false,
 				registered: false,
@@ -239,6 +252,7 @@ export function createMissivRegistration(params: {
 		}
 
 		set({
+			domain: params.domain,
 			settled: true,
 			registered: true,
 			registering: false,
@@ -270,6 +284,7 @@ export function createMissivRegistration(params: {
 
 		if (registeredUser) {
 			set({
+				domain: params.domain,
 				settled: true,
 				registering: false,
 				registered: true,
@@ -280,6 +295,7 @@ export function createMissivRegistration(params: {
 			});
 		} else {
 			set({
+				domain: params.domain,
 				settled: true,
 				registering: false,
 				registered: true,

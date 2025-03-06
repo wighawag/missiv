@@ -1,6 +1,6 @@
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {publicKeyAuthorizationMessage} from 'missiv-common';
+import {originPublicKeyPublicationMessage} from 'missiv-common';
 import {App, createServer} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -26,10 +26,7 @@ export async function createUser(): Promise<TestUser> {
 	const account = privateKeyToAccount(privateKey);
 	const delegatePrivateKey = secpUtils.randomPrivateKey();
 	const delegatePublicKey = toHex(getPublicKey(delegatePrivateKey));
-	const message = publicKeyAuthorizationMessage({
-		address: account.address,
-		publicKey: delegatePublicKey.toLowerCase(),
-	});
+	const message = originPublicKeyPublicationMessage(`https://test.com`, delegatePublicKey);
 	const user = {
 		delegatePublicKey: delegatePublicKey.toLowerCase() as `0x${string}`,
 		address: account.address.toLowerCase() as `0x${string}`,
@@ -89,7 +86,7 @@ export async function setupTestUsers(users: TestUser[] = [USER_A, USER_B]) {
 				signature: user.signatureForDelegation,
 				domain: 'test.com',
 			},
-			{privateKey: user.delegatePrivateKey},
+			{privateKey: user.delegatePrivateKey}
 		);
 	}
 }
@@ -136,7 +133,7 @@ export async function sendMessage({
 			conversationID,
 			lastMessageReadTimestampMS: timestamp,
 		},
-		{publicKey: from.delegatePublicKey},
+		{publicKey: from.delegatePublicKey}
 	);
 }
 
@@ -148,7 +145,7 @@ export async function rejectConversation({from, conversationID}: {from: TestUser
 			namespace: 'test',
 			conversationID,
 		},
-		{publicKey: from.delegatePublicKey},
+		{publicKey: from.delegatePublicKey}
 	);
 }
 
@@ -175,7 +172,7 @@ export async function createConversation({
 
 	const {unacceptedConversations} = await api.getUnacceptedConversations(
 		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: to.delegatePublicKey},
+		{publicKey: to.delegatePublicKey}
 	);
 
 	return unacceptedConversations[0].conversationID as string; // TODO why need to specify type
@@ -230,7 +227,7 @@ export async function acceptConversation({
 			conversationID,
 			lastMessageReadTimestampMS: timestamp,
 		},
-		{publicKey: user.delegatePublicKey},
+		{publicKey: user.delegatePublicKey}
 	);
 }
 
@@ -245,7 +242,7 @@ export async function getMessages(user: TestUser, conversationID: string) {
 			namespace: 'test',
 			conversationID,
 		},
-		{publicKey: user.delegatePublicKey},
+		{publicKey: user.delegatePublicKey}
 	);
 
 	return messages;
@@ -265,7 +262,7 @@ export async function getMessageContents(user: TestUser, conversationID: string)
 export async function getAcceptedConversations(user: TestUser) {
 	const {acceptedConversations} = await api.getAcceptedConversations(
 		{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey},
+		{publicKey: user.delegatePublicKey}
 	);
 
 	return acceptedConversations;
@@ -277,7 +274,7 @@ export async function getAcceptedConversations(user: TestUser) {
 export async function getUnacceptedConversations(user: TestUser) {
 	const {unacceptedConversations} = await api.getUnacceptedConversations(
 		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey},
+		{publicKey: user.delegatePublicKey}
 	);
 
 	return unacceptedConversations;

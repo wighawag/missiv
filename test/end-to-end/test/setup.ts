@@ -1,7 +1,6 @@
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {publicKeyAuthorizationMessage} from 'missiv-common';
-import {App, createServer} from 'missiv-server';
+import {originPublicKeyPublicationMessage} from 'missiv-common';
 import {API} from 'missiv-client';
 import {MISSIV_URL} from './prool/pool';
 
@@ -18,10 +17,8 @@ export async function createUser() {
 	const account = privateKeyToAccount(privateKey);
 	const delegatePrivateKey = secpUtils.randomPrivateKey();
 	const delegatePublicKey = toHex(getPublicKey(delegatePrivateKey));
-	const message = publicKeyAuthorizationMessage({
-		address: account.address,
-		publicKey: delegatePublicKey.toLowerCase(),
-	});
+
+	const message = originPublicKeyPublicationMessage(`https://test.com`, delegatePublicKey);
 	const user = {
 		delegatePublicKey: delegatePublicKey.toLowerCase() as `0x${string}`,
 		address: account.address.toLowerCase() as `0x${string}`,
