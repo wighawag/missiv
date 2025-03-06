@@ -4,9 +4,11 @@
 
 	export type ChatProps = {
 		room: RoomStore;
+		register?: () => Promise<unknown> | unknown;
+		connect?: () => Promise<unknown> | unknown;
 	};
 
-	let { room }: ChatProps = $props();
+	let { room, register, connect }: ChatProps = $props();
 
 	let messagesContainer: HTMLDivElement;
 	let messageInput: HTMLInputElement;
@@ -89,10 +91,29 @@
 		/>
 		{#if $room && 'loggedIn' in $room && $room.loggedIn}
 			<button onclick={send}>send</button>
-		{:else if $room && 'needRegistration' in $room && $room.needRegistration}
-			<button onclick={() => room.login()}>register</button>
+		{:else if $room}
+			{#if $room.registration.settled}
+				{#if $room.registration.registered}
+					<button disabled>...</button>
+				{:else if $room.registration.registering}
+					<button disabled>..</button>
+				{:else if register}
+					<button onclick={() => register()}>register</button>
+				{:else}
+					<button disabled>send</button>
+				{/if}
+			{:else}
+				{#if connect}
+					<button onclick={() => connect()}>connect</button>
+				{:else}
+					<button disabled>send</button>
+				{/if}
+				<!-- <button disabled>....</button> -->
+			{/if}
+		{:else if connect}
+			<button onclick={() => connect()}>connect</button>
 		{:else}
-			<button onclick={() => room.login()}>connect</button>
+			<button disabled>send</button>
 		{/if}
 	</div>
 </div>

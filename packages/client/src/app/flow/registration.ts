@@ -1,4 +1,4 @@
-import { derived, writable, type Readable } from 'svelte/store';
+import { derived, get, writable, type Readable } from 'svelte/store';
 import type {
 	CompleteUser,
 	MissivRegistration,
@@ -95,6 +95,9 @@ export function createRegistrationFlow(
 		| undefined;
 
 	function execute(): Promise<CompleteUser> {
+		// if (!$missivRegistration) {
+		// 	$missivRegistration = get(missivRegistration);
+		// }
 		if (!$missivRegistration?.settled && !$missivRegistration?.loading) {
 			throw new Error(`not settled`);
 		}

@@ -12,12 +12,13 @@ export type Room = { error?: { message: string; cause?: any } } & (
 	| {
 			loading: true;
 			address?: string;
+			registration: { settled: false; registered: false; registering: false };
 	  }
 	| {
 			loading: false;
 			messages: ChatMessage[];
 			address?: string;
-			needRegistration: boolean;
+			registration: { settled: boolean; registered: boolean; registering: boolean };
 			users: ChatUser[];
 			loggedIn: boolean;
 			loggingIn: boolean;
@@ -60,7 +61,7 @@ export function openRoom(params: {
 			...$room,
 			messages: [],
 			users: [],
-			needRegistration: _registration.settled && !_registration.registered,
+			registration: _registration,
 			loading: false,
 			loggedIn: false,
 			loggingIn: false
@@ -159,12 +160,13 @@ export function openRoom(params: {
 			if (!$room || ('loading' in $room && $room.loading)) {
 				set({
 					address,
-					loading: true
+					loading: true,
+					registration: { registered: false, registering: false, settled: false }
 				});
 			} else {
 				set({
 					...$room,
-					needRegistration: newRegistration.settled && !newRegistration.registered,
+					registration: _registration,
 					address
 				});
 				if (params.autoLogin && address) {
@@ -174,18 +176,21 @@ export function openRoom(params: {
 				}
 			}
 		} else if (
-			($room && newRegistration.settled !== oldRegistration.settled) ||
-			newRegistration.registered != oldRegistration.registered
+			$room &&
+			(newRegistration.settled !== oldRegistration.settled ||
+				newRegistration.registered != oldRegistration.registered ||
+				newRegistration.registering != oldRegistration.registering)
 		) {
 			if (!$room || ('loading' in $room && $room.loading)) {
 				set({
 					address,
-					loading: true
+					loading: true,
+					registration: { registered: false, registering: false, settled: false }
 				});
 			} else {
 				set({
 					...$room,
-					needRegistration: newRegistration.settled && !newRegistration.registered
+					registration: _registration
 				});
 			}
 		}
@@ -263,7 +268,7 @@ export function openRoom(params: {
 			...$room,
 			loggedIn: false,
 			loggingIn: true,
-			needRegistration: _registration.settled && !_registration.registered
+			registration: _registration
 		});
 		websocket.send(JSON.stringify(msg));
 	}
@@ -283,7 +288,7 @@ export function openRoom(params: {
 			...$room,
 			loggedIn: false,
 			loggingIn: true,
-			needRegistration: _registration.settled && !_registration.registered
+			registration: _registration
 		});
 		websocket.send(JSON.stringify(msg));
 	}

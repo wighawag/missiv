@@ -92,7 +92,22 @@ export function createMissivRegistration(params: {
 				address,
 				signer
 			});
-			const registeredUser = await getRegisteredUser(address);
+
+			let registeredUser: CompleteUser | undefined;
+			try {
+				registeredUser = await getRegisteredUser(address);
+			} catch (err) {
+				set({
+					domain: params.domain,
+					settled: true,
+					registered: false,
+					registering: false,
+					address,
+					signer,
+					error: { message: 'failed to fetch profile', cause: err }
+				});
+				throw err;
+			}
 			if (address !== _account?.address) {
 				// account change in between, ignore
 				return;
@@ -186,24 +201,39 @@ export function createMissivRegistration(params: {
 			signer
 		});
 
-		// TODO try catch
-		await api.register(
-			{
-				type: 'register',
-				address,
+		try {
+			await api.register(
+				{
+					type: 'register',
+					address,
+					domain: params.domain,
+					signature,
+					domainUsername: options?.domainUsername,
+					name: options?.name,
+					domainDescription: options?.domainDescription,
+					description: options?.description
+				},
+				{
+					privateKey: signer.privateKey
+				}
+			);
+		} catch (err) {
+			set({
 				domain: params.domain,
-				signature,
-				domainUsername: options?.domainUsername,
-				name: options?.name,
-				domainDescription: options?.domainDescription,
-				description: options?.description
-			},
-			{
-				privateKey: signer.privateKey
-			}
-		);
+				settled: true,
+				registering: false,
+				registered: false,
+				address,
+				signer,
+				error: { message: `failed to register user` }
+			});
+			throw err;
+		}
 
-		const registeredUser = await getRegisteredUser(address);
+		let registeredUser: CompleteUser | undefined;
+		try {
+			registeredUser = await getRegisteredUser(address);
+		} catch (err) {}
 
 		if (address !== _account?.address) {
 			// account change in between, ignore
