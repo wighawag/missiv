@@ -19,6 +19,6 @@ bindings = [
 ]
 
 [[migrations]]
-tag = "v1"
+tag = "v2"
 # TODO new_classes = ["ServerObjectRoom", "RateLimiter"]
 new_classes = ["ServerObjectRoom"]
