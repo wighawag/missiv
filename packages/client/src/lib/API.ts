@@ -54,7 +54,12 @@ export class API {
 		const body = JSON.stringify(action);
 		if (options) {
 			if ('privateKey' in options) {
-				const signature = await signAsync(keccak_256(body), options.privateKey); // Sync methods below
+				const privateKey =
+					typeof options.privateKey == 'string' && options.privateKey.startsWith('0x')
+						? options.privateKey.slice(2)
+						: options.privateKey;
+
+				const signature = await signAsync(keccak_256(body), privateKey); // Sync methods below
 				headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
 			} else {
 				headers.SIGNATURE =

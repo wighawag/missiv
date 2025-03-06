@@ -4,7 +4,7 @@ import type {
 	MissivRegistration,
 	MissivRegistrationStore
 } from '$lib/registration/index.js';
-import { originPublicKeyPublicationMessage } from 'missiv-common';
+import { fromDomainToOrigin, originPublicKeyPublicationMessage } from 'missiv-common';
 
 export type RegistrationFlow = {
 	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';
@@ -141,7 +141,7 @@ export function createRegistrationFlow(
 			signature = await params.requestSignature(
 				$flow.address,
 				originPublicKeyPublicationMessage(
-					`https://${$missivRegistration.domain}`,
+					fromDomainToOrigin($missivRegistration.domain),
 					$missivRegistration.signer.publicKey as `0x${string}`
 				)
 			);
@@ -151,7 +151,7 @@ export function createRegistrationFlow(
 				address: $flow.address,
 				error: { message: 'failed to get signature', cause: err }
 			});
-			throw new Error(`failed to get signature`);
+			throw err;
 		}
 
 		set({
@@ -174,6 +174,7 @@ export function createRegistrationFlow(
 				address: $flow.address,
 				error: { message: 'failed to complete registration', cause: err }
 			});
+			throw err;
 		}
 	}
 

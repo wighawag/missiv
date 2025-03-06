@@ -225,3 +225,13 @@ export type ServerMessageType =
 	| {timestamp: number; message: string; from: string; signature: string}
 	| {quit: string}
 	| {error: string; cause?: any; stack?: string};
+
+export function fromDomainToOrigin(domain: string) {
+	if (domain.startsWith('https://')) {
+		return domain;
+	}
+	if (domain === 'localhost' || domain.startsWith('localhost:')) {
+		return `http://${domain}`;
+	}
+	return `https://${domain}`;
+}

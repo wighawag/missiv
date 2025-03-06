@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { createMissivRegistration } from '$lib/registration/index.js';
 	import { createRegistrationFlow } from '../app/flow/registration.js';
+	import Modal from '../app/ui/modal/Modal.svelte';
 
 	const account = derived(connection, (currentConnection) => {
 		console.log(`connection updated: `, currentConnection.step);
@@ -17,7 +18,7 @@
 
 	const registration = createMissivRegistration({
 		account,
-		domain: 'localhost',
+		domain: 'localhost:5173',
 		endpoint: 'http://localhost:8787'
 	});
 
@@ -101,8 +102,15 @@
 				<p>no wallet</p>
 			{/if}
 		{:else if $connection.step === 'SignedIn'}
-			<p>${$connection.account.address}</p>
+			<p>{$connection.account.address}</p>
 			<button onclick={() => connection.disconnect()}>disconnect</button>
+			{#if $connection.walletAccountChanged}
+				<button
+					onclick={() =>
+						connection.connectOnCurrentWalletAccount($connection.walletAccountChanged!)}
+					>switch</button
+				>
+			{/if}
 		{:else}
 			<p>{($connection as any).step}</p>
 		{/if}
@@ -115,14 +123,24 @@
 	/>
 </main>
 
-<style>
-	main {
-		position: relative;
-	}
+{#if $registrationFlow}
+	<Modal oncancel={() => registrationFlow.cancel()} title="Registration" description="">
+		<div>
+			{#if $registrationFlow.step === 'Done'}
+				<p>Registration complete</p>
+				<button onclick={() => registrationFlow.acknowledgeCompletion()}>continue</button>
+			{:else}
+				<button onclick={() => registrationFlow.completeRegistration()}>sign</button>
+			{/if}
+		</div>
+	</Modal>
+{/if}
 
+<style>
 	div {
 		position: absolute;
 		top: 0;
-		right: 0;
+		left: 0;
+		background-color: white;
 	}
 </style>
