@@ -6,7 +6,7 @@ type Signer = { address: string; privateKey: string; publicKey: string };
 type AccountWithSigner = { address: string; signer: Signer };
 export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
 
-export type MissivAccount = { error?: { message: string; cause?: any } } & (
+export type MissivRegistration = { error?: { message: string; cause?: any } } & (
 	| {
 			settled: false;
 			registered: false;
@@ -55,13 +55,13 @@ export function createMissivAccount(params: {
 }) {
 	const api: API = new API(params.endpoint);
 
-	let $missivAccount: MissivAccount = {
+	let $missivRegistration: MissivRegistration = {
 		settled: false,
 		registered: false,
 		registering: false,
 		loading: false
 	};
-	let _set: (value: MissivAccount) => void;
+	let _set: (value: MissivRegistration) => void;
 	let _account: Account | undefined;
 
 	async function getRegisteredUser(address: string): Promise<CompleteUser | undefined> {
@@ -119,7 +119,7 @@ export function createMissivAccount(params: {
 		}
 	}
 
-	const { subscribe } = derived<Readable<Account>, MissivAccount>(
+	const { subscribe } = derived<Readable<Account>, MissivRegistration>(
 		params.account,
 		($account, set) => {
 			_set = set;
@@ -133,22 +133,22 @@ export function createMissivAccount(params: {
 				onAccountChanged();
 			}
 		},
-		$missivAccount
+		$missivRegistration
 	);
 
-	function set(missivAccount: MissivAccount) {
-		$missivAccount = missivAccount;
-		_set($missivAccount);
-		return $missivAccount;
+	function set(missivRegistration: MissivRegistration) {
+		$missivRegistration = missivRegistration;
+		_set($missivRegistration);
+		return $missivRegistration;
 	}
 	function setError(error: { message: string; cause?: any }) {
-		if ($missivAccount) {
+		if ($missivRegistration) {
 			set({
-				...$missivAccount,
+				...$missivRegistration,
 				error
 			});
 		} else {
-			throw new Error(`no missivAccount`);
+			throw new Error(`no missivRegistration`);
 		}
 	}
 
@@ -234,7 +234,7 @@ export function createMissivAccount(params: {
 			throw new Error(`no account`);
 		}
 
-		if (!$missivAccount.registered) {
+		if (!$missivRegistration.registered) {
 			throw new Error(`not even registered`);
 		}
 
@@ -242,9 +242,9 @@ export function createMissivAccount(params: {
 			settled: true,
 			registered: true,
 			registering: false,
-			address: $missivAccount.address,
-			signer: $missivAccount.signer,
-			user: $missivAccount.user,
+			address: $missivRegistration.address,
+			signer: $missivRegistration.signer,
+			user: $missivRegistration.user,
 			editing: true
 		});
 		await api.editUser(
@@ -286,7 +286,7 @@ export function createMissivAccount(params: {
 				address,
 				signer,
 				editing: false,
-				user: $missivAccount.user,
+				user: $missivRegistration.user,
 				error: { message: `failed to get registered user` }
 			});
 			throw new Error(`fauled to get registered user`);
