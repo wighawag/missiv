@@ -107,7 +107,12 @@
 			<p>{($connection as any).step}</p>
 		{/if}
 	</div>
-	<Chat {room} register={() => registrationFlow.execute()} connect={() => connection.connect()} />
+	<Chat
+		{room}
+		{registration}
+		register={() => registrationFlow.execute()}
+		connect={() => connection.connect()}
+	/>
 </main>
 
 <style>

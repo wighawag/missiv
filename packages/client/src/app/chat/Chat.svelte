@@ -1,14 +1,16 @@
 <script lang="ts">
 	import type { RoomStore } from '$lib/index.js';
+	import type { MissivRegistrationStore } from '$lib/registration/index.js';
 	import { onMount } from 'svelte';
 
 	export type ChatProps = {
 		room: RoomStore;
+		registration: MissivRegistrationStore;
 		register?: () => Promise<unknown> | unknown;
 		connect?: () => Promise<unknown> | unknown;
 	};
 
-	let { room, register, connect }: ChatProps = $props();
+	let { room, registration, register, connect }: ChatProps = $props();
 
 	let messagesContainer: HTMLDivElement;
 	let messageInput: HTMLInputElement;
@@ -92,10 +94,10 @@
 		{#if $room && 'loggedIn' in $room && $room.loggedIn}
 			<button onclick={send}>send</button>
 		{:else if $room}
-			{#if $room.registration.settled}
-				{#if $room.registration.registered}
+			{#if $registration.settled}
+				{#if $registration.registered}
 					<button disabled>...</button>
-				{:else if $room.registration.registering}
+				{:else if $registration.registering}
 					<button disabled>..</button>
 				{:else if register}
 					<button onclick={() => register()}>register</button>

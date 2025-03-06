@@ -5,6 +5,7 @@ import { derived, type Readable } from 'svelte/store';
 type Signer = { address: string; privateKey: string; publicKey: string };
 type AccountWithSigner = { address: string; signer: Signer };
 export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
+export type AccountStore = Readable<Account>;
 
 export type MissivRegistration = { error?: { message: string; cause?: any } } & (
 	| {

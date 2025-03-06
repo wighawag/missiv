@@ -12,13 +12,11 @@ export type Room = { error?: { message: string; cause?: any } } & (
 	| {
 			loading: true;
 			address?: string;
-			registration: { settled: false; registered: false; registering: false };
 	  }
 	| {
 			loading: false;
 			messages: ChatMessage[];
 			address?: string;
-			registration: { settled: boolean; registered: boolean; registering: boolean };
 			users: ChatUser[];
 			loggedIn: boolean;
 			loggingIn: boolean;
@@ -61,7 +59,6 @@ export function openRoom(params: {
 			...$room,
 			messages: [],
 			users: [],
-			registration: _registration,
 			loading: false,
 			loggedIn: false,
 			loggingIn: false
@@ -160,13 +157,11 @@ export function openRoom(params: {
 			if (!$room || ('loading' in $room && $room.loading)) {
 				set({
 					address,
-					loading: true,
-					registration: { registered: false, registering: false, settled: false }
+					loading: true
 				});
 			} else {
 				set({
 					...$room,
-					registration: _registration,
 					address
 				});
 				if (params.autoLogin && address) {
@@ -184,13 +179,11 @@ export function openRoom(params: {
 			if (!$room || ('loading' in $room && $room.loading)) {
 				set({
 					address,
-					loading: true,
-					registration: { registered: false, registering: false, settled: false }
+					loading: true
 				});
 			} else {
 				set({
-					...$room,
-					registration: _registration
+					...$room
 				});
 			}
 		}
@@ -267,8 +260,7 @@ export function openRoom(params: {
 		set({
 			...$room,
 			loggedIn: false,
-			loggingIn: true,
-			registration: _registration
+			loggingIn: true
 		});
 		websocket.send(JSON.stringify(msg));
 	}
@@ -287,8 +279,7 @@ export function openRoom(params: {
 		set({
 			...$room,
 			loggedIn: false,
-			loggingIn: true,
-			registration: _registration
+			loggingIn: true
 		});
 		websocket.send(JSON.stringify(msg));
 	}
