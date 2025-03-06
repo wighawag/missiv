@@ -1,5 +1,9 @@
 import { derived, writable, type Readable } from 'svelte/store';
-import type { CompleteUser, MissivAccount, MissivAccountStore } from '$lib/registration/index.js';
+import type {
+	CompleteUser,
+	MissivRegistration,
+	MissivRegistrationStore
+} from '$lib/registration/index.js';
 import { publicKeyAuthorizationMessage } from 'missiv-common';
 
 export type RegistrationFlow = {
@@ -9,19 +13,19 @@ export type RegistrationFlow = {
 };
 
 export function createRegistrationFlow(
-	missivAccount: MissivAccountStore,
+	missivRegistration: MissivRegistrationStore,
 	params: { requestSignature: (address: string, msg: string) => Promise<string> }
 ) {
 	let $flow: RegistrationFlow | undefined = undefined;
-	let $missivAccount: MissivAccount | undefined = undefined;
+	let $missivRegistration: MissivRegistration | undefined = undefined;
 	const _store = writable<RegistrationFlow | undefined>($flow, () => {
-		const unsubscribeFromAccount = missivAccount.subscribe(($newMissivAccount) => {
-			const $oldMissivAccount = $missivAccount;
-			$missivAccount = $newMissivAccount;
+		const unsubscribeFromAccount = missivRegistration.subscribe(($newMissivRegistration) => {
+			const $oldMissivRegistration = $missivRegistration;
+			$missivRegistration = $newMissivRegistration;
 			if ($flow) {
 				let interuptedByChangeOfAccount = false;
-				if (!$newMissivAccount.settled && $newMissivAccount.loading) {
-					if ($flow?.address && $flow.address != $newMissivAccount.address) {
+				if (!$newMissivRegistration.settled && $newMissivRegistration.loading) {
+					if ($flow?.address && $flow.address != $newMissivRegistration.address) {
 						interuptedByChangeOfAccount = true;
 					}
 				} else {
@@ -58,14 +62,14 @@ export function createRegistrationFlow(
 	}
 
 	function resolveFlow() {
-		const missivAccount = $missivAccount;
-		if (!missivAccount?.registered) {
+		const missivRegistration = $missivRegistration;
+		if (!missivRegistration?.registered) {
 			throw new Error(`not registered`);
 		}
 		$flow = undefined;
 		_store.set($flow);
 		if (_promise) {
-			_promise.resolve(missivAccount.user);
+			_promise.resolve(missivRegistration.user);
 			_promise = undefined;
 		} else {
 			throw new Error(`no promise`);
@@ -91,7 +95,7 @@ export function createRegistrationFlow(
 		| undefined;
 
 	function execute(): Promise<CompleteUser> {
-		if (!$missivAccount?.settled && !$missivAccount?.loading) {
+		if (!$missivRegistration?.settled && !$missivRegistration?.loading) {
 			throw new Error(`not settled`);
 		}
 
@@ -102,7 +106,7 @@ export function createRegistrationFlow(
 
 		set({
 			step: 'NeedInformation',
-			address: $missivAccount.address
+			address: $missivRegistration.address
 		});
 		return new Promise((resolve, reject) => {
 			_promise = { resolve, reject };
@@ -116,7 +120,7 @@ export function createRegistrationFlow(
 		description?: string;
 		closeOnComplete?: boolean;
 	}) {
-		if (!$missivAccount?.settled && !$missivAccount?.loading) {
+		if (!$missivRegistration?.settled && !$missivRegistration?.loading) {
 			throw new Error(`not settled`);
 		}
 
@@ -134,8 +138,8 @@ export function createRegistrationFlow(
 			signature = await params.requestSignature(
 				$flow.address,
 				publicKeyAuthorizationMessage({
-					address: $missivAccount.address,
-					publicKey: $missivAccount.signer.publicKey
+					address: $missivRegistration.address,
+					publicKey: $missivRegistration.signer.publicKey
 				})
 			);
 		} catch (err) {
@@ -152,7 +156,7 @@ export function createRegistrationFlow(
 			address: $flow.address
 		});
 		try {
-			await missivAccount.register(signature, options);
+			await missivRegistration.register(signature, options);
 			if (options?.closeOnComplete) {
 				resolveFlow();
 			} else {

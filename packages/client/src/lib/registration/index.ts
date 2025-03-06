@@ -48,7 +48,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 
 export type CompleteUser = DomainUser & MissivUser;
 
-export function createMissivAccount(params: {
+export function createMissivRegistration(params: {
 	endpoint: string;
 	domain: string;
 	account: Readable<Account>;
@@ -300,4 +300,4 @@ export function createMissivAccount(params: {
 	};
 }
 
-export type MissivAccountStore = ReturnType<typeof createMissivAccount>;
+export type MissivRegistrationStore = ReturnType<typeof createMissivRegistration>;

@@ -1,11 +1,8 @@
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 import { wait } from '$lib/utils/time.js';
 import type { ClientMessageType, ServerMessageType } from 'missiv-common';
-import type { Readable } from 'svelte/store';
-
-type Signer = { address: string; privateKey: string };
-type AccountWithSigner = { address: string; signer: Signer };
-export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
+import { get } from 'svelte/store';
 
 // TODO use ServerMessageType
 export type ChatMessage = { message: string; pending?: boolean };
@@ -20,6 +17,7 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loading: false;
 			messages: ChatMessage[];
 			address?: string;
+			needRegistration: boolean;
 			users: ChatUser[];
 			loggedIn: boolean;
 			loggingIn: boolean;
@@ -31,10 +29,14 @@ export type Room = { error?: { message: string; cause?: any } } & (
 // we need to set a registration store
 // shared between chat and async conversations
 // both should be able to trigger the registration
-export function openRoom(params: { url: string; account: Readable<Account>; autoLogin?: boolean }) {
+export function openRoom(params: {
+	url: string;
+	registration: MissivRegistrationStore;
+	autoLogin?: boolean;
+}) {
 	let $room: Room | undefined = undefined;
 	let _set: (value: Room | undefined) => void;
-	let _account: Account | undefined;
+	let _registration: MissivRegistration = get(params.registration);
 
 	function set(room: Room | undefined) {
 		$room = room;
@@ -58,12 +60,13 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 			...$room,
 			messages: [],
 			users: [],
+			needRegistration: _registration.settled && !_registration.registered,
 			loading: false,
 			loggedIn: false,
 			loggingIn: false
 		});
 
-		if (params.autoLogin && _account?.signer) {
+		if (params.autoLogin && _registration.registered && _registration.signer) {
 			login();
 		}
 	}
@@ -89,7 +92,8 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 					]
 				});
 			} else if ('joined' in msgFromServer) {
-				const justLoggedIn = msgFromServer.joined === _account?.address;
+				const justLoggedIn =
+					_registration.registered && msgFromServer.joined === _registration.address;
 
 				set({
 					...$room,
@@ -98,7 +102,8 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 					loggedIn: justLoggedIn ? true : $room.loggedIn
 				});
 			} else if ('quit' in msgFromServer) {
-				const justLoggedOut = msgFromServer.quit === _account?.address;
+				const justLoggedOut =
+					_registration.registered && msgFromServer.quit === _registration.address;
 				set({
 					...$room,
 					users: $room.users.filter((v) => v.address != msgFromServer.quit),
@@ -139,23 +144,49 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		websocket.addEventListener('message', onWebsocketMessage);
 	}
 
-	function onAccountChanged() {
-		const address = _account?.address;
+	function onRegistrationChanged(
+		oldRegistration: MissivRegistration,
+		newRegistration: MissivRegistration
+	) {
+		const newAddress = newRegistration.registered ? newRegistration.address : undefined;
+		const oldAddress = oldRegistration.registered ? oldRegistration.address : undefined;
 
-		if (!$room || ('loading' in $room && $room.loading)) {
-			set({
-				address,
-				loading: true
-			});
-		} else {
-			set({
-				...$room,
-				address
-			});
-			if (params.autoLogin && _account?.signer) {
-				login();
+		const addressChanged =
+			(newAddress && !oldAddress) || (!newAddress && oldAddress) || newAddress !== oldAddress;
+
+		const address = newRegistration.registered ? newRegistration.address : undefined;
+		if (addressChanged) {
+			if (!$room || ('loading' in $room && $room.loading)) {
+				set({
+					address,
+					loading: true
+				});
 			} else {
-				logout();
+				set({
+					...$room,
+					needRegistration: newRegistration.settled && !newRegistration.registered,
+					address
+				});
+				if (params.autoLogin && address) {
+					login();
+				} else {
+					logout();
+				}
+			}
+		} else if (
+			($room && newRegistration.settled !== oldRegistration.settled) ||
+			newRegistration.registered != oldRegistration.registered
+		) {
+			if (!$room || ('loading' in $room && $room.loading)) {
+				set({
+					address,
+					loading: true
+				});
+			} else {
+				set({
+					...$room,
+					needRegistration: newRegistration.settled && !newRegistration.registered
+				});
 			}
 		}
 	}
@@ -172,18 +203,12 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		}
 	}
 
-	const { subscribe } = derivedWithStartStopNotifier<Readable<Account>, Room | undefined>(
-		params.account,
-		($account) => {
-			const changes =
-				($account?.signer && !_account?.signer) ||
-				(!$account?.signer && _account?.signer) ||
-				$account?.signer?.address !== _account?.signer?.address;
-
-			if (changes) {
-				_account = $account;
-				onAccountChanged();
-			}
+	const { subscribe } = derivedWithStartStopNotifier<MissivRegistrationStore, Room | undefined>(
+		params.registration,
+		($registration) => {
+			const oldRegistration = _registration;
+			_registration = $registration;
+			onRegistrationChanged(oldRegistration, $registration);
 			return $room;
 		},
 		$room,
@@ -203,7 +228,7 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 			throw new Error(`no websocket`);
 		}
 
-		const address = _account?.address;
+		const address = _registration.registered && _registration?.address;
 		if (!address) {
 			throw new Error(`no account`);
 		}
@@ -227,7 +252,7 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 			throw new Error(`no websocket`);
 		}
 
-		const address = _account?.address;
+		const address = _registration.registered && _registration?.address;
 		if (!address) {
 			throw new Error(`no account`);
 		}
@@ -237,7 +262,8 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		set({
 			...$room,
 			loggedIn: false,
-			loggingIn: true
+			loggingIn: true,
+			needRegistration: _registration.settled && !_registration.registered
 		});
 		websocket.send(JSON.stringify(msg));
 	}
@@ -256,7 +282,8 @@ export function openRoom(params: { url: string; account: Readable<Account>; auto
 		set({
 			...$room,
 			loggedIn: false,
-			loggingIn: true
+			loggingIn: true,
+			needRegistration: _registration.settled && !_registration.registered
 		});
 		websocket.send(JSON.stringify(msg));
 	}

@@ -40,6 +40,7 @@
 			console.log($room);
 		}
 	});
+
 	// $inspect($room);
 </script>
 
@@ -86,9 +87,13 @@
 			bind:this={messageInput}
 			onkeydown={(e) => e.key === 'Enter' && send()}
 		/>
-		{#if !$room || !('loggedIn' in $room) || !$room.loggedIn}
+		{#if $room && 'loggedIn' in $room && $room.loggedIn}
+			<button onclick={send}>send</button>
+		{:else if $room && 'needRegistration' in $room && $room.needRegistration}
+			<button onclick={() => room.login()}>register</button>
+		{:else}
 			<button onclick={() => room.login()}>connect</button>
-		{:else}<button onclick={send}>send</button>{/if}
+		{/if}
 	</div>
 </div>
 

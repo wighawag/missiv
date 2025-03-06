@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { openRoom, type Account } from '$lib/room/index.js';
-	import { derived, writable } from 'svelte/store';
+	import { openRoom } from '$lib/room/index.js';
+	import { derived } from 'svelte/store';
 	import Chat from '../app/chat/Chat.svelte';
 	import { connection } from '../app/flow/connection.js';
 	import { onMount } from 'svelte';
+	import { createMissivRegistration } from '$lib/registration/index.js';
 
 	const account = derived(connection, ($connection) => {
 		console.log(`connection updated: `, $connection.step);
@@ -13,17 +14,29 @@
 		return undefined;
 	});
 
+	const registration = createMissivRegistration({
+		account,
+		domain: 'localhost',
+		endpoint: 'http://localhost:8787'
+	});
+
 	let room = openRoom({
 		url: 'ws://localhost:8787/api/public/room/test/ws',
-		account,
+		registration,
 		autoLogin: true
 	});
 
 	onMount(() => {
 		if (typeof window !== 'undefined') {
 			(window as any).room = room;
+			(window as any).registration = registration;
+			(window as any).account = account;
 		}
 	});
+
+	$inspect($registration);
+	$inspect($account);
+	$inspect($room);
 </script>
 
 <main>
