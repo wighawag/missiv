@@ -36,7 +36,7 @@
 	});
 
 	let room = openRoom({
-		url: 'ws://localhost:8787/api/public/room/test/ws',
+		url: 'ws://localhost:8787/api/public/room/@localhost:5173/ws',
 		registration,
 		autoLogin: true
 	});

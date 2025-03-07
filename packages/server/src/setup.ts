@@ -7,6 +7,7 @@ import {keccak_256} from '@noble/hashes/sha3';
 import {Signature} from '@noble/secp256k1';
 import {Context} from 'hono';
 import {assert} from 'typia';
+import {recoverPublicKey} from './utils/signature.js';
 
 // used to be hono Bindings but its type is now `object` which break compilation here
 type Bindings = Record<string, any>;
@@ -62,13 +63,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 					throw new Error(`no publicKey provided in FAKE mode`);
 				}
 			} else {
-				const signatureString = authentication;
-				const splitted = signatureString.split(':');
-				const recoveryBit = Number(splitted[1]);
-				const signature = Signature.fromCompact(splitted[0]).addRecoveryBit(recoveryBit);
-				const msgHash = keccak_256(rawContent);
-				const recoveredPubKey = signature.recoverPublicKey(msgHash);
-				publicKey = `0x${recoveredPubKey.toHex().toLowerCase()}` as PublicKey;
+				publicKey = recoverPublicKey(authentication, rawContent);
 			}
 
 			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);

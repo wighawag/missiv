@@ -69,6 +69,8 @@ export class ServerObjectRoom extends Room<Env> {
 		super(env);
 		this.state = state;
 		this.instantiate();
+
+		console.log({serverObjectId: this.state.id});
 	}
 
 	getStorage(): ServerObjectStorage {

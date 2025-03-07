@@ -3,14 +3,18 @@ import {AbstractServerObject, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from 'missiv-common';
+import {recoverPublicKey} from './utils/signature.js';
 
 export type Session = {
 	address?: string;
-	challenge?: string;
+	challenge: string;
 	quit?: boolean;
 	blockedMessages?: string[];
 	limiter?: RateLimiterClient;
+	domain: string;
 };
+
+type HybernatedData = Record<string, unknown> & {domain: string; challenge: string};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
@@ -19,6 +23,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	dbStorage: RemoteSQLStorage;
 	requireLogin: boolean;
 	env: Env;
+	identifier: {name: string; domain: string} | undefined;
 
 	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
 
@@ -38,7 +43,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			// this apply to system like cloudflare worker that can recover from hibernation
 			// other implementation like bun, do nothing here, but it is fine since they do not hibernate
 			// TODO implement hibernation for bun ?
-			let hibernatedData = this.retrieveSocketData(webSocket);
+			let hibernatedData = this.retrieveSocketData(webSocket) as HybernatedData;
 
 			// Set up our rate limiter client.
 			// The client itself can't have been in the attachment, because structured clone doesn't work on functions.
@@ -61,6 +66,19 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	// Handle HTTP requests from clients.
 	async fetch(request: Request): Promise<Response> {
 		if (request.url.endsWith('/ws')) {
+			const name = request.url.split('/').slice(-2)[0];
+			if (!this.identifier) {
+				console.log({name});
+				let domain: string;
+				if (name.startsWith('@')) {
+					domain = name.slice(1);
+				} else {
+					return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
+				}
+				this.identifier = {name, domain};
+			} else if (this.identifier.name !== name) {
+				return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
+			}
 			return this.upgradeWebsocket(request);
 		} else if (request.url.endsWith('/getCurrentConnections')) {
 			// TODO cors ?
@@ -97,6 +115,9 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	}
 
 	async webSocketOpen(ws: WebSocket, metadata: {ip?: string}) {
+		if (!this.identifier) {
+			throw new Error(`Room identifier is not set`);
+		}
 		const storage = this.getStorage();
 
 		const challenge: string = Array.from(crypto.getRandomValues(new Uint8Array(32)))
@@ -118,9 +139,16 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			: undefined;
 
 		// Create our session and add it to the sessions map.
-		let session: Session & {blockedMessages: string[]} = {blockedMessages: [], limiter, challenge};
+		let session: Session & {blockedMessages: string[]} = {
+			blockedMessages: [],
+			limiter,
+			challenge,
+			domain: this.identifier.domain,
+		};
 		if (limiterId) {
-			this.saveSocketData(ws, {limiterId});
+			this.saveSocketData(ws, {limiterId, domain: session.domain, challenge: session.challenge});
+		} else {
+			this.saveSocketData(ws, {domain: session.domain, challenge: session.challenge});
 		}
 		this.sessions.set(ws, session);
 
@@ -194,29 +222,24 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 				let newAddress: string;
 				// TODO remove
-				const DEBUG = true;
+				const DEBUG = false;
 				if (DEBUG && data.signature === '0x') {
 					newAddress = data.address;
 				} else {
-					const user = await this.dbStorage.getUser(data.address);
-					console.log({user});
-
-					// const user = storage.getUser(data.address);
-					// if (!user) {
-					// 	this.send(ws, {error: 'User not found'});
-					// 	return;
-					// }
-					// const publicKey = user.publicKey;
-					// const recoveredPublicKey = recoverPublicKey(session.challenge, data.signature, data.address);
-					// if (recoveredPublicKey !== publicKey) {
-					// 	this.send(ws, {error: 'Invalid signature'});
-					// }
-					const address = undefined; // TODO await this.verifySignature(data.signature);
-					if (!address) {
+					const user = await this.dbStorage.getCompleteUser(session.domain, data.address);
+					if (!user || !user.completeUser) {
+						this.send(ws, {error: 'User not found'});
+						return;
+					}
+					const publicKey = user.completeUser.publicKey;
+					console.log({signature: data.signature, challenge: session.challenge});
+					const recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
+					if (recoveredPublicKey !== publicKey) {
 						this.send(ws, {error: 'Invalid signature'});
 						return;
 					}
-					newAddress = address;
+
+					newAddress = user.completeUser.address;
 				}
 
 				if (!session.address) {
@@ -299,11 +322,13 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	// On "close" and "error" events, remove the WebSocket from the sessions list and broadcast
 	// a quit message.
 	async closeOrErrorHandler(ws: WebSocket) {
-		let session = this.sessions.get(ws) || {};
-		session.quit = true;
-		this.sessions.delete(ws);
-		if (session.address) {
-			this.broadcast({quit: session.address});
+		let session = this.sessions.get(ws);
+		if (session) {
+			session.quit = true;
+			this.sessions.delete(ws);
+			if (session.address) {
+				this.broadcast({quit: session.address});
+			}
 		}
 	}
 

@@ -1,6 +1,8 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 import { wait } from '$lib/utils/time.js';
+import { keccak_256 } from '@noble/hashes/sha3';
+import { signAsync } from '@noble/secp256k1';
 import type { ClientMessageType, ServerMessageType } from 'missiv-common';
 import { get } from 'svelte/store';
 
@@ -26,8 +28,16 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loginStatus: 'LoggedOut';
 			messages: ChatMessage[];
 			users: ChatUser[];
-
+			challenge: string;
 			loggingIn: boolean;
+	  }
+	| {
+			step: 'Connected';
+			address: string;
+			loginStatus: 'LoggedOut';
+			messages: ChatMessage[];
+			users: ChatUser[];
+			challenge: undefined;
 	  }
 	| {
 			step: 'Connected';
@@ -35,7 +45,6 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loginStatus: 'LoggedIn';
 			messages: ChatMessage[];
 			users: ChatUser[];
-
 			loggingOut: boolean;
 	  }
 );
@@ -50,6 +59,10 @@ export function openRoom(params: {
 	registration: MissivRegistrationStore;
 	autoLogin?: boolean;
 }) {
+	// we reuse the same challenge
+	let savedChallenge: string | undefined;
+	let loginOnChallengeReceived: boolean = false;
+
 	let $room: Room = {
 		step: 'Connecting',
 		address: undefined
@@ -83,7 +96,7 @@ export function openRoom(params: {
 				address: $room.address,
 				messages: [],
 				users: [],
-				loggingIn: false
+				challenge: undefined
 			});
 			if (params.autoLogin) {
 				login();
@@ -112,7 +125,24 @@ export function openRoom(params: {
 		const msgFromServer: ServerMessageType = JSON.parse(event.data);
 
 		if ($room.step === 'Connected') {
-			if ('message' in msgFromServer) {
+			if ('challenge' in msgFromServer) {
+				savedChallenge = msgFromServer.challenge;
+				if ($room.loginStatus === 'LoggedOut') {
+					set({
+						step: 'Connected',
+						loginStatus: 'LoggedOut',
+						address: $room.address,
+						messages: $room.messages,
+						users: $room.users,
+						challenge: msgFromServer.challenge,
+						loggingIn: false
+					});
+					if (loginOnChallengeReceived) {
+						loginOnChallengeReceived = false;
+						login();
+					}
+				}
+			} else if ('message' in msgFromServer) {
 				set({
 					...$room,
 					messages: [
@@ -145,14 +175,27 @@ export function openRoom(params: {
 
 				if (justLoggedOut) {
 					if ($room.loginStatus === 'LoggedIn') {
-						set({
-							step: 'Connected',
-							loginStatus: 'LoggedOut',
-							address: $room.address,
-							users: $room.users.filter((v) => v.address != msgFromServer.quit),
-							messages: $room.messages,
-							loggingIn: false
-						});
+						if (!savedChallenge) {
+							set({
+								step: 'Connected',
+								loginStatus: 'LoggedOut',
+								address: $room.address,
+								users: $room.users.filter((v) => v.address != msgFromServer.quit),
+								messages: $room.messages,
+								challenge: undefined,
+								error: { message: 'no challenge save' }
+							});
+						} else {
+							set({
+								step: 'Connected',
+								loginStatus: 'LoggedOut',
+								address: $room.address,
+								users: $room.users.filter((v) => v.address != msgFromServer.quit),
+								messages: $room.messages,
+								challenge: savedChallenge,
+								loggingIn: false
+							});
+						}
 					} else {
 						console.error(`quit but not LoggedIn`);
 					}
@@ -219,7 +262,11 @@ export function openRoom(params: {
 					}
 
 					if (params.autoLogin) {
-						login();
+						if (!savedChallenge) {
+							loginOnChallengeReceived = true;
+						} else {
+							login();
+						}
 					}
 				} else {
 					if ($room.loginStatus === 'LoggedIn') {
@@ -282,7 +329,10 @@ export function openRoom(params: {
 		websocket.send(JSON.stringify(msg));
 	}
 
-	function login() {
+	async function login() {
+		if (!savedChallenge) {
+			throw new Error(`no challenge to sign`);
+		}
 		if (
 			$room.step !== 'Connected' ||
 			($room.loginStatus !== 'LoggedOut' && $room.loginStatus !== 'NoAccount')
@@ -294,12 +344,20 @@ export function openRoom(params: {
 			throw new Error(`no websocket`);
 		}
 
-		const address = _registration.step == 'Registered' && _registration?.address;
+		const address = _registration.step == 'Registered' && _registration.address;
 		if (!address) {
 			throw new Error(`no account`);
 		}
 
-		const msg: ClientMessageType = { address, signature: '0x' };
+		const signer = _registration.step == 'Registered' && _registration.signer;
+		if (!signer) {
+			throw new Error(`no signer`);
+		}
+
+		const privateKey =
+			typeof signer.privateKey == 'string' && signer.privateKey.startsWith('0x')
+				? signer.privateKey.slice(2)
+				: signer.privateKey;
 
 		set({
 			step: 'Connected',
@@ -307,12 +365,18 @@ export function openRoom(params: {
 			address,
 			messages: $room.messages,
 			users: $room.users,
-			loggingIn: true
+			loggingIn: true,
+			challenge: savedChallenge
 		});
+		const signatureObject = await signAsync(keccak_256(savedChallenge), privateKey); // Sync methods below
+		const signature = `${signatureObject.toCompactHex()}:${signatureObject.recovery}`;
+		const msg: ClientMessageType = { address, signature };
+
 		websocket.send(JSON.stringify(msg));
 	}
 
 	function logout() {
+		loginOnChallengeReceived = false;
 		if ($room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn') {
 			throw new Error(`not Logged In`);
 		}
@@ -344,7 +408,8 @@ export function openRoom(params: {
 			address: $room.address,
 			messages: $room.messages,
 			users: $room.users,
-			loggingIn: false
+			loggingIn: false,
+			challenge: savedChallenge
 		});
 	}
 
