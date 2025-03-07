@@ -112,6 +112,7 @@ export type ConversationMessage = {
 	recipient: Address;
 	sender: Address;
 	senderPublicKey: PublicKey;
+	recipientPublicKey: PublicKey;
 	content: string;
 	timestamp: number;
 	messageType: 'encrypted' | 'clear';

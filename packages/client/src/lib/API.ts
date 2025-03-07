@@ -67,7 +67,7 @@ export class API {
 			}
 		}
 		const url = this.endpoint + '/api' + path;
-		console.log({ url });
+		// console.log({ url });
 		const resp = await this.fetchFunction(url, {
 			method: 'POST',
 			body,
@@ -81,7 +81,7 @@ export class API {
 
 		if (resp) {
 			const json = (await resp.json()) as T;
-			console.log({ json });
+			// console.log({ json });
 			return json;
 		} else {
 			console.error(`failed with no response`);

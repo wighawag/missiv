@@ -7,7 +7,7 @@ import type { ClientMessageType, ServerMessageType } from 'missiv-common';
 import { get } from 'svelte/store';
 
 // TODO use ServerMessageType
-export type ChatMessage = { message: string; pending?: boolean };
+export type ChatMessage = { from: string; message: string; pending?: boolean; signature: string };
 export type ChatUser = { address: string };
 
 export type Room = { error?: { message: string; cause?: any } } & (
@@ -58,12 +58,15 @@ export function openRoom(params: {
 	let savedChallenge: string | undefined;
 	let loginOnChallengeReceived: boolean = false;
 
-	let $room: Room = {
-		step: 'Connecting',
-		address: undefined
-	};
 	let _set: (value: Room) => void;
 	let _registration: MissivRegistration = get(params.registration);
+
+	const address = 'address' in _registration ? _registration.address : undefined;
+	// console.log({ address });
+	let $room: Room = {
+		step: 'Connecting',
+		address
+	};
 
 	function set(room: Room) {
 		$room = room;
@@ -84,6 +87,7 @@ export function openRoom(params: {
 	function onWebsocketOpened(event: Event) {
 		websocketEstablished = true;
 
+		console.log({ $room });
 		if ($room.address) {
 			set({
 				step: 'Connected',
@@ -175,7 +179,13 @@ export function openRoom(params: {
 								step: 'Connected',
 								loginStatus: 'LoggedOut',
 								address: $room.address,
-								users: $room.users.filter((v) => v.address != msgFromServer.quit),
+								users: (() => {
+									const firstMatchIndex = $room.users.findIndex(
+										(user) => user.address === msgFromServer.quit
+									);
+									if (firstMatchIndex === -1) return $room.users;
+									return $room.users.filter((_, i) => i !== firstMatchIndex);
+								})(),
 								messages: $room.messages,
 								challenge: undefined,
 								error: { message: 'no challenge save' }
@@ -185,7 +195,13 @@ export function openRoom(params: {
 								step: 'Connected',
 								loginStatus: 'LoggedOut',
 								address: $room.address,
-								users: $room.users.filter((v) => v.address != msgFromServer.quit),
+								users: (() => {
+									const firstMatchIndex = $room.users.findIndex(
+										(user) => user.address === msgFromServer.quit
+									);
+									if (firstMatchIndex === -1) return $room.users;
+									return $room.users.filter((_, i) => i !== firstMatchIndex);
+								})(),
 								messages: $room.messages,
 								challenge: savedChallenge,
 								loggingIn: false
@@ -197,7 +213,13 @@ export function openRoom(params: {
 				} else {
 					set({
 						...$room,
-						users: $room.users.filter((v) => v.address != msgFromServer.quit)
+						users: (() => {
+							const firstMatchIndex = $room.users.findIndex(
+								(user) => user.address === msgFromServer.quit
+							);
+							if (firstMatchIndex === -1) return $room.users;
+							return $room.users.filter((_, i) => i !== firstMatchIndex);
+						})()
 					});
 				}
 			} else if ('error' in msgFromServer) {
@@ -241,17 +263,21 @@ export function openRoom(params: {
 		const newAddress = newRegistration.step === 'Registered' ? newRegistration.address : undefined;
 		const oldAddress = oldRegistration.step === 'Registered' ? oldRegistration.address : undefined;
 
+		// console.log({ newAddress, oldAddress });
+
 		const addressChanged =
 			(newAddress && !oldAddress) || (!newAddress && oldAddress) || newAddress !== oldAddress;
 
 		if (addressChanged) {
 			if ($room.step === 'Connecting') {
+				// console.log(`Connecting`, { $room });
 				set({
 					step: 'Connecting',
 					address: newAddress
 				});
 			} else {
 				if (newAddress) {
+					// console.log(`newAddress`, { $room });
 					if (oldAddress) {
 						logout();
 					}
@@ -318,7 +344,7 @@ export function openRoom(params: {
 
 		set({
 			...$room,
-			messages: [...$room.messages, { ...msg, pending: true }]
+			messages: [...$room.messages, { from: address, ...msg, pending: true }]
 		});
 		// await wait(3);
 		websocket.send(JSON.stringify(msg));
@@ -380,8 +406,6 @@ export function openRoom(params: {
 			throw new Error(`no websocket`);
 		}
 
-		const msg: ClientMessageType = { logout: true };
-
 		set({
 			step: 'Connected',
 			loginStatus: 'LoggedIn',
@@ -390,6 +414,8 @@ export function openRoom(params: {
 			users: $room.users,
 			loggingOut: true
 		});
+
+		const msg: ClientMessageType = { logout: true };
 		try {
 			websocket.send(JSON.stringify(msg));
 		} catch (err) {

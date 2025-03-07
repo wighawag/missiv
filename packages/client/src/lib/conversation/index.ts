@@ -1,4 +1,4 @@
-import { get, writable, type Readable } from 'svelte/store';
+import { get, type Readable } from 'svelte/store';
 import { API } from '$lib/API.js';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -13,14 +13,10 @@ import {
 	type ConversationMessage,
 	type PublicKey
 } from 'missiv-common';
-import type {
-	Account,
-	MissivRegistration,
-	MissivRegistrationStore
-} from '$lib/registration/index.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 
-// TODO support group
+// TODO support group chat
 export type ConversationState = { error?: { message: string; cause?: any } } & {
 	conversationID: string;
 	otherUser: OtherUser;
@@ -115,8 +111,12 @@ export function openOneConversation(params: {
 	let running = false;
 	function onStart() {
 		running = true;
+		// TODO mixing registration and conversaiton steps
 		if (fetching && $conversation.step === 'Fetched') {
-			startFetching($conversation.address);
+			if (_registration.step !== 'Registered') {
+				return;
+			}
+			startFetching(_registration.address);
 		}
 	}
 
@@ -125,79 +125,98 @@ export function openOneConversation(params: {
 	}
 
 	let timeout: NodeJS.Timeout | undefined;
-	async function fetchMessagesgainAndAgain() {
-		await fetchMessages();
+	async function fetchMessagesgainAndAgain(address: string) {
+		await fetchMessages(address);
 		if (timeout) {
-			timeout = setTimeout(fetchMessagesgainAndAgain, pollingInterval * 1000);
+			timeout = setTimeout(fetchMessagesgainAndAgain, pollingInterval * 1000, address);
 		} // else we stop as we cleared the timeout
 	}
 
-	async function fetchMessages() {
-		if ($conversation.account) {
-			if (!$conversation.otherUser.publicKey) {
-				const { completeUser } = await api.getCompleteUser({
-					address: $conversation.otherUser.address,
-					domain: params.domain
-				});
-				if (completeUser?.publicKey) {
-					// $conversation.otherUser.publicKey = completeUser.publicKey;
-					// $conversation.otherUser.name = completeUser.domainUsername || completeUser.name;
-				}
+	async function fetchMessages(address: string) {
+		if (_registration.step !== 'Registered') {
+			return;
+		}
+		if ($conversation.step === 'Idle') {
+			return;
+		}
+		if (!$conversation.otherUser.publicKey) {
+			const { completeUser } = await api.getCompleteUser({
+				address: $conversation.otherUser.address,
+				domain: params.domain
+			});
+			if (completeUser?.publicKey) {
+				// $conversation.otherUser.publicKey = completeUser.publicKey;
+				// $conversation.otherUser.name = completeUser.domainUsername || completeUser.name;
 			}
-			const { messages } = await api.getMessages(
+		}
+		const { messages } = await api.getMessages(
+			{
+				type: `getMessages`,
+				domain: params.domain,
+				namespace: params.namespace,
+				conversationID
+			},
+			{
+				privateKey: $conversation.account.signer.privateKey
+			}
+		);
+
+		for (let i = 0; i < messages.length; i++) {
+			const message = messages[i];
+			if (message.messageType === 'encrypted') {
+				const cacheID = message.id + ':' + message.timestamp;
+				let content = messageCache[cacheID];
+				if (!content) {
+					const sharedKey =
+						message.recipient.toLowerCase() == $conversation.account.address.toLowerCase()
+							? getSharedKey($conversation.account, message.senderPublicKey)
+							: getSharedKey($conversation.account, message.recipientPublicKey);
+
+					const [nonceb64, ciphertextb64] = message.content.split(/:(.*)/s);
+					const nonce = base64.decode(nonceb64);
+					const chacha = xchacha20poly1305(sharedKey, nonce);
+					const ciphertext = base64.decode(ciphertextb64);
+					const contentAsBytes = chacha.decrypt(ciphertext);
+					content = bytesToUtf8(contentAsBytes);
+					messageCache[cacheID] = content;
+				}
+
+				message.content = content;
+			}
+		}
+
+		if (params.markAsAcceptedAndRead) {
+			api.acceptConversation(
 				{
-					type: `getMessages`,
+					type: 'acceptConversation',
 					domain: params.domain,
 					namespace: params.namespace,
-					conversationID
+					conversationID,
+					lastMessageReadTimestampMS: Date.now() // TODO ?
 				},
 				{
 					privateKey: $conversation.account.signer.privateKey
 				}
 			);
+		}
 
-			for (let i = 0; i < messages.length; i++) {
-				const message = messages[i];
-				if (message.type === 'encrypted') {
-					const cacheID = message.id + ':' + message.timestamp;
-					let content = messageCache[cacheID];
-					if (!content) {
-						const sharedKey =
-							message.recipient.toLowerCase() == $conversation.account.address.toLowerCase()
-								? getSharedKey($conversation.account, message.senderPublicKey)
-								: getSharedKey($conversation.account, message.recipientPublicKey);
-
-						const [nonceb64, ciphertextb64] = message.message.split(/:(.*)/s);
-						const nonce = base64.decode(nonceb64);
-						const chacha = xchacha20poly1305(sharedKey, nonce);
-						const ciphertext = base64.decode(ciphertextb64);
-						const contentAsBytes = chacha.decrypt(ciphertext);
-						content = bytesToUtf8(contentAsBytes);
-						messageCache[cacheID] = content;
-					}
-
-					message.message = content;
-				}
+		if (_registration.address === address) {
+			if ($conversation.step === 'Fetching') {
+				set({
+					...$conversation,
+					step: 'Fetched',
+					messages
+				});
+			} else if ($conversation.step === 'Fetched') {
+				set({
+					...$conversation,
+					messages
+				});
+			} else {
+				// we ignore
 			}
-
-			// $store.loading = 'done';
-			// $store.messages = messages;
-			// store.set($store);
-
-			if (params.markAsAcceptedAndRead) {
-				api.acceptConversation(
-					{
-						type: 'acceptConversation',
-						domain: params.domain,
-						namespace: params.namespace,
-						conversationID,
-						lastMessageReadTimestampMS: Date.now() // TODO ?
-					},
-					{
-						privateKey: $conversation.account.signer.privateKey
-					}
-				);
-			}
+		} else {
+			// we ignore
 		}
 	}
 

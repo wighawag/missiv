@@ -2,6 +2,7 @@
 	import type { RoomStore } from '$lib/index.js';
 	import type { MissivRegistrationStore } from '$lib/registration/index.js';
 	import { onMount } from 'svelte';
+	import ImgBlockie from '../utils/ethereum/ImgBlockie.svelte';
 
 	export type ChatProps = {
 		room: RoomStore;
@@ -28,7 +29,7 @@
 	}
 
 	onMount(() => {
-		console.log(`mounting Chat...`);
+		// console.log(`mounting Chat...`);
 		scrollToBottom();
 	});
 
@@ -49,6 +50,9 @@
 			{:else}
 				{#each $room.messages as message}
 					<p class="message">
+						<button class="btn-blockie" onclick={() => console.log(message.from)}
+							><ImgBlockie address={message.from} style="width: 24px; height: 24px;" /></button
+						>
 						{message.message}
 						{#if message.pending}
 							<span class="spinner">⟳</span>
@@ -66,7 +70,11 @@
 				<ul class="users-list">
 					{#each $room.users as user}
 						<li class="user-item">
-							<span class="user-address">{user.address}</span>
+							<span class="user-address"
+								><button class="btn-blockie" onclick={() => console.log(user.address)}
+									><ImgBlockie address={user.address} style="width: 24px; height: 24px;" /></button
+								></span
+							>
 						</li>
 					{/each}
 				</ul>
@@ -87,37 +95,30 @@
 		{#if $room.step === 'Connected'}
 			{#if $room.loginStatus === 'LoggedIn'}
 				<button onclick={send}>send</button>
+			{:else if $registration.step === 'Registered'}
+				{#if 'loggingIn' in $room && $room.loggingIn}
+					<button disabled>...</button>
+				{:else}
+					<!-- IMPOSSIBLE ?-->
+					<button disabled>...</button>
+				{/if}
+			{:else if $registration.step === 'Unregistered'}
+				{#if register && !$registration.registering}
+					<button onclick={() => register()}>register</button>
+				{:else}
+					<button disabled>send</button>
+				{/if}
 			{:else if $room.loginStatus === 'NoAccount'}
 				{#if connect}
-					<!-- TODO &&  !connecting-->
+					<!-- TODO &&  !connecting : require account access-->
 					<button onclick={() => connect()}>connect</button>
 				{:else}
 					<button disabled>send</button>
 				{/if}
 			{:else if $room.loginStatus === 'LoggedOut'}
-				{#if $registration.step === 'Registered'}
-					{#if $room.loggingIn}
-						<button disabled>...</button>
-					{:else}
-						<!-- IMPOSSIBLE ?-->
-						<button disabled>...</button>
-					{/if}
-				{:else if $registration.step === 'Unregistered'}
-					{#if register && !$registration.registering}
-						<button onclick={() => register()}>register</button>
-					{:else}
-						<button disabled>send</button>
-					{/if}
-				{:else if $registration.step === 'Idle'}
-					<button disabled>send</button>
-				{:else if $registration.step === 'Fetching'}
-					<button disabled>send</button>
-				{:else}
-					<button disabled>send</button>
-				{/if}
+				<!-- -->
 			{:else}
-				<!-- IMPOSSIBLE-->
-				<button disabled>...</button>
+				<button disabled>send</button>
 			{/if}
 		{:else}
 			<button disabled>send</button>
@@ -126,6 +127,10 @@
 </div>
 
 <style>
+	.btn-blockie {
+		border: 0;
+		padding: 0;
+	}
 	.chat-container {
 		display: flex;
 		flex-direction: column;
@@ -149,7 +154,7 @@
 	}
 
 	.users-panel {
-		width: 250px;
+		width: 100px;
 		border-left: 1px solid #eee;
 		padding: 1rem;
 		overflow-y: auto;

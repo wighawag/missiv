@@ -8,9 +8,10 @@
 	import { createRegistrationFlow } from '../app/flow/registration.js';
 	import Modal from '../app/ui/modal/Modal.svelte';
 	import type { Connection } from '@etherplay/connect';
+	import ImgBlockie from '../app/utils/ethereum/ImgBlockie.svelte';
 
 	const account = derived<Readable<Connection>, Account>(connection, (currentConnection) => {
-		console.log(`connection updated: `, currentConnection.step);
+		// console.log(`connection updated: `, currentConnection.step);
 		if (currentConnection.step === 'SignedIn') {
 			return currentConnection.account;
 		} else if (currentConnection.step === 'WaitingForSignature') {
@@ -63,10 +64,10 @@
 		};
 	});
 
-	$inspect($registration);
-	$inspect($account);
-	$inspect($room);
-	$inspect($registrationFlow);
+	// $inspect($registrationFlow);
+	// $inspect($registration);
+	// $inspect($account);
+	// $inspect($room);
 </script>
 
 <main>
@@ -111,7 +112,7 @@
 				<p>no wallet</p>
 			{/if}
 		{:else if $connection.step === 'SignedIn'}
-			<p>{$connection.account.address}</p>
+			<ImgBlockie address={$connection.account.address} style="width: 24px; height: 24px;" />
 			<button onclick={() => connection.disconnect()}>disconnect</button>
 			{#if $connection.walletAccountChanged}
 				<button
