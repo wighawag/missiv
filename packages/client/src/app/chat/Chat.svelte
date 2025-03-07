@@ -34,25 +34,18 @@
 
 	// Auto-scroll when new messages arrive
 	$effect(() => {
-		if ($room && 'messages' in $room && $room?.messages) {
+		// TODO onNewMessage
+		if ($room.step == 'Connected') {
 			setTimeout(scrollToBottom, 0);
 		}
 	});
-
-	$effect(() => {
-		if ($room === undefined) {
-			console.log($room);
-		}
-	});
-
-	// $inspect($room);
 </script>
 
 <div class="chat-container">
 	<div class="app-layout">
 		<div class="messages-container" bind:this={messagesContainer}>
-			{#if !$room || $room?.loading}
-				<p class="loading">loading..</p>
+			{#if $room.step === 'Connecting'}
+				<p class="loading">connecting..</p>
 			{:else}
 				{#each $room.messages as message}
 					<p class="message">
@@ -67,8 +60,8 @@
 
 		<div class="users-panel">
 			<h3>Connected Users</h3>
-			{#if !$room || $room?.loading}
-				<p class="loading">loading..</p>
+			{#if $room.step === 'Connecting'}
+				<p class="loading">Connecting...</p>
 			{:else}
 				<ul class="users-list">
 					{#each $room.users as user}
@@ -86,34 +79,46 @@
 
 	<div class="input-container">
 		<input
-			disabled={!$room || !('loggedIn' in $room) || !$room.loggedIn}
+			disabled={$room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn'}
 			type="text"
 			bind:this={messageInput}
 			onkeydown={(e) => e.key === 'Enter' && send()}
 		/>
-		{#if $room && 'loggedIn' in $room && $room.loggedIn}
-			<button onclick={send}>send</button>
-		{:else if $room}
-			{#if $registration.settled}
-				{#if $registration.registered}
-					<button disabled>...</button>
-				{:else if $registration.registering}
-					<button disabled>..</button>
-				{:else if register}
-					<button onclick={() => register()}>register</button>
-				{:else}
-					<button disabled>send</button>
-				{/if}
-			{:else}
+		{#if $room.step === 'Connected'}
+			{#if $room.loginStatus === 'LoggedIn'}
+				<button onclick={send}>send</button>
+			{:else if $room.loginStatus === 'NoAccount'}
 				{#if connect}
+					<!-- TODO &&  !connecting-->
 					<button onclick={() => connect()}>connect</button>
 				{:else}
 					<button disabled>send</button>
 				{/if}
-				<!-- <button disabled>....</button> -->
+			{:else if $room.loginStatus === 'LoggedOut'}
+				{#if $registration.step === 'Registered'}
+					{#if $room.loggingIn}
+						<button disabled>...</button>
+					{:else}
+						<!-- IMPOSSIBLE ?-->
+						<button disabled>...</button>
+					{/if}
+				{:else if $registration.step === 'Unregistered'}
+					{#if register && !$registration.registering}
+						<button onclick={() => register()}>register</button>
+					{:else}
+						<button disabled>send</button>
+					{/if}
+				{:else if $registration.step === 'Idle'}
+					<button disabled>send</button>
+				{:else if $registration.step === 'Fetching'}
+					<button disabled>send</button>
+				{:else}
+					<button disabled>send</button>
+				{/if}
+			{:else}
+				<!-- IMPOSSIBLE-->
+				<button disabled>...</button>
 			{/if}
-		{:else if connect}
-			<button onclick={() => connect()}>connect</button>
 		{:else}
 			<button disabled>send</button>
 		{/if}

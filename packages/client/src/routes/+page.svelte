@@ -1,17 +1,26 @@
 <script lang="ts">
 	import { openRoom } from '$lib/room/index.js';
-	import { derived, get } from 'svelte/store';
+	import { derived, get, type Readable } from 'svelte/store';
 	import Chat from '../app/chat/Chat.svelte';
 	import { connection } from '../app/flow/connection.js';
 	import { onMount } from 'svelte';
-	import { createMissivRegistration } from '$lib/registration/index.js';
+	import { type Account, createMissivRegistration } from '$lib/registration/index.js';
 	import { createRegistrationFlow } from '../app/flow/registration.js';
 	import Modal from '../app/ui/modal/Modal.svelte';
+	import type { Connection } from '@etherplay/connect';
 
-	const account = derived(connection, (currentConnection) => {
+	const account = derived<Readable<Connection>, Account>(connection, (currentConnection) => {
 		console.log(`connection updated: `, currentConnection.step);
 		if (currentConnection.step === 'SignedIn') {
 			return currentConnection.account;
+		} else if (currentConnection.step === 'WaitingForSignature') {
+			return undefined;
+			// TODO ? show new address
+			// the following show the current one:
+			// return {
+			// 	address: currentConnection.mechanism.address,
+			// 	signer: undefined
+			// };
 		}
 		return undefined;
 	});
@@ -34,7 +43,7 @@
 
 	onMount(() => {
 		const unsubscribeFromConnection = registration.subscribe((currentRegistration) => {
-			if (currentRegistration.settled && !currentRegistration.registered) {
+			if (currentRegistration.step === 'Unregistered') {
 				const currentConnection = get(connection);
 				if (currentConnection.step === 'SignedIn' && !currentRegistration.error) {
 					if (currentConnection.account.savedPublicKeyPublicationSignature) {

@@ -9,46 +9,33 @@ export type AccountStore = Readable<Account>;
 
 export type MissivRegistration = { error?: { message: string; cause?: any } } & (
 	| {
+			// Default State, no Account to fetch registration status for
+			step: 'Idle';
 			domain: string;
-			settled: false;
-			registered: false;
-			registering: false;
-			loading: false;
 	  }
 	| {
+			// Account is Available, Fetching registration status
+			step: 'Fetching';
 			domain: string;
-			settled: false;
-			registered: false;
-			registering: false;
-			loading: true;
 			address: string;
 			signer: Signer;
 	  }
 	| {
+			// Account is Available, but not registered yet
+			step: 'Unregistered';
 			domain: string;
-			settled: true;
-			registered: false;
-			registering: false;
+			registering: boolean; // can be registering
 			address: string;
 			signer: Signer;
 	  }
 	| {
+			// Account is Available and registered
+			step: 'Registered';
 			domain: string;
-			settled: true;
-			registered: false;
-			registering: true;
-			address: string;
-			signer: Signer;
-	  }
-	| {
-			domain: string;
-			settled: true;
-			registered: true;
-			registering: false;
+			editing: boolean; // can be editing
 			address: string;
 			signer: Signer;
 			user: CompleteUser;
-			editing: boolean;
 	  }
 );
 
@@ -62,11 +49,8 @@ export function createMissivRegistration(params: {
 	const api: API = new API(params.endpoint);
 
 	let $missivRegistration: MissivRegistration = {
-		domain: params.domain,
-		settled: false,
-		registered: false,
-		registering: false,
-		loading: false
+		step: 'Idle',
+		domain: params.domain
 	};
 	let _set: (value: MissivRegistration) => void;
 	let _account: Account | undefined;
@@ -79,68 +63,72 @@ export function createMissivRegistration(params: {
 		return completeUser;
 	}
 
+	function fetchAgain(address: string, signer: Signer) {
+		if (address !== _account?.address) {
+			// account change in between, ignore
+			return;
+		}
+		fetch(address, signer);
+	}
+
+	async function fetch(address: string, signer: Signer) {
+		set({
+			step: 'Fetching',
+			domain: params.domain,
+			address,
+			signer
+		});
+
+		let registeredUser: CompleteUser | undefined;
+		try {
+			registeredUser = await getRegisteredUser(address);
+		} catch (err) {
+			set({
+				step: 'Fetching',
+				domain: params.domain,
+				address,
+				signer,
+				error: { message: 'failed to fetch profile', cause: err }
+			});
+
+			// TODO ? or manual
+			// setTimeout(fetchAgain, 1000);
+			return;
+		}
+		if (address !== _account?.address) {
+			// account change in between, ignore
+			return;
+		}
+		if (registeredUser) {
+			set({
+				step: 'Registered',
+				domain: params.domain,
+				address,
+				signer: signer,
+				user: registeredUser,
+				editing: false
+			});
+		} else {
+			set({
+				step: 'Unregistered',
+				domain: params.domain,
+				registering: false,
+				address,
+				signer
+			});
+		}
+	}
+
 	async function onAccountChanged() {
 		const address = _account?.address;
 		const signer = _account?.signer;
 
 		if (address && signer) {
-			set({
-				domain: params.domain,
-				settled: false,
-				loading: true,
-				registered: false,
-				registering: false,
-				address,
-				signer
-			});
-
-			let registeredUser: CompleteUser | undefined;
-			try {
-				registeredUser = await getRegisteredUser(address);
-			} catch (err) {
-				set({
-					domain: params.domain,
-					settled: true,
-					registered: false,
-					registering: false,
-					address,
-					signer,
-					error: { message: 'failed to fetch profile', cause: err }
-				});
-				throw err;
-			}
-			if (address !== _account?.address) {
-				// account change in between, ignore
-				return;
-			}
-			if (registeredUser) {
-				set({
-					domain: params.domain,
-					settled: true,
-					registered: true,
-					registering: false,
-					address,
-					signer: _account.signer,
-					user: registeredUser,
-					editing: false
-				});
-			} else {
-				set({
-					domain: params.domain,
-					settled: true,
-					registered: false,
-					registering: false,
-					address,
-					signer
-				});
-			}
+			await fetch(address, signer);
 		} else {
 			set({
-				domain: params.domain,
-				settled: false,
-				loading: false,
-				registered: false,
-				registering: false
+				step: 'Idle',
+				domain: params.domain
 			});
 		}
 	}
@@ -194,9 +182,8 @@ export function createMissivRegistration(params: {
 		}
 
 		set({
+			step: 'Unregistered',
 			domain: params.domain,
-			settled: true,
-			registered: false,
 			registering: true,
 			address,
 			signer
@@ -220,10 +207,9 @@ export function createMissivRegistration(params: {
 			);
 		} catch (err) {
 			set({
+				step: 'Unregistered',
 				domain: params.domain,
-				settled: true,
 				registering: false,
-				registered: false,
 				address,
 				signer,
 				error: { message: `failed to register user` }
@@ -243,10 +229,8 @@ export function createMissivRegistration(params: {
 
 		if (registeredUser) {
 			set({
+				step: 'Registered',
 				domain: params.domain,
-				settled: true,
-				registering: false,
-				registered: true,
 				address: address,
 				signer: signer,
 				user: registeredUser,
@@ -254,10 +238,9 @@ export function createMissivRegistration(params: {
 			});
 		} else {
 			set({
+				step: 'Unregistered',
 				domain: params.domain,
-				settled: true,
 				registering: false,
-				registered: false,
 				address,
 				signer,
 				error: { message: `failed to get registered user` }
@@ -278,15 +261,13 @@ export function createMissivRegistration(params: {
 			throw new Error(`no account`);
 		}
 
-		if (!$missivRegistration.registered) {
+		if ($missivRegistration.step !== 'Registered') {
 			throw new Error(`not even registered`);
 		}
 
 		set({
+			step: 'Registered',
 			domain: params.domain,
-			settled: true,
-			registered: true,
-			registering: false,
 			address: $missivRegistration.address,
 			signer: $missivRegistration.signer,
 			user: $missivRegistration.user,
@@ -315,10 +296,8 @@ export function createMissivRegistration(params: {
 
 		if (registeredUser) {
 			set({
+				step: 'Registered',
 				domain: params.domain,
-				settled: true,
-				registering: false,
-				registered: true,
 				address: address,
 				signer: signer,
 				user: registeredUser,
@@ -326,10 +305,8 @@ export function createMissivRegistration(params: {
 			});
 		} else {
 			set({
+				step: 'Registered',
 				domain: params.domain,
-				settled: true,
-				registering: false,
-				registered: true,
 				address,
 				signer,
 				editing: false,

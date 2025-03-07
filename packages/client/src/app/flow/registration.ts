@@ -6,10 +6,9 @@ import type {
 } from '$lib/registration/index.js';
 import { fromDomainToOrigin, originPublicKeyPublicationMessage } from 'missiv-common';
 
-export type RegistrationFlow = {
+export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
 	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';
 	address: string;
-	error?: { message: string; cause?: any };
 };
 
 export function createRegistrationFlow(
@@ -17,14 +16,14 @@ export function createRegistrationFlow(
 	params: { requestSignature: (address: string, msg: string) => Promise<string> }
 ) {
 	let $flow: RegistrationFlow | undefined = undefined;
-	let $missivRegistration: MissivRegistration | undefined = undefined;
+	let $missivRegistration: MissivRegistration = get(missivRegistration);
 	const _store = writable<RegistrationFlow | undefined>($flow, () => {
 		const unsubscribeFromAccount = missivRegistration.subscribe(($newMissivRegistration) => {
 			const $oldMissivRegistration = $missivRegistration;
 			$missivRegistration = $newMissivRegistration;
 			if ($flow) {
 				let interuptedByChangeOfAccount = false;
-				if (!$newMissivRegistration.settled && $newMissivRegistration.loading) {
+				if ($newMissivRegistration.step === 'Fetching') {
 					if ($flow?.address && $flow.address != $newMissivRegistration.address) {
 						interuptedByChangeOfAccount = true;
 					}
@@ -63,7 +62,7 @@ export function createRegistrationFlow(
 
 	function resolveFlow() {
 		const missivRegistration = $missivRegistration;
-		if (!missivRegistration?.registered) {
+		if (missivRegistration.step !== 'Registered') {
 			throw new Error(`not registered`);
 		}
 		$flow = undefined;
@@ -98,8 +97,8 @@ export function createRegistrationFlow(
 		// if (!$missivRegistration) {
 		// 	$missivRegistration = get(missivRegistration);
 		// }
-		if (!$missivRegistration?.settled && !$missivRegistration?.loading) {
-			throw new Error(`not settled`);
+		if ($missivRegistration.step === 'Idle') {
+			throw new Error(`registration is idle`);
 		}
 
 		if (_promise) {
@@ -123,8 +122,8 @@ export function createRegistrationFlow(
 		description?: string;
 		closeOnComplete?: boolean;
 	}) {
-		if (!$missivRegistration?.settled && !$missivRegistration?.loading) {
-			throw new Error(`not settled`);
+		if ($missivRegistration.step === 'Idle') {
+			throw new Error(`registration is idle`);
 		}
 
 		if ($flow?.step !== 'NeedInformation') {

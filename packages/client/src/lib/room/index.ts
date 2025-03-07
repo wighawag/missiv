@@ -10,17 +10,34 @@ export type ChatUser = { address: string };
 
 export type Room = { error?: { message: string; cause?: any } } & (
 	| {
-			loading: true;
-			address?: string;
+			step: 'Connecting';
+			address: string | undefined;
 	  }
 	| {
-			loading: false;
+			step: 'Connected';
+			address: undefined;
+			loginStatus: 'NoAccount';
 			messages: ChatMessage[];
-			address?: string;
 			users: ChatUser[];
-			loggedIn: boolean;
+	  }
+	| {
+			step: 'Connected';
+			address: string;
+			loginStatus: 'LoggedOut';
+			messages: ChatMessage[];
+			users: ChatUser[];
+
 			loggingIn: boolean;
-	  } // & ({loggedIn: false} | {loggedInd: true})
+	  }
+	| {
+			step: 'Connected';
+			address: string;
+			loginStatus: 'LoggedIn';
+			messages: ChatMessage[];
+			users: ChatUser[];
+
+			loggingOut: boolean;
+	  }
 );
 
 // auto-login works only if user us registered
@@ -33,11 +50,14 @@ export function openRoom(params: {
 	registration: MissivRegistrationStore;
 	autoLogin?: boolean;
 }) {
-	let $room: Room | undefined = undefined;
-	let _set: (value: Room | undefined) => void;
+	let $room: Room = {
+		step: 'Connecting',
+		address: undefined
+	};
+	let _set: (value: Room) => void;
 	let _registration: MissivRegistration = get(params.registration);
 
-	function set(room: Room | undefined) {
+	function set(room: Room) {
 		$room = room;
 		_set($room);
 		return $room;
@@ -55,22 +75,32 @@ export function openRoom(params: {
 
 	function onWebsocketOpened(event: Event) {
 		websocketEstablished = true;
-		set({
-			...$room,
-			messages: [],
-			users: [],
-			loading: false,
-			loggedIn: false,
-			loggingIn: false
-		});
 
-		if (params.autoLogin && _registration.registered && _registration.signer) {
-			login();
+		if ($room.address) {
+			set({
+				step: 'Connected',
+				loginStatus: 'LoggedOut',
+				address: $room.address,
+				messages: [],
+				users: [],
+				loggingIn: false
+			});
+			if (params.autoLogin) {
+				login();
+			}
+		} else {
+			set({
+				step: 'Connected',
+				loginStatus: 'NoAccount',
+				address: undefined,
+				messages: [],
+				users: []
+			});
 		}
 	}
 	function onWebsocketClosed(event: CloseEvent) {
 		websocketEstablished = false;
-		set(undefined);
+		set({ step: 'Connecting', address: $room.address, error: { message: 'disconnected' } });
 
 		// TODO
 		if (running) {
@@ -80,7 +110,8 @@ export function openRoom(params: {
 	}
 	function onWebsocketMessage(event: MessageEvent) {
 		const msgFromServer: ServerMessageType = JSON.parse(event.data);
-		if ($room && 'messages' in $room) {
+
+		if ($room.step === 'Connected') {
 			if ('message' in msgFromServer) {
 				set({
 					...$room,
@@ -91,23 +122,46 @@ export function openRoom(params: {
 				});
 			} else if ('joined' in msgFromServer) {
 				const justLoggedIn =
-					_registration.registered && msgFromServer.joined === _registration.address;
+					_registration.step === 'Registered' && msgFromServer.joined === _registration.address;
 
-				set({
-					...$room,
-					users: [...$room.users, { address: msgFromServer.joined }],
-					loggingIn: justLoggedIn ? false : $room.loggingIn,
-					loggedIn: justLoggedIn ? true : $room.loggedIn
-				});
+				if (justLoggedIn) {
+					set({
+						step: 'Connected',
+						loginStatus: 'LoggedIn',
+						address: msgFromServer.joined,
+						messages: $room.messages,
+						users: [...$room.users, { address: msgFromServer.joined }],
+						loggingOut: false
+					});
+				} else {
+					set({
+						...$room,
+						users: [...$room.users, { address: msgFromServer.joined }]
+					});
+				}
 			} else if ('quit' in msgFromServer) {
 				const justLoggedOut =
-					_registration.registered && msgFromServer.quit === _registration.address;
-				set({
-					...$room,
-					users: $room.users.filter((v) => v.address != msgFromServer.quit),
-					loggingIn: justLoggedOut ? false : $room.loggingIn,
-					loggedIn: justLoggedOut ? false : $room.loggedIn
-				});
+					_registration.step === 'Registered' && msgFromServer.quit === _registration.address;
+
+				if (justLoggedOut) {
+					if ($room.loginStatus === 'LoggedIn') {
+						set({
+							step: 'Connected',
+							loginStatus: 'LoggedOut',
+							address: $room.address,
+							users: $room.users.filter((v) => v.address != msgFromServer.quit),
+							messages: $room.messages,
+							loggingIn: false
+						});
+					} else {
+						console.error(`quit but not LoggedIn`);
+					}
+				} else {
+					set({
+						...$room,
+						users: $room.users.filter((v) => v.address != msgFromServer.quit)
+					});
+				}
 			} else if ('error' in msgFromServer) {
 				// id for message or message.message + address is the id ?
 				// rate limit erro should then return the message
@@ -126,7 +180,7 @@ export function openRoom(params: {
 				// });
 			}
 		} else {
-			console.error(`no room`);
+			console.error(`not connected`);
 		}
 	}
 
@@ -142,49 +196,36 @@ export function openRoom(params: {
 		websocket.addEventListener('message', onWebsocketMessage);
 	}
 
-	function onRegistrationChanged(
+	async function onRegistrationChanged(
 		oldRegistration: MissivRegistration,
 		newRegistration: MissivRegistration
 	) {
-		const newAddress = newRegistration.registered ? newRegistration.address : undefined;
-		const oldAddress = oldRegistration.registered ? oldRegistration.address : undefined;
+		const newAddress = newRegistration.step === 'Registered' ? newRegistration.address : undefined;
+		const oldAddress = oldRegistration.step === 'Registered' ? oldRegistration.address : undefined;
 
 		const addressChanged =
 			(newAddress && !oldAddress) || (!newAddress && oldAddress) || newAddress !== oldAddress;
 
-		const address = newRegistration.registered ? newRegistration.address : undefined;
 		if (addressChanged) {
-			if (!$room || ('loading' in $room && $room.loading)) {
+			if ($room.step === 'Connecting') {
 				set({
-					address,
-					loading: true
+					step: 'Connecting',
+					address: newAddress
 				});
 			} else {
-				set({
-					...$room,
-					address
-				});
-				if (params.autoLogin && address) {
-					login();
+				if (newAddress) {
+					if (oldAddress) {
+						logout();
+					}
+
+					if (params.autoLogin) {
+						login();
+					}
 				} else {
-					logout();
+					if ($room.loginStatus === 'LoggedIn') {
+						logout();
+					}
 				}
-			}
-		} else if (
-			$room &&
-			(newRegistration.settled !== oldRegistration.settled ||
-				newRegistration.registered != oldRegistration.registered ||
-				newRegistration.registering != oldRegistration.registering)
-		) {
-			if (!$room || ('loading' in $room && $room.loading)) {
-				set({
-					address,
-					loading: true
-				});
-			} else {
-				set({
-					...$room
-				});
 			}
 		}
 	}
@@ -201,7 +242,7 @@ export function openRoom(params: {
 		}
 	}
 
-	const { subscribe } = derivedWithStartStopNotifier<MissivRegistrationStore, Room | undefined>(
+	const { subscribe } = derivedWithStartStopNotifier<MissivRegistrationStore, Room>(
 		params.registration,
 		($registration) => {
 			const oldRegistration = _registration;
@@ -218,15 +259,15 @@ export function openRoom(params: {
 	);
 
 	async function sendMessage(message: string) {
-		if (!$room || $room?.loading) {
-			throw new Error(`not loaded`);
+		if ($room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn') {
+			throw new Error(`not logged in`);
 		}
 
 		if (!websocket) {
 			throw new Error(`no websocket`);
 		}
 
-		const address = _registration.registered && _registration?.address;
+		const address = _registration.step === 'Registered' && _registration?.address;
 		if (!address) {
 			throw new Error(`no account`);
 		}
@@ -242,15 +283,18 @@ export function openRoom(params: {
 	}
 
 	function login() {
-		if (!$room || $room?.loading) {
-			throw new Error(`not loaded`);
+		if (
+			$room.step !== 'Connected' ||
+			($room.loginStatus !== 'LoggedOut' && $room.loginStatus !== 'NoAccount')
+		) {
+			throw new Error(`not Logged Out`);
 		}
 
 		if (!websocket) {
 			throw new Error(`no websocket`);
 		}
 
-		const address = _registration.registered && _registration?.address;
+		const address = _registration.step == 'Registered' && _registration?.address;
 		if (!address) {
 			throw new Error(`no account`);
 		}
@@ -258,16 +302,19 @@ export function openRoom(params: {
 		const msg: ClientMessageType = { address, signature: '0x' };
 
 		set({
-			...$room,
-			loggedIn: false,
+			step: 'Connected',
+			loginStatus: 'LoggedOut',
+			address,
+			messages: $room.messages,
+			users: $room.users,
 			loggingIn: true
 		});
 		websocket.send(JSON.stringify(msg));
 	}
 
 	function logout() {
-		if (!$room || $room?.loading) {
-			throw new Error(`not loaded`);
+		if ($room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn') {
+			throw new Error(`not Logged In`);
 		}
 
 		if (!websocket) {
@@ -277,11 +324,28 @@ export function openRoom(params: {
 		const msg: ClientMessageType = { logout: true };
 
 		set({
-			...$room,
-			loggedIn: false,
-			loggingIn: true
+			step: 'Connected',
+			loginStatus: 'LoggedIn',
+			address: $room.address,
+			messages: $room.messages,
+			users: $room.users,
+			loggingOut: true
 		});
-		websocket.send(JSON.stringify(msg));
+		try {
+			websocket.send(JSON.stringify(msg));
+		} catch (err) {
+			// TODO ?
+			console.error(err);
+		}
+
+		set({
+			step: 'Connected',
+			loginStatus: 'LoggedOut',
+			address: $room.address,
+			messages: $room.messages,
+			users: $room.users,
+			loggingIn: false
+		});
 	}
 
 	function debug_forceClose() {
