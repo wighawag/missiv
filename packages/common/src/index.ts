@@ -17,6 +17,16 @@ type ActionSendMessageBase = {
 	lastMessageReadTimestampMS: number;
 	messages: {to: Address; toPublicKey: PublicKey; content: string; signature: String0x}[];
 };
+// TODO
+// type ActionSendMessageBase = {
+// 	type: 'sendMessage';
+// 	domain: string;
+// 	namespace: string;
+// 	conversationID: string;
+// 	lastMessageReadTimestampMS: number;
+// 	messages: {to: Address; toPublicKey: PublicKey; content: string}[];
+// 	signature: String0x;
+// };
 
 export type ActionSendEncryptedMessage = ActionSendMessageBase & {
 	messageType: 'encrypted';
@@ -100,17 +110,19 @@ export type ResponseRejectConversation = {success: boolean};
 // -----------------------------------------------------------------------------------------------
 
 // sender TEXT NOT NULL, -- sender of the message
-// message TEXT NOT NULL, -- should be encrypted
+// -- TODO : senderPublicKey
+// message TEXT NOT NULL, -- should be encrypted // {}
 // timestamp TIMESTAMP NOT NULL,
 export type ConversationMessage = {
-	id: number;
-	donmain: string;
+	domain: string;
 	namespace: string;
 	conversationID: string;
+	id: number;
+	recipient: Address;
 	sender: Address;
-	// senderPublicKey: PublicKey; // TODO
-	timestamp: number;
+	// senderPublicKey: PublicKey;// TODO
 	message: string;
+	timestamp: number;
 	// type: 'encrypted' | 'clear';
 };
 

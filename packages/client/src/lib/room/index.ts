@@ -49,11 +49,6 @@ export type Room = { error?: { message: string; cause?: any } } & (
 	  }
 );
 
-// auto-login works only if user us registered
-// TODO
-// we need to set a registration store
-// shared between chat and async conversations
-// both should be able to trigger the registration
 export function openRoom(params: {
 	url: string;
 	registration: MissivRegistrationStore;

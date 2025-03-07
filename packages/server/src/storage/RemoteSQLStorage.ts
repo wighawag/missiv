@@ -86,6 +86,14 @@ export type JOIN_ConversationWithParticipantStatus = DB_Conversation & {
 	lastRead: number | null;
 };
 
+export type MessageInDBB = {
+	to: Address;
+	toPublicKey: PublicKey;
+	content: string;
+	senderPublicKey: PublicKey;
+	signature: `0x${string}`;
+};
+
 function formatConversation(v: JOIN_ConversationWithParticipantStatus): Conversation {
 	return {
 		domain: v.domain,
@@ -280,6 +288,13 @@ export class RemoteSQLStorage implements Storage {
 					isMyself ? action.lastMessageReadTimestampMS : 0, // lastRead
 				),
 			);
+
+			//TODO
+			// const messageInDB: MessageInDBB = {
+			// 	...message,
+			// 	signature: action.signature as `0x${string}`,
+			// 	senderPublicKey: publicKey,
+			// }
 
 			batch.push(
 				insertMessage.bind(
