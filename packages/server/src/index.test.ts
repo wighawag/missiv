@@ -97,9 +97,9 @@ test('basic', async () => {
 						to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 						toPublicKey: '0xff', // TODO
 						content: 'hello world',
-						signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
 					},
 				],
+				signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
 			},
 		},
 		{

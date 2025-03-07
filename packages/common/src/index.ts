@@ -15,18 +15,9 @@ type ActionSendMessageBase = {
 	namespace: string;
 	conversationID: string;
 	lastMessageReadTimestampMS: number;
-	messages: {to: Address; toPublicKey: PublicKey; content: string; signature: String0x}[];
+	messages: {to: Address; toPublicKey: PublicKey; content: string}[];
+	signature: String0x;
 };
-// TODO
-// type ActionSendMessageBase = {
-// 	type: 'sendMessage';
-// 	domain: string;
-// 	namespace: string;
-// 	conversationID: string;
-// 	lastMessageReadTimestampMS: number;
-// 	messages: {to: Address; toPublicKey: PublicKey; content: string}[];
-// 	signature: String0x;
-// };
 
 export type ActionSendEncryptedMessage = ActionSendMessageBase & {
 	messageType: 'encrypted';
@@ -120,10 +111,10 @@ export type ConversationMessage = {
 	id: number;
 	recipient: Address;
 	sender: Address;
-	// senderPublicKey: PublicKey;// TODO
-	message: string;
+	senderPublicKey: PublicKey;
+	content: string;
 	timestamp: number;
-	// type: 'encrypted' | 'clear';
+	messageType: 'encrypted' | 'clear';
 };
 
 export type ActionGetMessages = {

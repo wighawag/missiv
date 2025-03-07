@@ -119,7 +119,6 @@ export async function sendMessage({
 	const messages = allRecipients.map((recipient) => ({
 		content,
 		to: recipient.address,
-		signature: FAKE_SIG,
 		toPublicKey: '0xff',
 	}));
 
@@ -132,6 +131,7 @@ export async function sendMessage({
 			messageType,
 			conversationID,
 			lastMessageReadTimestampMS: timestamp,
+			signature: FAKE_SIG,
 		},
 		{publicKey: from.delegatePublicKey}
 	);
@@ -253,7 +253,8 @@ export async function getMessages(user: TestUser, conversationID: string) {
  */
 export async function getMessageContents(user: TestUser, conversationID: string) {
 	const messages = await getMessages(user, conversationID);
-	return messages.map((m) => JSON.parse(m.message).content);
+	console.log({messages});
+	return messages.map((m) => m.content);
 }
 
 /**

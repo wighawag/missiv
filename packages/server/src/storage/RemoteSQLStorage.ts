@@ -44,7 +44,7 @@ export interface DB_Message {
 	// Other fields
 	sender: string;
 	message: string;
-	timestamp: Date;
+	timestamp: number;
 }
 
 export interface DB_Conversation {
@@ -54,7 +54,7 @@ export interface DB_Conversation {
 	conversationID: string;
 
 	// Other fields
-	creationDate: Date;
+	creationDate: number;
 	members: string; // Typically this would be parsed JSON
 	name: string | null;
 	lastMessage: number;
@@ -69,7 +69,7 @@ export interface DB_ConversationParticipant {
 
 	// Other fields
 	status: DB_ConversationParticipantStatus;
-	lastRead: Date | null;
+	lastRead: number | null;
 }
 
 // Enum for conversation status
@@ -86,12 +86,12 @@ export type JOIN_ConversationWithParticipantStatus = DB_Conversation & {
 	lastRead: number | null;
 };
 
-export type MessageInDBB = {
-	to: Address;
+export type MessageFieldInDBB = {
 	toPublicKey: PublicKey;
 	content: string;
 	senderPublicKey: PublicKey;
 	signature: `0x${string}`;
+	messageType: 'clear' | 'encrypted';
 };
 
 function formatConversation(v: JOIN_ConversationWithParticipantStatus): Conversation {
@@ -208,8 +208,27 @@ export class RemoteSQLStorage implements Storage {
 		const statement = this.db.prepare(
 			`SELECT * from Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND recipient = ?4 ORDER BY timestamp DESC`,
 		);
-		const {results} = await statement.bind(action.domain, action.namespace, action.conversationID, address).all();
-		return {messages: results} as ResponseGetMessages;
+		const {results} = await statement
+			.bind(action.domain, action.namespace, action.conversationID, address)
+			.all<DB_Message>();
+		const messages = results.map((message) => {
+			const messageObject = JSON.parse(message.message) as MessageFieldInDBB;
+			return {
+				domain: message.domain,
+				namespace: message.namespace,
+				conversationID: message.conversationID,
+				id: message.messageID,
+				recipient: message.recipient,
+				sender: message.sender,
+				senderPublicKey: messageObject.senderPublicKey,
+				content: messageObject.content,
+				timestamp: message.timestamp,
+				messageType: messageObject.messageType,
+				signature: messageObject.signature,
+				recipientPublicKey: messageObject.toPublicKey,
+			};
+		});
+		return {messages};
 	}
 
 	async markAsRead(address: Address, action: ActionMarkAsRead) {
@@ -259,7 +278,7 @@ export class RemoteSQLStorage implements Storage {
 		const batch: SQLPreparedStatement[] = [];
 
 		// TODO this is not full proof
-		const messageID = Date.now();
+		const messageID = Date.now() * 1000 + Math.floor(Math.random() * 1000);
 
 		const members = action.messages.map((v) => v.to);
 
@@ -289,12 +308,13 @@ export class RemoteSQLStorage implements Storage {
 				),
 			);
 
-			//TODO
-			// const messageInDB: MessageInDBB = {
-			// 	...message,
-			// 	signature: action.signature as `0x${string}`,
-			// 	senderPublicKey: publicKey,
-			// }
+			const messageInDB: MessageFieldInDBB = {
+				content: message.content,
+				messageType: action.messageType,
+				toPublicKey: message.toPublicKey,
+				signature: action.signature as `0x${string}`,
+				senderPublicKey: publicKey,
+			};
 
 			batch.push(
 				insertMessage.bind(
@@ -304,7 +324,7 @@ export class RemoteSQLStorage implements Storage {
 					messageID,
 					message.to,
 					account,
-					JSON.stringify(message),
+					JSON.stringify(messageInDB),
 					timestampMS,
 				),
 			);

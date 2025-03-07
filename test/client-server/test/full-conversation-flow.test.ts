@@ -56,7 +56,7 @@ describe('full conversation flow', () => {
 				conversationID,
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_A.delegatePublicKey},
+			{publicKey: USER_A.delegatePublicKey}
 		);
 
 		const unacceptedAfter = await getUnacceptedConversations(USER_A);
@@ -115,7 +115,7 @@ describe('full conversation flow', () => {
 				conversationID: unacceptedConversations[0].conversationID,
 				lastMessageReadTimestampMS: acceptingTimeA,
 			},
-			{publicKey: USER_A.delegatePublicKey},
+			{publicKey: USER_A.delegatePublicKey}
 		);
 
 		const readingTimeB = Date.now();
@@ -139,7 +139,9 @@ describe('full conversation flow', () => {
 		const conversationsB = await getAcceptedConversations(USER_B);
 		expect(conversationsB.length).toBe(1);
 		expect(conversationsB[0].accepted).toBeTruthy();
-		expect(conversationsB[0].lastRead).toBeLessThan(readingTimeA);
+		expect(conversationsB[0].lastRead).toBe(readingTimeB);
+		// TODO add some delay above (before USER_A sendMessage) to be able to use `toBeLessThan`
+		expect(conversationsB[0].lastRead).toBeLessThanOrEqual(readingTimeA);
 
 		const conversationsA = await getAcceptedConversations(USER_A);
 		expect(conversationsA.length).toBe(1);
@@ -174,7 +176,7 @@ describe('full conversation flow', () => {
 				conversationID: 'group1',
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_B.delegatePublicKey},
+			{publicKey: USER_B.delegatePublicKey}
 		);
 
 		// B should now have the conversation in accepted
@@ -221,7 +223,7 @@ describe('full conversation flow', () => {
 				conversationID,
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_B.delegatePublicKey},
+			{publicKey: USER_B.delegatePublicKey}
 		);
 
 		// Send an "encrypted" message (just simulated with different message type)
@@ -237,7 +239,7 @@ describe('full conversation flow', () => {
 		const messages = await getMessages(USER_B, conversationID);
 		expect(messages.length).toBe(2);
 
-		expect(messages[0].message).toMatch(/.*encrypted.*/);
+		expect(messages[0].messageType).toBe('encrypted');
 	});
 
 	it('rejecting conversation requests', async () => {
