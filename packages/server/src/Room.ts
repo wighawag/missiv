@@ -15,7 +15,7 @@ export type Session = {
 	domain: string;
 };
 
-type HybernatedData = Record<string, unknown> & {domain: string; challenge: string; id: string};
+type HybernatedData = Record<string, unknown> & {address?: string; domain: string; challenge: string; id: string};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
@@ -214,8 +214,10 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			if ('logout' in data) {
 				if (session.address) {
 					this.broadcast({quit: session.address, id: session.id});
+					this.saveSocketData(ws, {address: undefined});
 					delete session.address;
 				} else {
+					console.warn(`no address while logging out`);
 					// ignore
 					return;
 				}

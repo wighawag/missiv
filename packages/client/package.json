@@ -33,7 +33,7 @@
 		"svelte": "^5.0.0"
 	},
 	"devDependencies": {
-		"@etherplay/connect": "^0.0.7",
+		"@etherplay/connect": "^0.0.8",
 		"@sveltejs/adapter-auto": "^4.0.0",
 		"@sveltejs/kit": "^2.18.0",
 		"@sveltejs/package": "^2.3.10",

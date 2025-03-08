@@ -150,12 +150,16 @@ export function openRoom(params: {
 					]
 				});
 			} else if ('joined' in msgFromServer) {
+				if (_registration.step === 'Registered' && msgFromServer.joined === _registration.address) {
+					console.log(`self join`, msgFromServer);
+				}
 				if (
 					'session' in $room &&
 					_registration.step === 'Registered' &&
 					msgFromServer.joined === _registration.address &&
 					msgFromServer.id === $room.session.id
 				) {
+					console.log(`logged in!`);
 					// logged in
 					set({
 						step: 'Connected',
@@ -167,6 +171,7 @@ export function openRoom(params: {
 						loggingOut: false
 					});
 				} else {
+					console.log(`someone else joined`, msgFromServer, 'session' in $room && $room.session);
 					set({
 						...$room,
 						users: [...$room.users, { address: msgFromServer.joined }]
@@ -392,6 +397,7 @@ export function openRoom(params: {
 				? signer.privateKey.slice(2)
 				: signer.privateKey;
 
+		console.log(`logging in....`);
 		set({
 			step: 'Connected',
 			loginStatus: 'LoggedOut',

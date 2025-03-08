@@ -44,7 +44,7 @@
 
 	onMount(() => {
 		const unsubscribeFromConnection = registration.subscribe((currentRegistration) => {
-			if (currentRegistration.step === 'Unregistered') {
+			if (currentRegistration.step === 'Unregistered' && !currentRegistration.registering) {
 				const currentConnection = get(connection);
 				if (currentConnection.step === 'SignedIn' && !currentRegistration.error) {
 					if (currentConnection.account.savedPublicKeyPublicationSignature) {
@@ -64,10 +64,10 @@
 		};
 	});
 
-	// $inspect($registrationFlow);
-	// $inspect($registration);
-	// $inspect($account);
-	// $inspect($room);
+	$inspect($registrationFlow);
+	$inspect($registration);
+	$inspect($account);
+	$inspect($room);
 </script>
 
 <main>
@@ -81,6 +81,7 @@
 			>
 		{:else if $connection.step === 'NeedWalletSignature'}
 			<button onclick={() => connection.requestSignature()}>sign-in</button>
+			<button onclick={() => connection.cancel()}>cancel</button>
 		{:else if $connection.step === 'WaitingForSignature'}
 			<p>sign...</p>
 		{:else if $connection.step === 'WaitingForWalletConnection'}
