@@ -7,6 +7,7 @@ import {recoverPublicKey} from './utils/signature.js';
 
 export type Session = {
 	address?: string;
+	id: string;
 	challenge: string;
 	quit?: boolean;
 	blockedMessages?: string[];
@@ -14,7 +15,7 @@ export type Session = {
 	domain: string;
 };
 
-type HybernatedData = Record<string, unknown> & {domain: string; challenge: string};
+type HybernatedData = Record<string, unknown> & {domain: string; challenge: string; id: string};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
@@ -123,6 +124,9 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		const challenge: string = Array.from(crypto.getRandomValues(new Uint8Array(32)))
 			.map((b) => b.toString(16).padStart(2, '0'))
 			.join('');
+		const id: string = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+			.map((b) => b.toString(16).padStart(2, '0'))
+			.join('');
 
 		// Set up our rate limiter client.
 		const limiterId = metadata.ip || 'no-ip';
@@ -143,19 +147,20 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			blockedMessages: [],
 			limiter,
 			challenge,
+			id,
 			domain: this.identifier.domain,
 		};
 		if (limiterId) {
-			this.saveSocketData(ws, {limiterId, domain: session.domain, challenge: session.challenge});
+			this.saveSocketData(ws, {limiterId, domain: session.domain, challenge: session.challenge, id: session.id});
 		} else {
-			this.saveSocketData(ws, {domain: session.domain, challenge: session.challenge});
+			this.saveSocketData(ws, {domain: session.domain, challenge: session.challenge, id: session.id});
 		}
 		this.sessions.set(ws, session);
 
 		// Queue "join" messages for all online users, to populate the client's roster.
 		for (let otherSession of this.sessions.values()) {
 			if (otherSession.address) {
-				this.pendingSessionSend(session, ws, {joined: otherSession.address});
+				this.pendingSessionSend(session, ws, {joined: otherSession.address, id: otherSession.id});
 			}
 		}
 
@@ -169,7 +174,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		});
 
 		// TODO use this message as replay protection to require signing
-		this.send(ws, {challenge});
+		this.send(ws, {challenge, id});
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
@@ -208,7 +213,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 			if ('logout' in data) {
 				if (session.address) {
-					this.broadcast({quit: session.address});
+					this.broadcast({quit: session.address, id: session.id});
 					delete session.address;
 				} else {
 					// ignore
@@ -248,7 +253,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 					// we ignore this request
 					return;
 				} else {
-					this.broadcast({quit: session.address});
+					this.broadcast({quit: session.address, id: session.id});
 					session.address = newAddress;
 				}
 
@@ -269,9 +274,8 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				}
 
 				// Broadcast to all other connections that this user has joined.
-				this.broadcast({joined: session.address});
+				this.broadcast({joined: session.address, id: session.id});
 
-				this.send(ws, {ready: true});
 				return;
 			}
 
@@ -327,7 +331,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			session.quit = true;
 			this.sessions.delete(ws);
 			if (session.address) {
-				this.broadcast({quit: session.address});
+				this.broadcast({quit: session.address, id: session.id});
 			}
 		}
 	}
@@ -369,7 +373,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 		quitters.forEach((quitter) => {
 			if (quitter.address) {
-				this.broadcast({quit: quitter.address});
+				this.broadcast({quit: quitter.address, id: quitter.id});
 			}
 		});
 	}

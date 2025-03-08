@@ -28,7 +28,7 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loginStatus: 'LoggedOut';
 			messages: ChatMessage[];
 			users: ChatUser[];
-			challenge: string;
+			session: { id: string; challenge: string };
 			loggingIn: boolean;
 	  }
 	| {
@@ -45,6 +45,7 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			loginStatus: 'LoggedIn';
 			messages: ChatMessage[];
 			users: ChatUser[];
+			session: { id: string; challenge: string };
 			loggingOut: boolean;
 	  }
 );
@@ -55,7 +56,7 @@ export function openRoom(params: {
 	autoLogin?: boolean;
 }) {
 	// we reuse the same challenge
-	let savedChallenge: string | undefined;
+	let savedSession: { challenge: string; id: string } | undefined;
 	let loginOnChallengeReceived: boolean = false;
 
 	let _set: (value: Room) => void;
@@ -87,7 +88,6 @@ export function openRoom(params: {
 	function onWebsocketOpened(event: Event) {
 		websocketEstablished = true;
 
-		console.log({ $room });
 		if ($room.address) {
 			set({
 				step: 'Connected',
@@ -125,7 +125,7 @@ export function openRoom(params: {
 
 		if ($room.step === 'Connected') {
 			if ('challenge' in msgFromServer) {
-				savedChallenge = msgFromServer.challenge;
+				savedSession = { challenge: msgFromServer.challenge, id: msgFromServer.id };
 				if ($room.loginStatus === 'LoggedOut') {
 					set({
 						step: 'Connected',
@@ -133,7 +133,7 @@ export function openRoom(params: {
 						address: $room.address,
 						messages: $room.messages,
 						users: $room.users,
-						challenge: msgFromServer.challenge,
+						session: savedSession,
 						loggingIn: false
 					});
 					if (loginOnChallengeReceived) {
@@ -150,16 +150,20 @@ export function openRoom(params: {
 					]
 				});
 			} else if ('joined' in msgFromServer) {
-				const justLoggedIn =
-					_registration.step === 'Registered' && msgFromServer.joined === _registration.address;
-
-				if (justLoggedIn) {
+				if (
+					'session' in $room &&
+					_registration.step === 'Registered' &&
+					msgFromServer.joined === _registration.address &&
+					msgFromServer.id === $room.session.id
+				) {
+					// logged in
 					set({
 						step: 'Connected',
 						loginStatus: 'LoggedIn',
 						address: msgFromServer.joined,
 						messages: $room.messages,
 						users: [...$room.users, { address: msgFromServer.joined }],
+						session: $room.session,
 						loggingOut: false
 					});
 				} else {
@@ -169,12 +173,20 @@ export function openRoom(params: {
 					});
 				}
 			} else if ('quit' in msgFromServer) {
-				const justLoggedOut =
-					_registration.step === 'Registered' && msgFromServer.quit === _registration.address;
+				// TODO use a websocket identifier so multiple same address can be logged in
+				// this can also be used for messageing pending....
+				// TODO actually, we should prevent this from being possible ?
+				// Or at least the UI should not duplicate them but let them send message
 
-				if (justLoggedOut) {
+				if (
+					'session' in $room &&
+					_registration.step === 'Registered' &&
+					msgFromServer.quit === _registration.address &&
+					msgFromServer.id === $room.session.id
+				) {
+					// just logged out
 					if ($room.loginStatus === 'LoggedIn') {
-						if (!savedChallenge) {
+						if (!savedSession) {
 							set({
 								step: 'Connected',
 								loginStatus: 'LoggedOut',
@@ -203,7 +215,7 @@ export function openRoom(params: {
 									return $room.users.filter((_, i) => i !== firstMatchIndex);
 								})(),
 								messages: $room.messages,
-								challenge: savedChallenge,
+								session: savedSession,
 								loggingIn: false
 							});
 						}
@@ -283,7 +295,7 @@ export function openRoom(params: {
 					}
 
 					if (params.autoLogin) {
-						if (!savedChallenge) {
+						if (!savedSession) {
 							loginOnChallengeReceived = true;
 						} else {
 							login();
@@ -351,7 +363,7 @@ export function openRoom(params: {
 	}
 
 	async function login() {
-		if (!savedChallenge) {
+		if (!savedSession) {
 			throw new Error(`no challenge to sign`);
 		}
 		if (
@@ -387,9 +399,9 @@ export function openRoom(params: {
 			messages: $room.messages,
 			users: $room.users,
 			loggingIn: true,
-			challenge: savedChallenge
+			session: savedSession
 		});
-		const signatureObject = await signAsync(keccak_256(savedChallenge), privateKey); // Sync methods below
+		const signatureObject = await signAsync(keccak_256(savedSession.challenge), privateKey); // Sync methods below
 		const signature = `${signatureObject.toCompactHex()}:${signatureObject.recovery}`;
 		const msg: ClientMessageType = { address, signature };
 
@@ -412,6 +424,7 @@ export function openRoom(params: {
 			address: $room.address,
 			messages: $room.messages,
 			users: $room.users,
+			session: $room.session,
 			loggingOut: true
 		});
 
@@ -430,7 +443,7 @@ export function openRoom(params: {
 			messages: $room.messages,
 			users: $room.users,
 			loggingIn: false,
-			challenge: savedChallenge
+			session: $room.session
 		});
 	}
 

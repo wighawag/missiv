@@ -223,11 +223,10 @@ export type ClientMessageType =
 	| {logout: true};
 
 export type ServerMessageType =
-	| {challenge: string}
-	| {ready: true}
-	| {joined: string}
-	| {timestamp: number; message: string; from: string; signature: string}
-	| {quit: string}
+	| {challenge: string; id: string}
+	| {joined: string; id: string}
+	| {message: string; from: string; timestamp: number; signature: string}
+	| {quit: string; id: string}
 	| {error: string; cause?: any; stack?: string};
 
 export function fromDomainToOrigin(domain: string) {
