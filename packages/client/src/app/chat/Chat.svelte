@@ -9,9 +9,10 @@
 		registration: MissivRegistrationStore;
 		register?: () => Promise<unknown> | unknown;
 		connect?: () => Promise<unknown> | unknown;
+		showProfile?: (otherUser: { address: string }) => void;
 	};
 
-	let { room, registration, register, connect }: ChatProps = $props();
+	let { room, registration, register, connect, showProfile }: ChatProps = $props();
 
 	let messagesContainer: HTMLDivElement;
 	let messageInput: HTMLInputElement;
@@ -50,7 +51,7 @@
 			{:else}
 				{#each $room.messages as message}
 					<p class="message">
-						<button class="btn-blockie" onclick={() => console.log(message.from)}
+						<button class="btn-blockie" onclick={() => showProfile?.({ address: message.from })}
 							><ImgBlockie address={message.from} style="width: 24px; height: 24px;" /></button
 						>
 						{message.message}
@@ -71,7 +72,9 @@
 					{#each $room.users as user}
 						<li class="user-item">
 							<span class="user-address"
-								><button class="btn-blockie" onclick={() => console.log(user.address)}
+								><button
+									class="btn-blockie"
+									onclick={() => showProfile?.({ address: user.address })}
 									><ImgBlockie address={user.address} style="width: 24px; height: 24px;" /></button
 								></span
 							>
