@@ -16,7 +16,7 @@
 	const conversation = openOneConversation({
 		registration: registration,
 		account,
-		domain: 'http://localhost:5173',
+		domain: 'localhost:5173',
 		otherUser,
 		endpoint: 'http://localhost:8787',
 		namespace: 'default', // TODO remove

@@ -9,6 +9,7 @@ import { base64 } from '@scure/base';
 import {
 	getConversationID,
 	type ActionSendEncryptedMessage,
+	type ActionSendMessage,
 	type Address,
 	type ConversationMessage,
 	type PublicKey
@@ -289,40 +290,39 @@ export function openOneConversation(params: {
 		}
 
 		// TODO = signMessage(text);
-		const signature = '0x';
+		const signature = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
 		// TODO
 		const lastMessageReadTimestampMS = Date.now();
 
 		if (!$conversation.otherUser.publicKey) {
-			await api.sendMessage(
-				{
-					type: 'sendMessage',
-					messages: [
-						// TODO server optimization: unencrypted: only need one message and a list of recipients
-						{
-							content: text,
+			const action: ActionSendMessage = {
+				type: 'sendMessage',
+				messages: [
+					// TODO server optimization: unencrypted: only need one message and a list of recipients
+					{
+						content: text,
 
-							to: $conversation.otherUser.address,
-							toPublicKey: ''
-						},
-						{
-							content: text,
-							to: $conversation.account.address,
-							toPublicKey: ''
-						}
-					],
-					conversationID: $conversation.conversationID,
-					messageType: 'clear',
-					domain: params.domain,
-					namespace: params.namespace,
-					signature,
-					lastMessageReadTimestampMS
-				},
-				{
-					privateKey: $conversation.account.signer.privateKey
-				}
-			);
+						to: $conversation.otherUser.address,
+						toPublicKey: '0xff' // TODO
+					},
+					{
+						content: text,
+						to: $conversation.account.address,
+						toPublicKey: '0xff' // TODO
+					}
+				],
+				conversationID: $conversation.conversationID,
+				messageType: 'clear',
+				domain: params.domain,
+				namespace: params.namespace,
+				signature,
+				lastMessageReadTimestampMS
+			};
+			console.log(action);
+			await api.sendMessage(action, {
+				privateKey: $conversation.account.signer.privateKey
+			});
 		} else {
 			const sharedKey = getSharedKey($conversation.account, $conversation.otherUser.publicKey);
 
