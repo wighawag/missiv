@@ -57,6 +57,7 @@
 			(window as any).room = room;
 			(window as any).registration = registration;
 			(window as any).account = account;
+			(window as any).connection = connection;
 		}
 
 		return () => {
@@ -84,6 +85,7 @@
 			<button onclick={() => connection.cancel()}>cancel</button>
 		{:else if $connection.step === 'WaitingForSignature'}
 			<p>sign...</p>
+			<button onclick={() => connection.cancel()}>cancel</button>
 		{:else if $connection.step === 'WaitingForWalletConnection'}
 			<p>connecting...</p>
 			<!-- {:else if $connection.step === 'MechanismToChoose'}
