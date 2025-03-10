@@ -8,7 +8,7 @@
 			address: string;
 			signer: { address: string; privateKey: string; publicKey: string };
 		};
-		otherUser: { address: string };
+		otherUser: { address: string }; // TODO publicKey
 	};
 
 	let { account, otherUser }: ChatProps = $props();
@@ -21,13 +21,23 @@
 		endpoint: 'http://localhost:8787',
 		namespace: 'default', // TODO remove
 		markAsAcceptedAndRead: false,
-		pollingInterval: 2000
+		pollingInterval: 2
 	});
 
 	let message = $state('');
+
+	$inspect(conversation);
 </script>
 
 <ImgBlockie address={otherUser.address} style="width: 24px; height: 24px;" />
+
+{#if $conversation.step === 'Fetched'}
+	{#each $conversation.messages as message}
+		<p>{message.content}</p>
+	{/each}
+{:else}
+	<p>{$conversation.step}</p>
+{/if}
 
 <input type="text" bind:value={message} />
 <button onclick={() => conversation.sendMessage(message)}>send</button>

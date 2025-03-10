@@ -113,7 +113,7 @@ export function openOneConversation(params: {
 	function onStart() {
 		running = true;
 		// TODO mixing registration and conversaiton steps
-		if (fetching && $conversation.step === 'Fetched') {
+		if (fetching || $conversation.step === 'Fetched') {
 			if (_registration.step !== 'Registered') {
 				return;
 			}
@@ -128,9 +128,7 @@ export function openOneConversation(params: {
 	let timeout: NodeJS.Timeout | undefined;
 	async function fetchMessagesgainAndAgain(address: string) {
 		await fetchMessages(address);
-		if (timeout) {
-			timeout = setTimeout(fetchMessagesgainAndAgain, pollingInterval * 1000, address);
-		} // else we stop as we cleared the timeout
+		timeout = setTimeout(fetchMessagesgainAndAgain, pollingInterval * 1000, address);
 	}
 
 	async function fetchMessages(address: string) {
@@ -201,17 +199,19 @@ export function openOneConversation(params: {
 			);
 		}
 
+		const messageList = messages.reverse();
+
 		if (_registration.address === address) {
 			if ($conversation.step === 'Fetching') {
 				set({
 					...$conversation,
 					step: 'Fetched',
-					messages
+					messages: messageList
 				});
 			} else if ($conversation.step === 'Fetched') {
 				set({
 					...$conversation,
-					messages
+					messages: messageList
 				});
 			} else {
 				// we ignore
