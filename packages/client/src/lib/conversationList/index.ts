@@ -5,13 +5,17 @@ import type { Conversation } from 'missiv-common';
 import { get } from 'svelte/store';
 
 export type ConversationList = { error?: { message: string; cause?: any } } & (
-	| {
+	| // start in Idle
+	{
 			step: 'Idle';
 	  }
+
+	// will then be "Fetching" to fetch the conversations
 	| {
 			step: 'Fetching';
 			address: string;
 	  }
+	// finally it is in "Fetched" step but will still be fetching new conversations in the background
 	| {
 			step: 'Fetched';
 			address: string;

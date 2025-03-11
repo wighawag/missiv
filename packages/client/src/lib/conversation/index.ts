@@ -23,14 +23,17 @@ export type ConversationState = { error?: { message: string; cause?: any } } & {
 	otherUser: OtherUser;
 	account: LoadedAccount;
 } & (
-		| {
+		| // start in Idle
+		{
 				step: 'Idle';
 				invalidAccount: boolean;
 		  }
+		// will then be "Fetching" to fetch the messages
 		| {
 				step: 'Fetching';
 				conversationID: string;
 		  }
+		// finally it is in "Fetched" step but will still be fetching new messages in the background
 		| {
 				step: 'Fetched';
 				conversationID: string;

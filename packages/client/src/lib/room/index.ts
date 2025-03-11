@@ -10,11 +10,21 @@ import { get } from 'svelte/store';
 export type ChatMessage = { from: string; message: string; pending?: boolean; signature: string };
 export type ChatUser = { address: string };
 
-export type Room = { error?: { message: string; cause?: any } } & (
-	| {
+export type Room = {
+	// The room can have an error in every state.
+	// a banner or other mechanism to show error should be used.
+	// error should be dismissable
+	error?: { message: string; cause?: any };
+} & (
+	| // The room once open starts in "Connecting" step
+	// this will establish the connection and fetch the existing message
+	// address can be undefined or already set here
+	{
 			step: 'Connecting';
 			address: string | undefined;
 	  }
+	// once connected, it can be in several login status
+	// it can be in "NoAccount" in which case the user is connected yet, but they can still read the messages and other users
 	| {
 			step: 'Connected';
 			address: undefined;
@@ -22,6 +32,10 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			messages: ChatMessage[];
 			users: ChatUser[];
 	  }
+	// or it can be "LoggedOut" with a session associated with it
+	// in which case the user wallet is connected but it is not logged in.
+	// maybe it is not even registered (see registration)
+	// and loggingIn can be true if it is in the process of loginnging
 	| {
 			step: 'Connected';
 			address: string;
@@ -31,14 +45,18 @@ export type Room = { error?: { message: string; cause?: any } } & (
 			session: { id: string; challenge: string };
 			loggingIn: boolean;
 	  }
+	// or it can be "LoggedOut" with no session
+	// wallet is connected but no session has been given yet
+	// should arrive shortly
 	| {
 			step: 'Connected';
 			address: string;
 			loginStatus: 'LoggedOut';
 			messages: ChatMessage[];
 			users: ChatUser[];
-			challenge: undefined;
 	  }
+	// or it can finally be "LoggedIn"
+	// loggingOut can be true if the user is in the process of logging out
 	| {
 			step: 'Connected';
 			address: string;
@@ -94,8 +112,7 @@ export function openRoom(params: {
 				loginStatus: 'LoggedOut',
 				address: $room.address,
 				messages: [],
-				users: [],
-				challenge: undefined
+				users: []
 			});
 			if (params.autoLogin) {
 				login();
@@ -204,7 +221,6 @@ export function openRoom(params: {
 									return $room.users.filter((_, i) => i !== firstMatchIndex);
 								})(),
 								messages: $room.messages,
-								challenge: undefined,
 								error: { message: 'no challenge save' }
 							});
 						} else {
