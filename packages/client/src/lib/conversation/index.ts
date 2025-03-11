@@ -71,7 +71,7 @@ function getSharedKey(
 	const cacheID = user.address.toLowerCase() + ':' + otherpublicKey;
 	let sharedKey = sharedKeyCache[cacheID];
 	if (!sharedKey) {
-		const sharedSecret = getSharedSecret(user.signer.privateKey, otherpublicKey.slice(2));
+		const sharedSecret = getSharedSecret(user.signer.privateKey.slice(2), otherpublicKey.slice(2));
 		sharedKey = keccak_256(sharedSecret);
 		sharedKeyCache[cacheID] = sharedKey;
 	}
@@ -147,8 +147,14 @@ export function openOneConversation(params: {
 				domain: params.domain
 			});
 			if (completeUser?.publicKey) {
-				// $conversation.otherUser.publicKey = completeUser.publicKey;
-				// $conversation.otherUser.name = completeUser.domainUsername || completeUser.name;
+				set({
+					...$conversation,
+					otherUser: {
+						...$conversation.otherUser,
+						publicKey: completeUser.publicKey,
+						name: completeUser.name
+					}
+				});
 			}
 		}
 		const { messages } = await api.getMessages(
@@ -169,10 +175,7 @@ export function openOneConversation(params: {
 				const cacheID = message.id + ':' + message.timestamp;
 				let content = messageCache[cacheID];
 				if (!content) {
-					const sharedKey =
-						message.recipient.toLowerCase() == $conversation.account.address.toLowerCase()
-							? getSharedKey($conversation.account, message.senderPublicKey)
-							: getSharedKey($conversation.account, message.recipientPublicKey);
+					const sharedKey = getSharedKey($conversation.account, message.recipientPublicKey);
 
 					const [nonceb64, ciphertextb64] = message.content.split(/:(.*)/s);
 					const nonce = base64.decode(nonceb64);
