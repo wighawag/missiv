@@ -7,6 +7,7 @@ import {recoverPublicKey} from './utils/signature.js';
 
 export type Session = {
 	address?: string;
+	publicKey?: string;
 	id: string;
 	challenge: string;
 	quit?: boolean;
@@ -15,7 +16,13 @@ export type Session = {
 	domain: string;
 };
 
-type HybernatedData = Record<string, unknown> & {address?: string; domain: string; challenge: string; id: string};
+type HybernatedData = Record<string, unknown> & {
+	address?: string;
+	publicKey?: string;
+	domain: string;
+	challenge: string;
+	id: string;
+};
 
 export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
 	lastTimestamp: number = 0;
@@ -159,8 +166,12 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 
 		// Queue "join" messages for all online users, to populate the client's roster.
 		for (let otherSession of this.sessions.values()) {
-			if (otherSession.address) {
-				this.pendingSessionSend(session, ws, {joined: otherSession.address, id: otherSession.id});
+			if (otherSession.address && otherSession.publicKey) {
+				this.pendingSessionSend(session, ws, {
+					joined: otherSession.address,
+					publicKey: otherSession.publicKey,
+					id: otherSession.id,
+				});
 			}
 		}
 
@@ -214,8 +225,9 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			if ('logout' in data) {
 				if (session.address) {
 					this.broadcast({quit: session.address, id: session.id});
-					this.saveSocketData(ws, {address: undefined});
+					this.saveSocketData(ws, {address: undefined, publicKey: undefined});
 					delete session.address;
+					delete session.publicKey;
 				} else {
 					console.warn(`no address while logging out`);
 					// ignore
@@ -227,11 +239,14 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 					return;
 				}
 
-				let newAddress: string;
+				let newUser: {
+					address: string;
+					publicKey: string;
+				};
 				// TODO remove
 				const DEBUG = false;
 				if (DEBUG && data.signature === '0x') {
-					newAddress = data.address;
+					newUser = {address: data.address, publicKey: '0xff'};
 				} else {
 					const user = await this.dbStorage.getCompleteUser(session.domain, data.address);
 					if (!user || !user.completeUser) {
@@ -246,17 +261,19 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 						return;
 					}
 
-					newAddress = user.completeUser.address;
+					newUser = {address: user.completeUser.address, publicKey: user.completeUser.publicKey};
 				}
 
 				if (!session.address) {
-					session.address = newAddress;
-				} else if (session.address === newAddress) {
+					session.address = newUser.address;
+					session.publicKey = newUser.publicKey;
+				} else if (session.address === newUser.address) {
 					// we ignore this request
 					return;
 				} else {
 					this.broadcast({quit: session.address, id: session.id});
-					session.address = newAddress;
+					session.address = newUser.address;
+					session.publicKey = newUser.publicKey;
 				}
 
 				// TODO use signature prevent replay ?
@@ -265,7 +282,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				// into their session object.
 
 				// attach name to the webSocket so it survives hibernation
-				this.saveSocketData(ws, {address: session.address});
+				this.saveSocketData(ws, {address: session.address, publicKey: session.publicKey});
 
 				// Deliver all the messages we queued up since the user connected.
 				if (session.blockedMessages) {
@@ -276,7 +293,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				}
 
 				// Broadcast to all other connections that this user has joined.
-				this.broadcast({joined: session.address, id: session.id});
+				this.broadcast({joined: session.address, id: session.id, publicKey: newUser.publicKey});
 
 				return;
 			}

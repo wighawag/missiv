@@ -224,7 +224,7 @@ export type ClientMessageType =
 
 export type ServerMessageType =
 	| {challenge: string; id: string}
-	| {joined: string; id: string}
+	| {joined: string; id: string; publicKey: string}
 	| {message: string; from: string; timestamp: number; signature: string}
 	| {quit: string; id: string}
 	| {error: string; cause?: any; stack?: string};
