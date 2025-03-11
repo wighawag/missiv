@@ -89,5 +89,7 @@ if (typeof window !== 'undefined') {
 	w.registration = registration;
 	w.account = account;
 	w.connection = connection;
+	w.profileShown = profileShown;
+	w.listShown = listShown;
 	w.get = get;
 }

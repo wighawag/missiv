@@ -98,7 +98,17 @@
 	<Modal oncancel={() => listShown.hide()} title="Conversations" description="">
 		<div class="modal-content">
 			{#each $conversationList.conversations as conversation}
-				<p>{conversation.conversationID}</p>
+				{#if conversation.members.length === 2}
+					{#each conversation.members.filter((m) => m != $account?.address) as member}
+						{#if $account?.address}
+							<button onclick={() => profileShown.show({ address: member })}
+								><ImgBlockie address={member} style="width: 24px; height: 24px;" /></button
+							>
+						{/if}
+					{/each}
+				{:else}
+					<p>group conversation not supported for now</p>
+				{/if}
 			{/each}
 		</div>
 	</Modal>

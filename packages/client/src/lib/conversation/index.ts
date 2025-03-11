@@ -175,7 +175,10 @@ export function openOneConversation(params: {
 				const cacheID = message.id + ':' + message.timestamp;
 				let content = messageCache[cacheID];
 				if (!content) {
-					const sharedKey = getSharedKey($conversation.account, message.recipientPublicKey);
+					const sharedKey =
+						message.sender.toLowerCase() == $conversation.account.address.toLowerCase()
+							? getSharedKey($conversation.account, message.recipientPublicKey)
+							: getSharedKey($conversation.account, message.senderPublicKey);
 
 					const [nonceb64, ciphertextb64] = message.content.split(/:(.*)/s);
 					const nonce = base64.decode(nonceb64);
