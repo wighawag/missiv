@@ -1,5 +1,5 @@
-import { API } from '$lib/API.js';
-import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
+import { API } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 import type { Conversation } from 'missiv-common';
 import { get } from 'svelte/store';

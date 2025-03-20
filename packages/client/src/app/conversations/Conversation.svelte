@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { openOneConversation } from '$lib/conversation/index.js';
+	import { openOneConversation } from '$lib/index.js';
 	import { registration } from '../state.js';
 	import ImgBlockie from '../utils/ethereum/ImgBlockie.svelte';
 
 	export type ChatProps = {
 		account: {
-			address: string;
-			signer: { address: string; privateKey: string; publicKey: string };
+			address: `0x${string}`;
+			signer: { address: `0x${string}`; privateKey: string; publicKey: string };
 		};
-		otherUser: { address: string }; // TODO publicKey
+		otherUser: { address: `0x${string}` }; // TODO publicKey
 	};
 
 	let { account, otherUser }: ChatProps = $props();

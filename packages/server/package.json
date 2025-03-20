@@ -1,6 +1,6 @@
 {
   "name": "missiv-server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "missiv server",
   "publishConfig": {
     "access": "public"
@@ -41,9 +41,8 @@
     "vitest": "^3.0.9"
   },
   "scripts": {
-    "openapi": "pnpm hto --app-file ./src/index.ts --title missiv-server --app-type PublicAPI --output ./doc/openapi.json --description API --app-version api --tsconfig ./tsconfig.json",
     "build:ts": "tsc --project tsconfig.json",
-    "build": "pnpm openapi && pnpm sql2ts && pnpm build:ts && echo 'TODO: cp -R doc dist/doc && cp doc/openapi.json ../../docs/public/'",
+    "build": "pnpm sql2ts && pnpm build:ts",
     "sql2ts": "node sql2ts.cjs ./src/schema/sql",
     "sql2ts:watch": "pnpm sql2ts && as-soon -w ./src/schema/sql pnpm sql2ts",
     "css2ts": "node css2ts.cjs global",

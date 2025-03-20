@@ -1,5 +1,4 @@
 import { get, type Readable } from 'svelte/store';
-import { API } from '$lib/API.js';
 import { getSharedSecret } from '@noble/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { randomBytes } from '@noble/hashes/utils';
@@ -14,7 +13,8 @@ import {
 	type ConversationMessage,
 	type PublicKey
 } from 'missiv-common';
-import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
+import { API } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 
 // TODO support group chat
@@ -47,7 +47,7 @@ export type CurrentConversation = Readable<ConversationState> & {
 };
 
 export type LoadedAccount = {
-	address: string;
+	address: `0x${string}`;
 	signer: {
 		address: string;
 		privateKey: string;

@@ -1,6 +1,5 @@
 <script lang="ts">
-	import type { RoomStore } from '$lib/index.js';
-	import type { MissivRegistrationStore } from '$lib/registration/index.js';
+	import type { RoomStore, MissivRegistrationStore } from '$lib/index.js';
 	import { onMount } from 'svelte';
 	import ImgBlockie from '../utils/ethereum/ImgBlockie.svelte';
 

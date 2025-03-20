@@ -1,5 +1,11 @@
 # missiv-server
 
+## 0.2.2
+
+### Patch Changes
+
+- fixes types
+
 ## 0.2.1
 
 ### Patch Changes

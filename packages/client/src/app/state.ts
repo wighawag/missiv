@@ -1,10 +1,13 @@
-import { createMissivRegistration, type Account } from '$lib/registration/index.js';
 import type { Connection } from '@etherplay/connect';
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { connection } from './flow/connection.js';
 import { createRegistrationFlow } from './flow/registration.js';
-import { openRoom } from '$lib/index.js';
-import { openConversationList } from '$lib/conversationList/index.js';
+import {
+	openRoom,
+	openConversationList,
+	createMissivRegistration,
+	type Account
+} from '$lib/index.js';
 
 export const account = derived<Readable<Connection>, Account>(connection, (currentConnection) => {
 	// console.log(`connection updated: `, currentConnection.step);

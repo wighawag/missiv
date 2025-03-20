@@ -1,9 +1,5 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
-import type {
-	CompleteUser,
-	MissivRegistration,
-	MissivRegistrationStore
-} from '$lib/registration/index.js';
+import type { CompleteUser, MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
 import { fromDomainToOrigin, originPublicKeyPublicationMessage } from 'missiv-common';
 
 export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
@@ -158,7 +154,8 @@ export function createRegistrationFlow(
 			address: $flow.address
 		});
 		try {
-			await missivRegistration.register(signature, options);
+			// TODO check  `0x${string}`
+			await missivRegistration.register(signature as `0x${string}`, options);
 			if (options?.closeOnComplete) {
 				resolveFlow();
 			} else {

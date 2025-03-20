@@ -1,6 +1,5 @@
-import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
-import { wait } from '$lib/utils/time.js';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { signAsync } from '@noble/secp256k1';
 import type { ClientMessageType, ServerMessageType } from 'missiv-common';
@@ -424,7 +423,8 @@ export function openRoom(params: {
 			session: savedSession
 		});
 		const signatureObject = await signAsync(keccak_256(savedSession.challenge), privateKey); // Sync methods below
-		const signature = `${signatureObject.toCompactHex()}:${signatureObject.recovery}`;
+		const signature =
+			`${signatureObject.toCompactHex()}:${signatureObject.recovery}` as `0x${string}`; // TODO atually it is not 0x
 		const msg: ClientMessageType = { address, signature };
 
 		websocket.send(JSON.stringify(msg));

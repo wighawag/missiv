@@ -2,9 +2,9 @@ import { API } from '$lib/API.js';
 import type { DomainUser, MissivUser } from 'missiv-common';
 import { derived, type Readable } from 'svelte/store';
 
-type Signer = { address: string; privateKey: string; publicKey: string };
-type AccountWithSigner = { address: string; signer: Signer };
-export type Account = AccountWithSigner | { address: string; signer: undefined } | undefined;
+type Signer = { address: `0x${string}`; privateKey: string; publicKey: string };
+type AccountWithSigner = { address: `0x${string}`; signer: Signer };
+export type Account = AccountWithSigner | { address: `0x${string}`; signer: undefined } | undefined;
 export type AccountStore = Readable<Account>;
 
 export type MissivRegistration = { error?: { message: string; cause?: any } } & (
@@ -17,7 +17,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			// Account is Available, Fetching registration status
 			step: 'Fetching';
 			domain: string;
-			address: string;
+			address: `0x${string}`;
 			signer: Signer;
 	  }
 	| {
@@ -25,7 +25,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			step: 'Unregistered';
 			domain: string;
 			registering: boolean; // can be registering
-			address: string;
+			address: `0x${string}`;
 			signer: Signer;
 	  }
 	| {
@@ -33,7 +33,7 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			step: 'Registered';
 			domain: string;
 			editing: boolean; // can be editing
-			address: string;
+			address: `0x${string}`;
 			signer: Signer;
 			user: CompleteUser;
 	  }
@@ -55,7 +55,7 @@ export function createMissivRegistration(params: {
 	let _set: (value: MissivRegistration) => void;
 	let _account: Account | undefined;
 
-	async function getRegisteredUser(address: string): Promise<CompleteUser | undefined> {
+	async function getRegisteredUser(address: `0x${string}`): Promise<CompleteUser | undefined> {
 		const { completeUser } = await api.getCompleteUser({
 			address: address,
 			domain: params.domain
@@ -63,7 +63,7 @@ export function createMissivRegistration(params: {
 		return completeUser;
 	}
 
-	function fetchAgain(address: string, signer: Signer) {
+	function fetchAgain(address: `0x${string}`, signer: Signer) {
 		if (address !== _account?.address) {
 			// account change in between, ignore
 			return;
@@ -71,7 +71,7 @@ export function createMissivRegistration(params: {
 		fetch(address, signer);
 	}
 
-	async function fetch(address: string, signer: Signer) {
+	async function fetch(address: `0x${string}`, signer: Signer) {
 		set({
 			step: 'Fetching',
 			domain: params.domain,
@@ -167,7 +167,7 @@ export function createMissivRegistration(params: {
 	}
 
 	async function register(
-		signature: string,
+		signature: `0x${string}`, // TODO is that 0x
 		options?: {
 			name?: string;
 			domainUsername?: string;
