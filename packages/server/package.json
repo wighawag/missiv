@@ -37,12 +37,10 @@
     "ldenv": "^0.3.12",
     "prettier": "^3.5.3",
     "remote-sql-libsql": "^0.0.6",
-    "ts-patch": "^3.3.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   },
   "scripts": {
-    "prepare": "ts-patch install",
     "openapi": "pnpm hto --app-file ./src/index.ts --title missiv-server --app-type PublicAPI --output ./doc/openapi.json --description API --app-version api --tsconfig ./tsconfig.json",
     "build:ts": "tsc --project tsconfig.json",
     "build": "pnpm openapi && pnpm sql2ts && pnpm build:ts && echo 'TODO: cp -R doc dist/doc && cp doc/openapi.json ../../docs/public/'",
