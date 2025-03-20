@@ -1,9 +1,7 @@
-import {tags} from 'typia';
-
-/** not considered it seems, so we ust tags
+/** not considered it seems, so we use tags
  * @Pattern /^0x[a-f0-9]+$/
  */
-export type String0x = string & tags.Pattern<'^0x[a-f0-9]+$'>;
+export type String0x = `0x${string}`; // & tags.Pattern<'^0x[a-f0-9]+$'>;
 
 export type PublicKey = String0x;
 
@@ -218,14 +216,14 @@ export function originPublicKeyPublicationMessage(orig: string, publicKey: `0x${
 }
 
 export type ClientMessageType =
-	| {address: string; signature: string}
-	| {message: string; signature: string}
+	| {address: `0x${string}`; signature: `0x${string}`}
+	| {message: string; signature: `0x${string}`}
 	| {logout: true};
 
 export type ServerMessageType =
 	| {challenge: string; id: string}
-	| {joined: string; id: string; publicKey: string}
-	| {message: string; from: string; timestamp: number; signature: string}
+	| {joined: `0x${string}`; id: string; publicKey: `0x${string}`}
+	| {message: string; from: string; timestamp: number; signature: `0x${string}`}
 	| {quit: string; id: string}
 	| {error: string; cause?: any; stack?: string};
 

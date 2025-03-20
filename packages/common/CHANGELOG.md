@@ -1,5 +1,11 @@
 # missiv
 
+## 0.2.1
+
+### Patch Changes
+
+- use zod instead of typia but keep typescript types as canonical
+
 ## 0.2.0
 
 ### Minor Changes

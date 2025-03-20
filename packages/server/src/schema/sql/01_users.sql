@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS DomainUsers (
   signature text NOT NULL,
   added timestamp NOT NULL,
   lastPresence timestamp NOT NULL,
+  settings text,
   PRIMARY KEY (user, domain),
   UNIQUE(publicKey),
   FOREIGN KEY (user) REFERENCES Users (address)

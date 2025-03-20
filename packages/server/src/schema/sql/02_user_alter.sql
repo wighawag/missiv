@@ -1,1 +1,0 @@
-ALTER TABLE DomainUsers ADD COLUMN settings text;

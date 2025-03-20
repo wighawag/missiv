@@ -1,12 +1,12 @@
 {
   "name": "missiv-server-cf-worker",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
   "dependencies": {
-    "hono": "^4.7.4",
+    "hono": "^4.7.5",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
     "named-logs": "^0.3.2",
@@ -15,10 +15,11 @@
     "workers-logger": "npm:@bug-fix/workers-logger@0.2.0-fix.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250303.0",
-    "wrangler": "^3.112.0"
+    "@cloudflare/workers-types": "^4.20250319.0",
+    "wrangler": "^4.2.0"
   },
   "scripts": {
+    "init:db": "wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/01_users.sql && wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/02_conversations.sql",
     "dev": "wrangler dev ",
     "deploy": "wrangler deploy"
   }

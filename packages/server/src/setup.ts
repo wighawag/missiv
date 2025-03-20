@@ -1,12 +1,9 @@
 import {MiddlewareHandler} from 'hono/types';
-import {ServerOptions} from './types.js';
+import {AddressSchema, PublicKeySchema, ServerOptions} from './types.js';
 import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {Address, PublicKey} from 'missiv-common';
-import {keccak_256} from '@noble/hashes/sha3';
-import {Signature} from '@noble/secp256k1';
 import {Context} from 'hono';
-import {assert} from 'typia';
 import {recoverPublicKey} from './utils/signature.js';
 
 // used to be hono Bindings but its type is now `object` which break compilation here
@@ -57,7 +54,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 				}
 				const splitted = authentication.split(':');
 
-				publicKey = assert<PublicKey>(splitted[1].toLowerCase());
+				publicKey = PublicKeySchema.parse(splitted[1].toLowerCase());
 
 				if (!publicKey) {
 					throw new Error(`no publicKey provided in FAKE mode`);
@@ -77,7 +74,7 @@ export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env
 			// 	}
 
 			if (domainUser) {
-				account = assert<Address>(domainUser.user);
+				account = AddressSchema.parse(domainUser.user);
 			}
 		}
 

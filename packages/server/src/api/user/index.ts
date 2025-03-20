@@ -1,24 +1,21 @@
 import {Hono} from 'hono';
-import {ServerOptions} from '../../types.js';
-import {recoverMessageAddress} from 'viem';
 import {
-	ActionEditDomainUser,
-	ActionGetCompleteUser,
-	ActionGetMissivUser,
-	ActionRegisterDomainUser,
-	Address,
-	fromDomainToOrigin,
-	originPublicKeyPublicationMessage,
-} from 'missiv-common';
+	ActionEditDomainUserSchema,
+	ActionGetCompleteUserSchema,
+	ActionGetMissivUserSchema,
+	ActionRegisterDomainUserSchema,
+	ServerOptions,
+} from '../../types.js';
+import {recoverMessageAddress} from 'viem';
+import {Address, fromDomainToOrigin, originPublicKeyPublicationMessage} from 'missiv-common';
 import {getAuth, setup} from '../../setup.js';
-import {typiaValidator} from '@hono/typia-validator';
-import {createValidate} from 'typia';
 import {Env} from '../../env.js';
+import {zValidator} from '@hono/zod-validator';
 
 export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
 	const app = new Hono<{Bindings: Bindings}>()
 		.use(setup({serverOptions: options}))
-		.post('/register', typiaValidator('json', createValidate<ActionRegisterDomainUser>()), async (c) => {
+		.post('/register', zValidator('json', ActionRegisterDomainUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const env = config.env;
@@ -44,9 +41,9 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				);
 				const addressRecovered = await recoverMessageAddress({
 					message,
-					signature: action.signature as `0x${string}`, // TODO typia fix for pattern and 0xstring
+					signature: action.signature,
 				});
-				address = addressRecovered.toLowerCase();
+				address = addressRecovered.toLowerCase() as `0x${string}`;
 				if (address != action.address) {
 					throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
 				}
@@ -61,7 +58,7 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				201,
 			);
 		})
-		.post('/editUser', typiaValidator('json', createValidate<ActionEditDomainUser>()), async (c) => {
+		.post('/editUser', zValidator('json', ActionEditDomainUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const env = config.env;
@@ -83,7 +80,7 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 				201,
 			);
 		})
-		.post('/getUser', typiaValidator('json', createValidate<ActionGetMissivUser>()), async (c) => {
+		.post('/getUser', zValidator('json', ActionGetMissivUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
@@ -92,7 +89,7 @@ export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings
 			const result = await storage.getUser(action.address);
 			return c.json(result);
 		})
-		.post('/getCompleteUser', typiaValidator('json', createValidate<ActionGetCompleteUser>()), async (c) => {
+		.post('/getCompleteUser', zValidator('json', ActionGetCompleteUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 

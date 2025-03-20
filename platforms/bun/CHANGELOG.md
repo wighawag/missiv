@@ -1,5 +1,14 @@
 # missiv-server-bun
 
+## 0.2.1
+
+### Patch Changes
+
+- use zod instead of typia but keep typescript types as canonical
+- Updated dependencies
+  - missiv-common@0.2.1
+  - missiv-server@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

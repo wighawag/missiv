@@ -1,8 +1,7 @@
 import {Storage} from './index.js';
 import {RemoteSQL, SQLPreparedStatement} from 'remote-sql';
-import setupComversationsTables from '../schema/ts/03_conversations.sql.js';
 import setupUsersTables from '../schema/ts/01_users.sql.js';
-import alterUsersTables from '../schema/ts/02_user_alter.sql.js';
+import setupComversationsTables from '../schema/ts/02_conversations.sql.js';
 
 import {sqlToStatements} from './utils.js';
 import {
@@ -39,10 +38,10 @@ export interface DB_Message {
 	namespace: string;
 	conversationID: string;
 	messageID: number;
-	recipient: string;
+	recipient: `0x${string}`;
 
 	// Other fields
-	sender: string;
+	sender: `0x${string}`;
 	message: string;
 	timestamp: number;
 }
@@ -81,7 +80,7 @@ export enum DB_ConversationParticipantStatus {
 
 export type JOIN_ConversationWithParticipantStatus = DB_Conversation & {
 	// ConversationParticipant fields
-	user: string;
+	user: `0x${string}`;
 	status: 0 | 1 | 2;
 	lastRead: number | null;
 };
@@ -416,9 +415,7 @@ export class RemoteSQLStorage implements Storage {
 	}
 
 	async setup() {
-		const statements = sqlToStatements(setupUsersTables)
-			.concat(alterUsersTables)
-			.concat(sqlToStatements(setupComversationsTables));
+		const statements = sqlToStatements(setupUsersTables).concat(sqlToStatements(setupComversationsTables));
 		// The following do not work on bun sqlite:
 		//  (seems like prepared statement are partially executed and index cannot be prepared when table is not yet created)
 		// await this.db.batch(statements.map((v) => this.db.prepare(v)));
@@ -428,9 +425,7 @@ export class RemoteSQLStorage implements Storage {
 	}
 	async reset() {
 		const dropStatements = sqlToStatements(dropTables);
-		const statements = sqlToStatements(setupUsersTables)
-			.concat(alterUsersTables)
-			.concat(sqlToStatements(setupComversationsTables));
+		const statements = sqlToStatements(setupUsersTables).concat(sqlToStatements(setupComversationsTables));
 		const allStatements = dropStatements.concat(statements);
 
 		// The following do not work on bun sqlite:

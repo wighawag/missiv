@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import type {Services} from 'missiv-server';
 import {
 	RateLimiter,
 	Room,
@@ -17,7 +16,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
 import {loadEnv} from 'ldenv';
-import {Context} from 'hono';
 
 const __dirname = import.meta.dirname;
 
@@ -398,7 +396,7 @@ async function main() {
 			return app.fetch(request, server);
 		},
 		websocket: {
-			open(ws) {
+			open(ws: any) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`websocket:open: ${data.room}`);
@@ -414,7 +412,7 @@ async function main() {
 					return websocket.open(ws as any);
 				}
 			},
-			close(ws, code, reason) {
+			close(ws: any, code: any, reason: any) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`websocket:close: ${data.room}`);
@@ -429,7 +427,7 @@ async function main() {
 					return websocket.close(ws as any, code, reason);
 				}
 			},
-			message(ws, msg) {
+			message(ws: any, msg: any) {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`room ${data.room}`);

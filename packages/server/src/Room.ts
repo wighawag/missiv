@@ -6,8 +6,8 @@ import {ClientMessageType, ServerMessageType} from 'missiv-common';
 import {recoverPublicKey} from './utils/signature.js';
 
 export type Session = {
-	address?: string;
-	publicKey?: string;
+	address?: `0x${string}`;
+	publicKey?: `0x${string}`;
 	id: string;
 	challenge: string;
 	quit?: boolean;
@@ -17,8 +17,8 @@ export type Session = {
 };
 
 type HybernatedData = Record<string, unknown> & {
-	address?: string;
-	publicKey?: string;
+	address?: `0x${string}`;
+	publicKey?: `0x${string}`;
 	domain: string;
 	challenge: string;
 	id: string;
@@ -240,8 +240,8 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				}
 
 				let newUser: {
-					address: string;
-					publicKey: string;
+					address: `0x${string}`;
+					publicKey: `0x${string}`;
 				};
 				// TODO remove
 				const DEBUG = false;

@@ -7,9 +7,9 @@
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@noble/secp256k1": "^2.2.3",
-    "@types/node": "^22.13.9",
-    "bun-types": "^1.2.4",
-    "hono": "^4.7.4",
+    "@types/node": "^22.13.10",
+    "bun-types": "^1.2.5",
+    "hono": "^4.7.5",
     "missiv-client": "workspace:*",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
@@ -17,8 +17,8 @@
     "prool": "^0.0.23",
     "prool-any": "^0.0.1",
     "tsx": "^4.19.3",
-    "viem": "^2.23.6",
-    "vitest": "^2.1.8"
+    "viem": "^2.23.13",
+    "vitest": "^3.0.9"
   },
   "scripts": {
     "build": "echo 'No setup for build'",
