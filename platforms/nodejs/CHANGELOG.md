@@ -1,5 +1,13 @@
 # missiv-server-nodejs
 
+## 0.2.3
+
+### Patch Changes
+
+- fix version
+- Updated dependencies
+  - missiv-server@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes

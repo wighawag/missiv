@@ -1,5 +1,13 @@
 # missiv-server
 
+## 0.2.3
+
+### Patch Changes
+
+- fix version
+- Updated dependencies
+  - missiv-common@0.2.2
+
 ## 0.2.2
 
 ### Patch Changes
