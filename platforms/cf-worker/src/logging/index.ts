@@ -1,11 +1,7 @@
-import 'named-logs-context';
+import {track} from 'workers-logger';
 import {Env} from '../env';
-import {logs} from 'named-logs';
-import {track, enable as enableWorkersLogger} from 'workers-logger';
-import {logflareReport} from './logflare.js';
-import {consoleReporter} from './basicReporters.js';
-enableWorkersLogger('*');
-const logger = logs('worker');
+import {logflareReport} from './logflare';
+import {consoleReporter} from './basicReporters';
 
 export async function wrapWithLogger(
 	request: Request,
@@ -14,13 +10,11 @@ export async function wrapWithLogger(
 	callback: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>,
 ): Promise<Response> {
 	const namespaces = env.NAMED_LOGS || '*';
-	let logLevel = 2;
-	if (env.NAMED_LOGS || env.NAMED_LOGS_LEVEL) {
-		if (env.NAMED_LOGS_LEVEL) {
-			const level = parseInt(env.NAMED_LOGS_LEVEL);
-			if (!isNaN(level)) {
-				logLevel = level;
-			}
+	let logLevel = 3;
+	if (env.NAMED_LOGS_LEVEL) {
+		const level = parseInt(env.NAMED_LOGS_LEVEL);
+		if (!isNaN(level)) {
+			logLevel = level;
 		}
 	}
 	if ((globalThis as any)._logFactory) {
@@ -34,7 +28,7 @@ export async function wrapWithLogger(
 		request,
 		'FUZD.cloudflare',
 		env.LOGFLARE_API_KEY && env.LOGFLARE_SOURCE
-			? logflareReport({apiKey: env.LOGFLARE_API_KEY, source: env.LOGFLARE_SOURCE})
+			? logflareReport({batchAsSingleEvent: false, apiKey: env.LOGFLARE_API_KEY, source: env.LOGFLARE_SOURCE})
 			: consoleReporter,
 	);
 	// const trackLogger = new Proxy(_trackLogger, {

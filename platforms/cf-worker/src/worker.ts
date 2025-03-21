@@ -1,7 +1,7 @@
 import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
-import {wrapWithLogger} from './logging';
+import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
 
 type Env = {

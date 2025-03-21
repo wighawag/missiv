@@ -19,7 +19,6 @@
     "src"
   ],
   "dependencies": {
-    "@hono/swagger-ui": "^0.5.1",
     "@hono/zod-validator": "^0.4.3",
     "@noble/hashes": "^1.7.1",
     "@noble/secp256k1": "^2.2.3",
@@ -27,7 +26,6 @@
     "missiv-common": "workspace:*",
     "named-logs": "^0.3.2",
     "remote-sql": "^0.0.6",
-    "sha3": "link:@noble/hashes/sha3",
     "viem": "^2.23.13",
     "zod": "^3.24.2"
   },
