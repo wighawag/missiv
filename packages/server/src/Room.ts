@@ -14,12 +14,16 @@ export type Session = {
 	blockedMessages?: string[];
 	limiter?: RateLimiterClient;
 	domain: string;
+	authorization: string | undefined;
+	authorized: boolean;
 };
 
 type HybernatedData = Record<string, unknown> & {
 	address?: `0x${string}`;
 	publicKey?: `0x${string}`;
 	domain: string;
+	authorization: string | undefined;
+	authorized: boolean;
 	challenge: string;
 	id: string;
 };
@@ -31,7 +35,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 	dbStorage: RemoteSQLStorage;
 	requireLogin: boolean;
 	env: Env;
-	identifier: {name: string; domain: string} | undefined;
+	identifier: {name: string; domain: string; authorization: string | undefined} | undefined;
 
 	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
 
@@ -78,12 +82,16 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			if (!this.identifier) {
 				console.log({name});
 				let domain: string;
+				let authorization: string | undefined;
 				if (name.startsWith('@')) {
-					domain = name.slice(1);
+					const roomID = name.slice(1);
+					const splitted = roomID.split('_');
+					domain = splitted[0];
+					authorization = splitted[1] || undefined;
 				} else {
 					return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
 				}
-				this.identifier = {name, domain};
+				this.identifier = {name, domain, authorization};
 			} else if (this.identifier.name !== name) {
 				return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
 			}
@@ -112,7 +120,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		if (typeof message !== 'string') {
 			message = JSON.stringify(message);
 		}
-		if (this.requireLogin) {
+		if (session.authorization && !session.authorized) {
 			if (!session.blockedMessages) {
 				session.blockedMessages = [];
 			}
@@ -156,11 +164,26 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 			challenge,
 			id,
 			domain: this.identifier.domain,
+			authorization: this.identifier.authorization,
+			authorized: false,
 		};
 		if (limiterId) {
-			this.saveSocketData(ws, {limiterId, domain: session.domain, challenge: session.challenge, id: session.id});
+			this.saveSocketData(ws, {
+				limiterId,
+				domain: session.domain,
+				authorization: session.authorization,
+				authorized: false,
+				challenge: session.challenge,
+				id: session.id,
+			});
 		} else {
-			this.saveSocketData(ws, {domain: session.domain, challenge: session.challenge, id: session.id});
+			this.saveSocketData(ws, {
+				domain: session.domain,
+				authorization: session.authorization,
+				authorized: false,
+				challenge: session.challenge,
+				id: session.id,
+			});
 		}
 		this.sessions.set(ws, session);
 
@@ -250,7 +273,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				} else {
 					const user = await this.dbStorage.getCompleteUser(session.domain, data.address);
 					if (!user || !user.completeUser) {
-						this.send(ws, {error: 'User not found'});
+						this.send(ws, {error: `User not found on domain: ${session.domain}`});
 						return;
 					}
 					const publicKey = user.completeUser.publicKey;
@@ -276,13 +299,28 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 					session.publicKey = newUser.publicKey;
 				}
 
+				if (session.authorization) {
+					// TODO
+					if (session.address === '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'.toLowerCase()) {
+						session.authorized = true;
+					} else {
+						session.authorized = false;
+						this.send(ws, {error: 'Failed to authorize access!'});
+						return;
+					}
+				}
+
 				// TODO use signature prevent replay ?
 
 				// The first message the client sends is the user info message with their name. Save it
 				// into their session object.
 
 				// attach name to the webSocket so it survives hibernation
-				this.saveSocketData(ws, {address: session.address, publicKey: session.publicKey});
+				this.saveSocketData(ws, {
+					address: session.address,
+					publicKey: session.publicKey,
+					authorized: session.authorized,
+				});
 
 				// Deliver all the messages we queued up since the user connected.
 				if (session.blockedMessages) {
@@ -375,18 +413,14 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 		// Iterate over all the sessions sending them messages.
 		let quitters: Session[] = [];
 		this.sessions.forEach((session, ws) => {
-			if (session.address) {
-				try {
-					ws.send(message);
-				} catch (err) {
-					// Whoops, this connection is dead. Remove it from the map and arrange to notify
-					// everyone below.
-					session.quit = true;
-					quitters.push(session);
-					this.sessions.delete(ws);
-				}
-			} else {
+			try {
 				this.pendingSessionSend(session, ws, message);
+			} catch (err) {
+				// Whoops, this connection is dead. Remove it from the map and arrange to notify
+				// everyone below.
+				session.quit = true;
+				quitters.push(session);
+				this.sessions.delete(ws);
 			}
 		});
 

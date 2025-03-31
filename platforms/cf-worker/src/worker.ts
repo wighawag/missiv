@@ -1,8 +1,20 @@
+// ------------------------------------------------------------------------------------------------
+// Logging
+// ------------------------------------------------------------------------------------------------
+import 'named-logs-context';
+import {enable as enableWorkersLogger} from 'workers-logger';
+import {logs} from 'named-logs';
+// ------------------------------------------------------------------------------------------------
 import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
+
+// ------------------------------------------------------------------------------------------------
+enableWorkersLogger('*');
+const logger = logs('missiv-cf-worker');
+// ------------------------------------------------------------------------------------------------
 
 type Env = {
 	DB: D1Database;
