@@ -8,6 +8,11 @@ import {
 	createMissivRegistration,
 	type Account
 } from '$lib/index.js';
+import {
+	MISSIV_DOMAIN,
+	PUBLIC_MISSIV_HTTP_ENDPOINT,
+	PUBLIC_MISSIV_WEBOSCKET_ENDPOINT
+} from './config.js';
 
 export const account = derived<Readable<Connection>, Account>(connection, (currentConnection) => {
 	// console.log(`connection updated: `, currentConnection.step);
@@ -27,8 +32,8 @@ export const account = derived<Readable<Connection>, Account>(connection, (curre
 
 export const registration = createMissivRegistration({
 	account,
-	domain: 'localhost:5173',
-	endpoint: 'http://localhost:8787'
+	domain: MISSIV_DOMAIN,
+	endpoint: PUBLIC_MISSIV_HTTP_ENDPOINT
 });
 
 export const registrationFlow = createRegistrationFlow(registration, {
@@ -37,13 +42,13 @@ export const registrationFlow = createRegistrationFlow(registration, {
 
 export const conversationList = openConversationList({
 	registration,
-	endpoint: 'http://localhost:8787',
-	domain: 'localhost:5173',
+	domain: MISSIV_DOMAIN,
+	endpoint: PUBLIC_MISSIV_HTTP_ENDPOINT,
 	namespace: 'default' // TODO remove domain from missiv ?
 });
 
 export const room = openRoom({
-	url: 'ws://localhost:8787/api/public/room/@localhost:5173/ws',
+	url: `${PUBLIC_MISSIV_WEBOSCKET_ENDPOINT}/api/public/room/@${MISSIV_DOMAIN}/ws`,
 	registration,
 	autoLogin: true
 });

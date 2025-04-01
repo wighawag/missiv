@@ -6,11 +6,8 @@ import {Address, PublicKey} from 'missiv-common';
 import {Context} from 'hono';
 import {recoverPublicKey} from './utils/signature.js';
 
-// used to be hono Bindings but its type is now `object` which break compilation here
-type Bindings = Record<string, any>;
-
-export type SetupOptions<Env extends Bindings = Record<string, any>> = {
-	serverOptions: ServerOptions<Env>;
+export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
+	serverOptions: ServerOptions<CustomEnv>;
 };
 
 export type Config = {
@@ -30,7 +27,7 @@ export const getAuth = (c: Context) => {
 	return {account: c.get('account'), publicKey: c.get('publicKey')};
 };
 
-export function setup<Env extends Bindings = Bindings>(options: SetupOptions<Env>): MiddlewareHandler {
+export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): MiddlewareHandler {
 	const {services, getEnv} = options.serverOptions;
 	const {getDB} = services;
 

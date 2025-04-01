@@ -1,9 +1,11 @@
-import {Bindings} from 'hono/types';
 import {AbstractServerObject, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from 'missiv-common';
 import {recoverPublicKey} from './utils/signature.js';
+import {Env} from './env.js';
+import {createCurriedJSONRPC} from 'remote-procedure-call';
+import {Methods} from 'eip-1193';
 
 export type Session = {
 	address?: `0x${string}`;
@@ -28,18 +30,18 @@ type HybernatedData = Record<string, unknown> & {
 	id: string;
 };
 
-export abstract class Room<Env extends Bindings = Bindings> extends AbstractServerObject {
+export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	lastTimestamp: number = 0;
 	sessions: Map<WebSocket, Session> = new Map();
 
 	dbStorage: RemoteSQLStorage;
 	requireLogin: boolean;
-	env: Env;
+	env: CustomEnv;
 	identifier: {name: string; domain: string; authorization: string | undefined} | undefined;
 
 	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
 
-	constructor(env: Env) {
+	constructor(env: CustomEnv) {
 		super();
 		this.env = env;
 		this.requireLogin = false; // TODO env ?
@@ -85,7 +87,7 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				let authorization: string | undefined;
 				if (name.startsWith('@')) {
 					const roomID = name.slice(1);
-					const splitted = roomID.split('_');
+					const splitted = roomID.split('!');
 					domain = splitted[0];
 					authorization = splitted[1] || undefined;
 				} else {
@@ -300,14 +302,38 @@ export abstract class Room<Env extends Bindings = Bindings> extends AbstractServ
 				}
 
 				if (session.authorization) {
-					// TODO
-					if (session.address === '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'.toLowerCase()) {
-						session.authorized = true;
-					} else {
-						session.authorized = false;
-						this.send(ws, {error: 'Failed to authorize access!'});
+					const authorizationParams = session.authorization.split(':');
+					const chainId = authorizationParams[0];
+					const contractAddress = authorizationParams[1] as `0x${string}`;
+					const callData = authorizationParams[2] as `0x${string}`;
+					const expectedResult = authorizationParams[3] as `0x${string}`;
+					const chainURL = this.env[`CHAIN_${chainId}`];
+					const actualData = callData.replaceAll('(address)', session.address.slice(2)) as `0x${string}`;
+
+					if (!chainURL) {
+						this.send(ws, {error: `do not support chain with id ${chainId}`});
 						return;
 					}
+
+					const rpc = createCurriedJSONRPC<Methods>(chainURL);
+					const response = await rpc.call('eth_call')([
+						{
+							to: contractAddress,
+							data: actualData,
+						},
+					]);
+
+					if (!response.success) {
+						this.send(ws, {error: `failed to execute authorization request`});
+						return;
+					}
+
+					if (response.value != expectedResult) {
+						this.send(ws, {error: `authorization not passed`});
+						return;
+					}
+
+					session.authorized = true;
 				}
 
 				// TODO use signature prevent replay ?

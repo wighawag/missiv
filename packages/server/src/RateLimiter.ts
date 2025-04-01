@@ -1,8 +1,8 @@
 // =======================================================================================
 // The RateLimiter Durable Object class.
 
-import {Bindings} from 'hono/types';
 import {AbstractServerObject, ServerObject} from './types.js';
+import {Env} from './env.js';
 
 // RateLimiter implements a Durable Object that tracks the frequency of messages from a particular
 // source and decides when messages should be dropped because the source is sending too many
@@ -11,7 +11,7 @@ import {AbstractServerObject, ServerObject} from './types.js';
 // We utilize this in ChatRoom, above, to apply a per-IP-address rate limit. These limits are
 // global, i.e. they apply across all chat rooms, so if a user spams one chat room, they will find
 // themselves rate limited in all other chat rooms simultaneously.
-export abstract class RateLimiter<Env extends Bindings = Bindings> extends AbstractServerObject {
+export abstract class RateLimiter<CustomEnv extends Env> extends AbstractServerObject {
 	private nextAllowedTime: number;
 
 	constructor(env: Env) {

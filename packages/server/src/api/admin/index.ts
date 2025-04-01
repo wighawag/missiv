@@ -11,8 +11,8 @@ const ResetActionSchema = z.object({
 });
 type ZodMatchResetAction = Assert<IsZodExactly<typeof ResetActionSchema, ResetAction>>;
 
-export function getAdminAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const app = new Hono<{Bindings: Bindings}>()
+export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
 		.post('/db-reset', zValidator('json', ResetActionSchema), async (c) => {
 			const config = c.get('config');

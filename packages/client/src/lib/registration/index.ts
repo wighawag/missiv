@@ -320,7 +320,8 @@ export function createMissivRegistration(params: {
 	return {
 		subscribe,
 		register,
-		edit
+		edit,
+		getRegisteredUser
 	};
 }
 

@@ -12,8 +12,8 @@ import {getAuth, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {zValidator} from '@hono/zod-validator';
 
-export function getUserAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const app = new Hono<{Bindings: Bindings}>()
+export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
 		.post('/register', zValidator('json', ActionRegisterDomainUserSchema), async (c) => {
 			const config = c.get('config');

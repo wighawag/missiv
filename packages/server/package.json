@@ -22,9 +22,11 @@
     "@hono/zod-validator": "^0.4.3",
     "@noble/hashes": "^1.7.1",
     "@noble/secp256k1": "^2.2.3",
+    "eip-1193": "^0.6.3",
     "hono": "^4.7.5",
     "missiv-common": "workspace:*",
     "named-logs": "^0.3.2",
+    "remote-procedure-call": "^0.1.1",
     "remote-sql": "^0.0.6",
     "viem": "^2.23.13",
     "zod": "^3.24.2"

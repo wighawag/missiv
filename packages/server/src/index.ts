@@ -37,8 +37,8 @@ const corsSetup = cors({
 // 	options: ServerOptions<Env>
 // };
 
-export function createServer<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const app = new Hono<{Bindings: Bindings}>().get('/', (c) => {
+export function createServer<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	const app = new Hono<{Bindings: CustomEnv}>().get('/', (c) => {
 		return c.text('missiv');
 	});
 

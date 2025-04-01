@@ -15,8 +15,8 @@ import {zValidator} from '@hono/zod-validator';
 
 import {Env} from '../../env.js';
 
-export function getPrivateChatAPI<Bindings extends Env>(options: ServerOptions<Bindings>) {
-	const app = new Hono<{Bindings: Bindings}>()
+export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
 		.post('/sendMessage', zValidator('json', ActionSendMessageSchema), async (c) => {
 			const config = c.get('config');
