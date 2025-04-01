@@ -114,7 +114,11 @@ export function openRoom(params: {
 				users: []
 			});
 			if (params.autoLogin) {
-				login();
+				if (!savedSession) {
+					loginOnChallengeReceived = true;
+				} else {
+					login();
+				}
 			}
 		} else {
 			set({

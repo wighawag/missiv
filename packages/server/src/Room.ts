@@ -93,6 +93,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				} else {
 					return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
 				}
+				// console.log({name, domain, authorization});
 				this.identifier = {name, domain, authorization};
 			} else if (this.identifier.name !== name) {
 				return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
@@ -302,6 +303,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				}
 
 				if (session.authorization) {
+					// console.log(`Authorization: ${session.authorization}`);
 					const authorizationParams = session.authorization.split(':');
 					const chainId = authorizationParams[0];
 					const contractAddress = authorizationParams[1] as `0x${string}`;
