@@ -1,6 +1,6 @@
 {
   "name": "missiv-common",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "A messaging system for ethereum addresses",
   "keywords": [
     "ethereum",

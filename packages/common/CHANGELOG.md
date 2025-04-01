@@ -1,5 +1,11 @@
 # missiv
 
+## 0.3.0
+
+### Minor Changes
+
+- fixes
+
 ## 0.2.2
 
 ### Patch Changes

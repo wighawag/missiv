@@ -1,5 +1,17 @@
 # missiv-server-bun
 
+## 0.3.0
+
+### Minor Changes
+
+- fixes
+
+### Patch Changes
+
+- Updated dependencies
+  - missiv-common@0.3.0
+  - missiv-server@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
