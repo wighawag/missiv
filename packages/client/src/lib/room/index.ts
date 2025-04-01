@@ -314,6 +314,15 @@ export function openRoom(params: {
 						logout();
 					}
 
+					set({
+						step: 'Connected',
+						loginStatus: 'LoggedOut',
+						address: newAddress,
+						messages: $room.messages,
+						users: $room.users,
+						session: savedSession
+					});
+
 					if (params.autoLogin) {
 						if (!savedSession) {
 							loginOnChallengeReceived = true;
