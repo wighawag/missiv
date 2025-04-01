@@ -16,16 +16,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
 import {loadEnv} from 'ldenv';
+import {BunEnv} from './env.js';
 
 const __dirname = import.meta.dirname;
 
 loadEnv({
 	defaultEnvFile: path.join(__dirname, '../.env.default'),
 });
-
-type BunEnv = Env & {
-	DB: string;
-};
 
 type Options = {
 	port?: string;
@@ -189,14 +186,14 @@ class SimpleObjectStorage implements ServerObjectStorage {
 	}
 }
 
-class BunRoom extends Room {
+class BunRoom extends Room<BunEnv> {
 	websockets: WebSocket[] = [];
 	counter: number = 1;
 	storage: ServerObjectStorage;
 
 	constructor(
 		private name: string,
-		env: Env,
+		env: BunEnv,
 	) {
 		super(env);
 		this.storage = new SimpleObjectStorage();
@@ -263,12 +260,12 @@ class BunRoom extends Room {
 	}
 }
 
-class BunRateLimiter extends RateLimiter {
+class BunRateLimiter extends RateLimiter<BunEnv> {
 	storage: ServerObjectStorage;
 
 	constructor(
 		private name: string,
-		env: Env,
+		env: BunEnv,
 	) {
 		super(env);
 		this.storage = new SimpleObjectStorage();
@@ -400,7 +397,7 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`websocket:open: ${data.room}`);
-					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
+					const room = roomInstances.get(data.room) as BunRoom | undefined;
 					if (!room) {
 						throw new Error(`no room for ${data.room}`);
 					}
@@ -416,7 +413,7 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`websocket:close: ${data.room}`);
-					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
+					const room = roomInstances.get(data.room) as BunRoom | undefined;
 					if (!room) {
 						throw new Error(`no room for ${data.room}`);
 					}
@@ -431,7 +428,7 @@ async function main() {
 				const data = ws.data as {room: string} | undefined;
 				if (data?.room) {
 					// console.log(`room ${data.room}`);
-					const room = roomInstances.get(data.room) as (Room & BunRoom) | undefined;
+					const room = roomInstances.get(data.room) as BunRoom | undefined;
 					if (!room) {
 						throw new Error(`no room for ${data.room}`);
 					}

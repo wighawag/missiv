@@ -1,5 +1,4 @@
-import { untrack } from 'svelte';
-import { readable, type Readable, type Unsubscriber, type Updater } from 'svelte/store';
+import { writable, type Readable, type Unsubscriber, type Updater } from 'svelte/store';
 
 /** One or more `Readable`s. */
 type Stores = Readable<any> | [Readable<any>, ...Array<Readable<any>>] | Array<Readable<any>>;
@@ -8,50 +7,11 @@ type Stores = Readable<any> | [Readable<any>, ...Array<Readable<any>>] | Array<R
 type StoresValues<T> =
 	T extends Readable<infer U> ? U : { [K in keyof T]: T[K] extends Readable<infer U> ? U : never };
 
-export const noop = () => {};
-
-export function run_all(arr: Array<() => void>) {
+const noop = () => {};
+function run_all(arr: Array<() => void>) {
 	for (var i = 0; i < arr.length; i++) {
 		arr[i]();
 	}
-}
-
-/**
- * Subscribes to a store and handles the case when the store is null or undefined.
- * @template T The type of the store's value
- * @param store The store to subscribe to
- * @param run Function to run when the store value changes
- * @param invalidate Optional function to run when the store value is invalidated
- * @returns A function to unsubscribe from the store
- */
-export function subscribe_to_store<T>(
-	store: Readable<T> | null | undefined,
-	run: (value: T) => void,
-	invalidate?: (value: T) => void
-): () => void {
-	if (store == null) {
-		// @ts-expect-error
-		run(undefined);
-
-		// @ts-expect-error
-		if (invalidate) invalidate(undefined);
-
-		return noop;
-	}
-
-	// Svelte store takes a private second argument
-	// StartStopNotifier could mutate state, and we want to silence the corresponding validation error
-	const unsub = untrack(() =>
-		store.subscribe(
-			run,
-			// @ts-expect-error
-			invalidate
-		)
-	);
-
-	// Also support RxJS
-	// @ts-expect-error TODO fix this in the types?
-	return unsub.unsubscribe ? () => unsub.unsubscribe() : unsub;
 }
 
 /**
@@ -101,7 +61,8 @@ export function derivedWithStartStopNotifier<S extends Stores, T>(
 		throw new Error('derived() expects stores as input, got a falsy value');
 	}
 	const auto = fn.length < 2;
-	return readable(initial_value, (set, update) => {
+
+	const store = writable(initial_value, (set, update) => {
 		let started = false;
 		const values: T[] = [];
 		let pending = 0;
@@ -119,9 +80,8 @@ export function derivedWithStartStopNotifier<S extends Stores, T>(
 			}
 		};
 		const unsubscribers = stores_array.map((store, i) =>
-			subscribe_to_store(
-				store,
-				(value) => {
+			store.subscribe(
+				(value: any) => {
 					values[i] = value;
 					pending &= ~(1 << i);
 					if (started) {
@@ -151,4 +111,8 @@ export function derivedWithStartStopNotifier<S extends Stores, T>(
 			}
 		};
 	});
+
+	return {
+		subscribe: store.subscribe
+	};
 }

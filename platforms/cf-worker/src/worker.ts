@@ -10,23 +10,17 @@ import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
+import {CloudflareWorkerEnv} from './env.js';
 
 // ------------------------------------------------------------------------------------------------
 enableWorkersLogger('*');
 const logger = logs('missiv-cf-worker');
 // ------------------------------------------------------------------------------------------------
 
-type Env = {
-	DB: D1Database;
-	ROOMS: DurableObjectNamespace;
-	LIMITERS: DurableObjectNamespace;
-	DEV?: string;
-};
-
-export class ServerObjectRateLimiter extends RateLimiter<Env> {
+export class ServerObjectRateLimiter extends RateLimiter<CloudflareWorkerEnv> {
 	state: DurableObjectState;
 
-	constructor(state: DurableObjectState, env: Env) {
+	constructor(state: DurableObjectState, env: CloudflareWorkerEnv) {
 		super(env);
 		this.state = state;
 		this.instantiate();
@@ -74,10 +68,10 @@ export class ServerObjectRateLimiter extends RateLimiter<Env> {
 }
 
 // for each ServerObject we need a class that do the following:
-export class ServerObjectRoom extends Room<Env> {
+export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 	state: DurableObjectState;
 
-	constructor(state: DurableObjectState, env: Env) {
+	constructor(state: DurableObjectState, env: CloudflareWorkerEnv) {
 		super(env);
 		this.state = state;
 		this.instantiate();
@@ -185,14 +179,14 @@ export class ServerObjectRoom extends Room<Env> {
 }
 
 const services = {
-	getDB: (env: Env) => new RemoteD1(env.DB),
-	getRoom: (env: Env, idOrName: ServerObjectId | string) => {
+	getDB: (env: CloudflareWorkerEnv) => new RemoteD1(env.DB),
+	getRoom: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
 		if (typeof idOrName == 'string') {
 			idOrName = env.ROOMS.idFromName(idOrName);
 		}
 		return env.ROOMS.get(idOrName);
 	},
-	getRateLimiter: (env: Env, idOrName: ServerObjectId | string) => {
+	getRateLimiter: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
 		if (typeof idOrName == 'string') {
 			idOrName = env.LIMITERS.idFromName(idOrName);
 		}
@@ -200,13 +194,13 @@ const services = {
 	},
 };
 
-export const app = createServer<Env>({
+export const app = createServer<CloudflareWorkerEnv>({
 	services,
-	getEnv: (c: Context<{Bindings: Env}>) => c.env,
+	getEnv: (c: Context<{Bindings: CloudflareWorkerEnv}>) => c.env,
 	upgradeWebSocket,
 });
 
-const fetch = async (request: Request, env: Env, ctx: ExecutionContext) => {
+const fetch = async (request: Request, env: CloudflareWorkerEnv, ctx: ExecutionContext) => {
 	return wrapWithLogger(request, env, ctx, async () => app.fetch(request, env, ctx));
 };
 
