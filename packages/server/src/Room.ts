@@ -326,12 +326,15 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 					]);
 
 					if (!response.success) {
-						this.send(ws, {error: `failed to execute authorization request`});
+						console.error(response.error);
+						this.send(ws, {
+							error: `failed to execute authorization request: (${response.error.code}) ${response.error.message}`,
+						});
 						return;
 					}
 
 					if (response.value != expectedResult) {
-						this.send(ws, {error: `authorization not passed`});
+						this.send(ws, {error: `authorization not passed: got ${response.value}, expected ${expectedResult}`});
 						return;
 					}
 
