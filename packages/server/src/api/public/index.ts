@@ -27,7 +27,7 @@ export function getPublicChatAPI<CustomEnv extends Env>(options: ServerOptions<C
 		// but by doing so. we then need to also type the context manually
 		.get('/room/:name/ws', ((c: Context<{Bindings: CustomEnv}, '/room/:name/ws', BlankInput>) => {
 			Room.services = services;
-			const room = services.getRoom(c.env, c.req.param().name);
+			const room = services.getRoom(options.getEnv(c), c.req.param().name);
 			return room.fetch(c.req.raw);
 		}) as WebsocketResponse)
 		.get(
