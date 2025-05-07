@@ -1,4 +1,4 @@
-import {AbstractServerObject, Services} from './types.js';
+import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from 'missiv-common';
@@ -6,6 +6,7 @@ import {recoverPublicKey} from './utils/signature.js';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {Methods} from 'eip-1193';
+import {RemoteSQL} from 'remote-sql';
 
 export type Session = {
 	address?: `0x${string}`;
@@ -34,23 +35,25 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	lastTimestamp: number = 0;
 	sessions: Map<WebSocket, Session> = new Map();
 
-	dbStorage: RemoteSQLStorage;
+	dbStorage!: RemoteSQLStorage; // set in instantiate
 	requireLogin: boolean;
 	env: CustomEnv;
 	identifier: {name: string; domain: string; authorization: string | undefined} | undefined;
 
-	static services: Services<any>; // need to be static as cloudflare worker does not let us pass them through any other way
+	abstract getDB(env: Env): RemoteSQL;
+	abstract getRateLimiter(env: Env, idOrName: ServerObjectId | string): ServerObject;
 
 	constructor(env: CustomEnv) {
 		super();
 		this.env = env;
 		this.requireLogin = false; // TODO env ?
-		const db = Room.services.getDB(env);
-		this.dbStorage = new RemoteSQLStorage(db);
 	}
 
 	// as this is an abstract class, we defer instantiation logic to the subclass
 	instantiate() {
+		const db = this.getDB(this.env);
+		this.dbStorage = new RemoteSQLStorage(db);
+
 		this.getWebSockets().forEach((webSocket) => {
 			// The constructor may have been called when waking up from hibernation,
 			// so get previously serialized metadata for any existing WebSockets.
@@ -64,7 +67,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			// DO ids aren't cloneable, restore the ID from its hex string
 			let limiter = hibernatedData
 				? new RateLimiterClient(
-						() => Room.services.getRateLimiter(this.env, hibernatedData.limiterId as string),
+						() => this.getRateLimiter(this.env, hibernatedData.limiterId as string),
 						(err: any) => webSocket.close(1011, err.stack),
 					)
 				: undefined;
@@ -155,7 +158,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 		// TODO find another mechanism if ip is not available for some reason ?
 		let limiter = limiterId
 			? new RateLimiterClient(
-					() => Room.services.getRateLimiter(this.env, limiterId),
+					() => this.getRateLimiter(this.env, limiterId),
 					(err: any) => ws.close(1011, err.stack),
 				)
 			: undefined;

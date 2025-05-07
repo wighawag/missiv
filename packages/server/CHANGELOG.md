@@ -1,5 +1,11 @@
 # missiv-server
 
+## 0.3.2
+
+### Patch Changes
+
+- no static services, duplicate in DurableObject
+
 ## 0.3.1
 
 ### Patch Changes

@@ -43,6 +43,6 @@
     "deploy:cf": "pnpm run --filter missiv-server-cf-worker deploy",
     "---------------------- RUN FULL LOCAL SETUP ----------------------": "",
     "stop": "zellij kill-session $npm_package_name",
-    "start": "zellij-launcher --layout zellij.kdl a $npm_package_name || zellij --layout zellij.kdl -s $npm_package_name"
+    "start": "zellij-launcher a $npm_package_name || zellij -n zellij.kdl -s $npm_package_name"
   }
 }

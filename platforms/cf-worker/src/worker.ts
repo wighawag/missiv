@@ -5,17 +5,34 @@ import 'named-logs-context';
 import {enable as enableWorkersLogger} from 'workers-logger';
 import {logs} from 'named-logs';
 // ------------------------------------------------------------------------------------------------
-import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter} from 'missiv-server';
+import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter, Env, ServerObject} from 'missiv-server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
 import {CloudflareWorkerEnv} from './env.js';
+import type {RemoteSQL} from 'remote-sql';
 
 // ------------------------------------------------------------------------------------------------
 enableWorkersLogger('*');
 const logger = logs('missiv-cf-worker');
 // ------------------------------------------------------------------------------------------------
+
+const services = {
+	getDB: (env: CloudflareWorkerEnv) => new RemoteD1(env.DB),
+	getRoom: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
+		if (typeof idOrName == 'string') {
+			idOrName = env.ROOMS.idFromName(idOrName);
+		}
+		return env.ROOMS.get(idOrName);
+	},
+	getRateLimiter: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
+		if (typeof idOrName == 'string') {
+			idOrName = env.LIMITERS.idFromName(idOrName);
+		}
+		return env.LIMITERS.get(idOrName);
+	},
+};
 
 export class ServerObjectRateLimiter extends RateLimiter<CloudflareWorkerEnv> {
 	state: DurableObjectState;
@@ -77,6 +94,14 @@ export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 		this.instantiate();
 
 		console.log({serverObjectId: this.state.id});
+	}
+
+	getDB(env: Env): RemoteSQL {
+		return services.getDB(this.env);
+	}
+
+	getRateLimiter(env: Env, idOrName: ServerObjectId | string): ServerObject {
+		return services.getRateLimiter(this.env, idOrName);
 	}
 
 	getStorage(): ServerObjectStorage {
@@ -177,22 +202,6 @@ export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 		}
 	}
 }
-
-const services = {
-	getDB: (env: CloudflareWorkerEnv) => new RemoteD1(env.DB),
-	getRoom: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
-		if (typeof idOrName == 'string') {
-			idOrName = env.ROOMS.idFromName(idOrName);
-		}
-		return env.ROOMS.get(idOrName);
-	},
-	getRateLimiter: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
-		if (typeof idOrName == 'string') {
-			idOrName = env.LIMITERS.idFromName(idOrName);
-		}
-		return env.LIMITERS.get(idOrName);
-	},
-};
 
 export const app = createServer<CloudflareWorkerEnv>({
 	services,

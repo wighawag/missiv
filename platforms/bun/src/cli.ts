@@ -6,6 +6,7 @@ import {
 	ServerObject,
 	ServerObjectId,
 	ServerObjectStorage,
+	Services,
 	createServer,
 	type Env,
 } from 'missiv-server';
@@ -17,6 +18,7 @@ import path from 'node:path';
 import {Command} from 'commander';
 import {loadEnv} from 'ldenv';
 import {BunEnv} from './env.js';
+import {RemoteSQL} from 'remote-sql';
 
 const __dirname = import.meta.dirname;
 
@@ -190,14 +192,25 @@ class BunRoom extends Room<BunEnv> {
 	websockets: WebSocket[] = [];
 	counter: number = 1;
 	storage: ServerObjectStorage;
+	services: Services<BunEnv>;
 
 	constructor(
 		private name: string,
 		env: BunEnv,
+		services: Services<BunEnv>,
 	) {
 		super(env);
 		this.storage = new SimpleObjectStorage();
+		this.services = services;
 		this.instantiate();
+	}
+
+	getDB(env: Env): RemoteSQL {
+		return this.services.getDB(this.env);
+	}
+
+	getRateLimiter(env: Env, idOrName: ServerObjectId | string): ServerObject {
+		return this.services.getRateLimiter(this.env, idOrName);
 	}
 
 	getStorage(): ServerObjectStorage {
@@ -348,7 +361,7 @@ async function main() {
 		if (roomInstances.has(name)) {
 			roomInstance = roomInstances.get(name)!;
 		} else {
-			roomInstance = new BunRoom(name, env);
+			roomInstance = new BunRoom(name, env, services);
 			roomInstances.set(name, roomInstance);
 		}
 		return roomInstance;
@@ -368,7 +381,9 @@ async function main() {
 		return instance;
 	}
 
-	const app = createServer<BunEnv>({services: {getDB, getRoom, getRateLimiter}, getEnv, upgradeWebSocket});
+	const services: Services<BunEnv> = {getDB, getRoom, getRateLimiter};
+
+	const app = createServer<BunEnv>({services, getEnv, upgradeWebSocket});
 
 	if (dbURL === ':memory:') {
 		console.log(`executing setup...`);
