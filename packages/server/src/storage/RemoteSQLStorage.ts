@@ -232,7 +232,7 @@ export class RemoteSQLStorage implements Storage {
 
 	async markAsRead(address: Address, action: ActionMarkAsRead) {
 		const statement = this.db.prepare(
-			`UPDATE ConversationParticipants SET lastRead = ?5, status = 1 WHERE domain = ?1 AND namespace = ?2 AND user = ?3 AND conversationID = ?4`,
+			`UPDATE ConversationParticipants SET lastRead = ?5 WHERE domain = ?1 AND namespace = ?2 AND user = ?3 AND conversationID = ?4`,
 		);
 
 		await statement
