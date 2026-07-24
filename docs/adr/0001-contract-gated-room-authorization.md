@@ -1,0 +1,3 @@
+# Semi-private rooms are gated by an on-chain contract call encoded in the room name
+
+We needed rooms whose membership derives from each account's on-chain data (e.g. owning a given NFT), so semi-private rooms encode their access rule directly in the room name as `chainId:contractAddress:callData:expectedResult` and admit a session only if a server-side `eth_call` (substituting the connecting account) returns `expectedResult`. Off-chain alternatives (a signed capability/token or a server-side allowlist) were considered but have not been needed so far, and none of them express "gate membership on live on-chain state" as directly.

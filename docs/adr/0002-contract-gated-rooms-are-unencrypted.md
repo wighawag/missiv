@@ -1,0 +1,3 @@
+# Contract-gated rooms are unencrypted (while direct messages are encrypted)
+
+Ideally every message would be encrypted, but encrypting a room with an unbounded, dynamic membership requires a substantially more complex design, so contract-gated rooms are currently plaintext (access is gated, content is not), while direct conversations stay encrypted. The schema already anticipates encrypted group chat, but the available approach requires the sender to send the message once per group member (each encrypted to that member's public key); that cost and complexity is why room messages are unencrypted for now rather than because plaintext is desired.

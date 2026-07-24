@@ -29,7 +29,7 @@ describe('Registration of keys', () => {
 				type: 'register',
 				address: USER_B.address,
 				signature: signature,
-				domain: 'test',
+				domain: 'test.com',
 			},
 			{publicKey: USER_B.delegatePublicKey}
 		);
@@ -40,7 +40,7 @@ describe('Registration of keys', () => {
 		});
 		const {completeUser} = await api.getCompleteUser({
 			address: USER_B.address,
-			domain: 'test',
+			domain: 'test.com',
 		});
 		expect(user.address.toLowerCase()).toEqual(USER_B.address.toLowerCase());
 		expect(completeUser.publicKey).toEqual(USER_B.delegatePublicKey);
