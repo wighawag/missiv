@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS ConversationParticipants (
     conversationID TEXT NOT NULL,
     user TEXT NOT NULL,
     -----------------------------------------------------------------------------------------------
-    status integer NOT NULL, -- 0 : unaccepted , 1: accepted , 2: rejected
+    status integer NOT NULL, -- 0 : unaccepted , 1: rejected , 2: accepted
     lastRead TIMESTAMP, -- when the user last read the conversation (NULL if never read) // TODO  0?
     PRIMARY KEY (domain, namespace, conversationID, user)
 );

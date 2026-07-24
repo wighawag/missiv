@@ -330,7 +330,6 @@ export class RemoteSQLStorage implements Storage {
 		}
 
 		const response = await this.db.batch(batch);
-		console.log({timestampMS});
 		return {
 			timestampMS,
 		};

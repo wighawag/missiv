@@ -85,7 +85,6 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 		if (request.url.endsWith('/ws')) {
 			const name = request.url.split('/').slice(-2)[0];
 			if (!this.identifier) {
-				console.log({name});
 				let domain: string;
 				let authorization: string | undefined;
 				if (name.startsWith('@')) {
@@ -283,7 +282,6 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 						return;
 					}
 					const publicKey = user.completeUser.publicKey;
-					console.log({signature: data.signature, challenge: session.challenge});
 					const recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
 					if (recoveredPublicKey !== publicKey) {
 						this.send(ws, {error: 'Invalid signature'});
