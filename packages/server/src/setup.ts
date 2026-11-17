@@ -42,7 +42,10 @@ export function requireSigner(c: Context): PublicKey {
  * `domain`: 401 when the key is registered nowhere, 403 when it is registered
  * for another domain (a key a wallet authorized for one site acts in no other).
  */
-export function requireAccount(c: Context, domain: string): {account: Address; publicKey: PublicKey} {
+export function requireAccount(
+	c: Context,
+	domain: string,
+): {account: Address; publicKey: PublicKey; domainUser: DomainUser} {
 	const publicKey = requireSigner(c);
 	const domainUser = c.get('domainUser');
 	if (!domainUser) {
@@ -51,7 +54,7 @@ export function requireAccount(c: Context, domain: string): {account: Address; p
 	if (domainUser.domain !== domain) {
 		throw new MissivError('forbidden', `the key that signed this request is registered for another domain`);
 	}
-	return {account: domainUser.user, publicKey};
+	return {account: domainUser.user, publicKey, domainUser};
 }
 
 /**

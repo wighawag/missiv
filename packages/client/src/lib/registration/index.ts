@@ -1,6 +1,7 @@
-import { API } from '$lib/API.js';
+import { API, type FetchFunction } from '$lib/API.js';
 import type { DomainUser } from 'missiv-common';
 import { derived, type Readable } from 'svelte/store';
+import { publicKeyOf, verifyDomainUser } from '$lib/messages.js';
 
 type Signer = { address: `0x${string}`; privateKey: string; publicKey: string };
 type AccountWithSigner = { address: `0x${string}`; signer: Signer };
@@ -25,6 +26,12 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			step: 'Unregistered';
 			domain: string;
 			registering: boolean; // can be registering
+			/**
+			 * another key is registered for this account in this domain (another device,
+			 * or a key the server cannot prove): registering this one replaces it, and the
+			 * messages encrypted to the other become unreadable here
+			 */
+			otherKey?: boolean;
 			address: `0x${string}`;
 			signer: Signer;
 	  }
@@ -51,8 +58,10 @@ export function createMissivRegistration(params: {
 	 */
 	appOrigin?: string;
 	account: Readable<Account>;
+	/** the fetch the API calls go through (the in-process server in tests) */
+	fetch?: FetchFunction;
 }) {
-	const api: API = new API(params.endpoint);
+	const api: API = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 	const appOrigin =
 		params.appOrigin ?? (typeof window !== 'undefined' ? window.location.origin : undefined);
 
@@ -108,7 +117,11 @@ export function createMissivRegistration(params: {
 			// account change in between, ignore
 			return;
 		}
-		if (registeredUser) {
+		const mine = registeredUser && (await isThisKey(registeredUser, address, signer));
+		if (address !== _account?.address) {
+			return;
+		}
+		if (registeredUser && mine) {
 			set({
 				step: 'Registered',
 				domain: params.domain,
@@ -123,9 +136,18 @@ export function createMissivRegistration(params: {
 				domain: params.domain,
 				registering: false,
 				address,
-				signer
+				signer,
+				otherKey: !!registeredUser
 			});
 		}
+	}
+
+	/** Whether the server's record is this signer's key, proven by this account's wallet. */
+	async function isThisKey(user: CompleteUser, address: `0x${string}`, signer: Signer) {
+		return (
+			user.publicKey === publicKeyOf(signer) &&
+			(await verifyDomainUser(user, { address, domain: params.domain }))
+		);
 	}
 
 	async function onAccountChanged() {
@@ -233,7 +255,7 @@ export function createMissivRegistration(params: {
 			return;
 		}
 
-		if (registeredUser) {
+		if (registeredUser && (await isThisKey(registeredUser, address, signer))) {
 			set({
 				step: 'Registered',
 				domain: params.domain,

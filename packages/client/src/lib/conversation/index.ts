@@ -1,21 +1,15 @@
 import { get, type Readable } from 'svelte/store';
-import { getSharedSecret } from '@noble/secp256k1';
-import { keccak_256 } from '@noble/hashes/sha3';
-import { randomBytes } from '@noble/hashes/utils';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
-import { base64 } from '@scure/base';
-import {
-	getConversationID,
-	type ActionSendEncryptedMessage,
-	type ActionSendMessage,
-	type Address,
-	type ConversationMessage,
-	type PublicKey
-} from 'missiv-common';
+import { getConversationID, type Address, type PublicKey } from 'missiv-common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { API } from '$lib/index.js';
+import { API, type FetchFunction } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
+import {
+	clearCopies,
+	encryptedCopies,
+	openMessage,
+	verifyDomainUser,
+	type OpenedMessage
+} from '$lib/messages.js';
 
 // TODO support group chat
 export type ConversationState = { error?: { message: string; cause?: any } } & {
@@ -38,12 +32,15 @@ export type ConversationState = { error?: { message: string; cause?: any } } & {
 				step: 'Fetched';
 				conversationID: string;
 
-				messages: ConversationMessage[];
+				messages: OpenedMessage[];
 		  }
 	);
 
 export type CurrentConversation = Readable<ConversationState> & {
+	/** send encrypted to the other user's verified key; refused when there is none */
 	sendMessage(text: string): Promise<void>;
+	/** send in clear, readable by the server: only when asked, to reach a user with no verified key */
+	sendIntroduction(text: string): Promise<void>;
 };
 
 export type LoadedAccount = {
@@ -56,28 +53,13 @@ export type LoadedAccount = {
 };
 
 export type OtherUser = {
-	publicKey?: PublicKey;
 	address: Address;
 	name?: string;
+	/** the other user's key, set only once its ownership proof is verified */
+	publicKey?: PublicKey;
+	/** the server returned a key whose ownership proof does not verify: nothing is encrypted to it */
+	unverifiedKey?: boolean;
 };
-
-const sharedKeyCache: { [userAndOtherpublicKey: string]: Uint8Array } = {};
-const messageCache: { [idTimestamp: string]: string } = {};
-
-function getSharedKey(
-	user: { address: string; signer: { address: string; privateKey: string } },
-	otherpublicKey: PublicKey
-): Uint8Array {
-	const cacheID = user.address.toLowerCase() + ':' + otherpublicKey;
-	let sharedKey = sharedKeyCache[cacheID];
-	if (!sharedKey) {
-		const sharedSecret = getSharedSecret(user.signer.privateKey.slice(2), otherpublicKey.slice(2));
-		sharedKey = keccak_256(sharedSecret);
-		sharedKeyCache[cacheID] = sharedKey;
-	}
-
-	return sharedKey;
-}
 
 // TODO remove: markAsAcceptedAndRead
 //   once we handle accepted/naccepted conversation in the UI we do it automatically here
@@ -90,17 +72,20 @@ export function openOneConversation(params: {
 	account: LoadedAccount;
 	otherUser: OtherUser;
 	markAsAcceptedAndRead?: boolean;
+	/** the fetch the API calls go through (the in-process server in tests) */
+	fetch?: FetchFunction;
 }): CurrentConversation {
 	const conversationID = getConversationID(params.account.address, params.otherUser.address);
 
 	const pollingInterval = params.pollingInterval || 2;
-	const api = new API(params.endpoint);
+	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 
 	let $conversation: ConversationState = {
 		step: 'Fetching',
 		conversationID,
 		account: params.account,
-		otherUser: params.otherUser
+		// a key is only ever the one this store verified
+		otherUser: { address: params.otherUser.address, name: params.otherUser.name }
 	};
 	let _set: (value: ConversationState) => void;
 	let _registration: MissivRegistration = get(params.registration);
@@ -147,18 +132,25 @@ export function openOneConversation(params: {
 				address: $conversation.otherUser.address,
 				domain: params.domain
 			});
-			if (domainUser?.publicKey) {
+			if (domainUser) {
+				const verified = await verifyDomainUser(domainUser, {
+					address: $conversation.otherUser.address,
+					domain: params.domain
+				});
 				set({
 					...$conversation,
-					otherUser: {
-						...$conversation.otherUser,
-						publicKey: domainUser.publicKey,
-						name: domainUser.name ?? undefined
-					}
+					otherUser: verified
+						? {
+								...$conversation.otherUser,
+								publicKey: domainUser.publicKey,
+								name: domainUser.name ?? undefined,
+								unverifiedKey: false
+							}
+						: { ...$conversation.otherUser, unverifiedKey: true }
 				});
 			}
 		}
-		const { messages } = await api.getMessages(
+		const { messages: copies } = await api.getMessages(
 			{
 				type: `getMessages`,
 				domain: params.domain,
@@ -170,30 +162,12 @@ export function openOneConversation(params: {
 			}
 		);
 
-		for (let i = 0; i < messages.length; i++) {
-			const message = messages[i];
-			if (message.messageType === 'encrypted') {
-				const cacheID = message.id + ':' + message.timestamp;
-				let content = messageCache[cacheID];
-				if (!content) {
-					const sharedKey =
-						message.sender.toLowerCase() == $conversation.account.address.toLowerCase()
-							? // an encrypted copy always names its key
-								getSharedKey($conversation.account, message.recipientPublicKey!)
-							: getSharedKey($conversation.account, message.senderPublicKey);
-
-					const [nonceb64, ciphertextb64] = message.content.split(/:(.*)/s);
-					const nonce = base64.decode(nonceb64);
-					const chacha = xchacha20poly1305(sharedKey, nonce);
-					const ciphertext = base64.decode(ciphertextb64);
-					const contentAsBytes = chacha.decrypt(ciphertext);
-					content = bytesToUtf8(contentAsBytes);
-					messageCache[cacheID] = content;
-				}
-
-				message.content = content;
-			}
-		}
+		const reader = {
+			address: $conversation.account.address,
+			domain: params.domain,
+			privateKey: $conversation.account.signer.privateKey
+		};
+		const messages = await Promise.all(copies.map((copy) => openMessage(copy, reader)));
 
 		if (params.markAsAcceptedAndRead) {
 			api.acceptConversation(
@@ -251,8 +225,7 @@ export function openOneConversation(params: {
 		if (addressChanged) {
 			if (newAddress) {
 				set({
-					step: 'Idle',
-					invalidAccount: true,
+					step: 'Fetching',
 					account: $conversation.account,
 					conversationID: $conversation.conversationID,
 					otherUser: $conversation.otherUser
@@ -295,86 +268,67 @@ export function openOneConversation(params: {
 		}
 	);
 
-	async function sendMessage(text: string) {
+	function sender() {
 		if ($conversation.step === 'Idle') {
 			throw new Error(`Idle`);
 		}
+		return {
+			address: $conversation.account.address,
+			privateKey: $conversation.account.signer.privateKey
+		};
+	}
 
-		// TODO = signMessage(text);
-		const signature = '0x0000000000000000000000000000000000000000000000000000000000000000';
+	function common() {
+		return {
+			type: 'sendMessage' as const,
+			domain: params.domain,
+			namespace: params.namespace,
+			conversationID,
+			lastMessageReadTimestampMS: Date.now()
+		};
+	}
 
-		// TODO
-		const lastMessageReadTimestampMS = Date.now();
-
-		if (!$conversation.otherUser.publicKey) {
-			const action: ActionSendMessage = {
-				type: 'sendMessage',
-				messages: [
-					// TODO server optimization: unencrypted: only need one message and a list of recipients
-					{
-						content: text,
-						to: $conversation.otherUser.address
-					},
-					{
-						content: text,
-						to: $conversation.account.address
-					}
-				],
-				conversationID: $conversation.conversationID,
-				messageType: 'clear',
-				domain: params.domain,
-				namespace: params.namespace,
-				signature,
-				lastMessageReadTimestampMS
-			};
-			console.log(action);
-			await api.sendMessage(action, {
-				privateKey: $conversation.account.signer.privateKey
-			});
-		} else {
-			const sharedKey = getSharedKey($conversation.account, $conversation.otherUser.publicKey);
-
-			const nonce = randomBytes(24);
-			const chacha = xchacha20poly1305(sharedKey, nonce);
-
-			const data = utf8ToBytes(text);
-			const ciphertext = chacha.encrypt(data);
-
-			const encryptedTo = `${base64.encode(nonce)}:${base64.encode(ciphertext)}`;
-
-			const actionSendEncryptedMessage: ActionSendEncryptedMessage = {
-				type: 'sendMessage',
-				messages: [
-					// TODO server optimization: when encrypted vut only 2 person conversation
-					//   only need one message and
-					{
-						content: encryptedTo,
-
-						to: $conversation.otherUser.address,
-						toPublicKey: $conversation.otherUser.publicKey
-					},
-					{
-						content: encryptedTo,
-						to: $conversation.account.address,
-						toPublicKey: $conversation.otherUser.publicKey // TODO self ?
-					}
-				],
-				conversationID: $conversation.conversationID,
-				messageType: 'encrypted',
-				domain: params.domain,
-				namespace: params.namespace,
-				signature,
-				lastMessageReadTimestampMS
-			};
-
-			await api.sendMessage(actionSendEncryptedMessage, {
-				privateKey: $conversation.account.signer.privateKey
-			});
+	async function sendMessage(text: string) {
+		const from = sender();
+		const publicKey = $conversation.otherUser.publicKey;
+		if (!publicKey) {
+			throw new Error(
+				$conversation.otherUser.unverifiedKey
+					? `the other user's key is not proven by their wallet: nothing is sent`
+					: `the other user has no key yet: send an introduction in clear with sendIntroduction`
+			);
 		}
+		const scope = { domain: params.domain, namespace: params.namespace, conversationID };
+		const messages = await encryptedCopies({
+			scope,
+			sender: from,
+			recipient: { address: $conversation.otherUser.address, publicKey },
+			text
+		});
+		await api.sendMessage(
+			{ ...common(), messageType: 'encrypted', messages },
+			{ privateKey: from.privateKey }
+		);
+	}
+
+	async function sendIntroduction(text: string) {
+		const from = sender();
+		const scope = { domain: params.domain, namespace: params.namespace, conversationID };
+		const messages = await clearCopies({
+			scope,
+			sender: from,
+			recipients: [$conversation.otherUser.address],
+			text
+		});
+		await api.sendMessage(
+			{ ...common(), messageType: 'clear', messages },
+			{ privateKey: from.privateKey }
+		);
 	}
 
 	return {
 		subscribe,
-		sendMessage
+		sendMessage,
+		sendIntroduction
 	};
 }

@@ -45,7 +45,8 @@ CREATE TABLE ConversationParticipants (
 CREATE INDEX idx_participants_user ON ConversationParticipants (domain, namespace, user, status);
 
 -- One row per recipient of a message (the sender's own copy included). messageID
--- is time-ordered (a ULID), shared by a message's rows.
+-- is time-ordered (a ULID), shared by a message's rows; signature is the sender's
+-- over this copy, stored as sent and checked by the reader, never here.
 CREATE TABLE Messages (
   domain TEXT NOT NULL,
   namespace TEXT NOT NULL,
@@ -54,6 +55,10 @@ CREATE TABLE Messages (
   messageID TEXT NOT NULL,
   sender TEXT NOT NULL,
   senderPublicKey TEXT NOT NULL,
+  -- the sender's ownership proof of senderPublicKey when it sent, so a reader can
+  -- check the message after the sender has replaced the key
+  senderOwnershipSignature TEXT NOT NULL,
+  senderAppOrigin TEXT NOT NULL,
   recipientPublicKey TEXT,
   messageType TEXT NOT NULL,
   content TEXT NOT NULL,

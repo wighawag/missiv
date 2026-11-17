@@ -14,6 +14,7 @@
     "missiv-server": "workspace:*",
     "prettier": "^3.5.3",
     "remote-sql-libsql": "^0.0.6",
+    "svelte": "^5.23.2",
     "viem": "^2.23.13",
     "vitest": "^3.0.9"
   },

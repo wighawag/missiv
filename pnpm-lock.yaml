@@ -102,6 +102,9 @@ importers:
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
+      '@noble/secp256k1':
+        specifier: ^2.2.3
+        version: 2.2.3
       delegated-identity:
         specifier: ^0.1.1
         version: 0.1.1
@@ -362,6 +365,9 @@ importers:
       remote-sql-libsql:
         specifier: ^0.0.6
         version: 0.0.6(@libsql/core@0.14.0)
+      svelte:
+        specifier: ^5.23.2
+        version: 5.23.2
       viem:
         specifier: ^2.23.13
         version: 2.23.13(typescript@5.8.2)(zod@3.24.2)

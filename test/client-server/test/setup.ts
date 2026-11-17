@@ -5,7 +5,12 @@
 // production; a test that needs another configuration passes its own env.
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {conversationIDOf, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
+import {
+	conversationIDOf,
+	originPublicKeyPublicationMessage,
+	signMessageCopy,
+	type ConversationMessage,
+} from 'missiv-common';
 import {createServer, migrate, type PushNotifier} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -15,6 +20,8 @@ export const DOMAIN = 'test.com';
 export const APP_ORIGIN = 'https://test.com';
 export const NAMESPACE = 'test';
 export const SERVER_URL = 'http://localhost';
+/** a well-formed copy signature: the server stores a copy's signature and never checks it (its reader does) */
+export const UNCHECKED_SIGNATURE = `0x${'11'.repeat(64)}00` as `0x${string}`;
 
 function toHex(arr: Uint8Array): `0x${string}` {
 	let str = `0x`;
@@ -49,6 +56,46 @@ export async function createUser(): Promise<TestUser> {
 		ownershipSignature: await signPublication(delegatePublicKey),
 		signPublication,
 	};
+}
+
+/** A missiv-client account of a test user: its wallet address and its delegate key as the signer. */
+export function accountOf(user: TestUser) {
+	return {
+		address: user.address,
+		signer: {
+			address: user.address,
+			privateKey: toHex(user.delegatePrivateKey),
+			publicKey: user.delegatePublicKey,
+		},
+	};
+}
+
+/** The first value of a store that matches, or a timeout. */
+export function until<T>(
+	store: {subscribe(run: (value: T) => void): () => void},
+	predicate: (value: T) => boolean,
+	timeoutMs = 2000,
+): Promise<T> {
+	return new Promise((resolve, reject) => {
+		let unsubscribe: (() => void) | undefined;
+		let done = false;
+		const timer = setTimeout(() => {
+			done = true;
+			unsubscribe?.();
+			reject(new Error(`no matching value within ${timeoutMs} ms`));
+		}, timeoutMs);
+		unsubscribe = store.subscribe((value) => {
+			if (!done && predicate(value)) {
+				done = true;
+				clearTimeout(timer);
+				queueMicrotask(() => unsubscribe?.());
+				resolve(value);
+			}
+		});
+		if (done) {
+			unsubscribe();
+		}
+	});
 }
 
 export function newDelegateKey() {
@@ -131,20 +178,37 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 	}) {
 		const recipients = Array.isArray(to) ? to : [to];
 		const all = recipients.some((r) => r.address === from.address) ? recipients : [from, ...recipients];
+		const id = conversationID || conversationIDOf(all.map((v) => v.address));
+		const messages = await Promise.all(
+			all.map(async (recipient) => ({
+				content,
+				to: recipient.address,
+				toPublicKey: recipient.delegatePublicKey,
+				// each copy signed by the sender, as missiv-client signs it
+				signature: await signMessageCopy(
+					{
+						domain,
+						namespace: NAMESPACE,
+						conversationID: id,
+						messageType,
+						from: from.address,
+						to: recipient.address,
+						toPublicKey: messageType === 'encrypted' ? recipient.delegatePublicKey : undefined,
+						content,
+					},
+					from.delegatePrivateKey,
+				),
+			})),
+		);
 		return api.sendMessage(
 			{
 				type: 'sendMessage',
 				domain,
 				namespace: NAMESPACE,
-				messages: all.map((recipient) => ({
-					content,
-					to: recipient.address,
-					toPublicKey: recipient.delegatePublicKey,
-				})),
+				messages,
 				messageType,
-				conversationID: conversationID || conversationIDOf(all.map((v) => v.address)),
+				conversationID: id,
 				lastMessageReadTimestampMS: timestamp,
-				signature: '0x00',
 			},
 			{privateKey: from.delegatePrivateKey},
 		);

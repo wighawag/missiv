@@ -11,6 +11,7 @@ import {
 	conversationIDOf,
 	DOMAIN,
 	APP_ORIGIN,
+	UNCHECKED_SIGNATURE,
 	type Harness,
 	type TestUser,
 } from './setup.js';
@@ -116,10 +117,9 @@ describe('signed requests are not replayable (signed-requests-are-replayable-and
 			conversationID: conversationIDOf([A.address, B.address]),
 			lastMessageReadTimestampMS: 0,
 			messageType: 'clear',
-			signature: '0x00',
 			messages: [
-				{to: A.address, toPublicKey: A.delegatePublicKey, content: 'once'},
-				{to: B.address, toPublicKey: B.delegatePublicKey, content: 'once'},
+				{to: A.address, toPublicKey: A.delegatePublicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
+				{to: B.address, toPublicKey: B.delegatePublicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
 			],
 		});
 		let headers: Record<string, string> | undefined;
@@ -210,10 +210,9 @@ describe('conversation checks (S3-8)', () => {
 					conversationID: conversationIDOf([A.address, B.address]),
 					lastMessageReadTimestampMS: 0,
 					messageType: 'encrypted',
-					signature: '0x00',
 					messages: [
-						{to: A.address, toPublicKey: B.delegatePublicKey, content: 'x'},
-						{to: B.address, toPublicKey: C.delegatePublicKey, content: 'x'},
+						{to: A.address, toPublicKey: B.delegatePublicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
+						{to: B.address, toPublicKey: C.delegatePublicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
 					],
 				},
 				{privateKey: A.delegatePrivateKey},
@@ -231,10 +230,9 @@ describe('conversation checks (S3-8)', () => {
 					conversationID: conversationIDOf([B.address, C.address]),
 					lastMessageReadTimestampMS: 0,
 					messageType: 'clear',
-					signature: '0x00',
 					messages: [
-						{to: B.address, content: 'x'},
-						{to: C.address, content: 'x'},
+						{to: B.address, content: 'x', signature: UNCHECKED_SIGNATURE},
+						{to: C.address, content: 'x', signature: UNCHECKED_SIGNATURE},
 					],
 				},
 				{privateKey: A.delegatePrivateKey},

@@ -53,6 +53,8 @@ type MessageRow = {
 	messageID: string;
 	sender: Address;
 	senderPublicKey: PublicKey;
+	senderOwnershipSignature: String0x;
+	senderAppOrigin: string;
 	recipientPublicKey: PublicKey | null;
 	messageType: 'clear' | 'encrypted';
 	content: string;
@@ -200,6 +202,8 @@ export class RemoteSQLStorage {
 			recipient: row.recipient,
 			sender: row.sender,
 			senderPublicKey: row.senderPublicKey,
+			senderOwnershipSignature: row.senderOwnershipSignature,
+			senderAppOrigin: row.senderAppOrigin,
 			recipientPublicKey: row.recipientPublicKey,
 			content: row.content,
 			timestamp: row.timestamp,
@@ -291,8 +295,7 @@ export class RemoteSQLStorage {
 	 * of `members`.
 	 */
 	async sendMessage(
-		publicKey: PublicKey,
-		account: Address,
+		sender: DomainUser,
 		timestampMS: number,
 		action: ActionSendMessage,
 		members: Address[],
@@ -312,10 +315,11 @@ export class RemoteSQLStorage {
 		`);
 		const insertMessage = this.db.prepare(`
 			INSERT INTO Messages (domain, namespace, conversationID, recipient, messageID, sender, senderPublicKey,
-				recipientPublicKey, messageType, content, signature, timestamp)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+				senderOwnershipSignature, senderAppOrigin, recipientPublicKey, messageType, content, signature, timestamp)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
 		`);
 
+		const account = sender.user;
 		const messageID = newULID(timestampMS);
 		const batch: SQLPreparedStatement[] = [
 			upsertConversation.bind(
@@ -347,11 +351,13 @@ export class RemoteSQLStorage {
 					message.to,
 					messageID,
 					account,
-					publicKey,
+					sender.publicKey,
+					sender.signature,
+					sender.appOrigin,
 					action.messageType === 'encrypted' ? message.toPublicKey : null,
 					action.messageType,
 					message.content,
-					action.signature,
+					message.signature,
 					timestampMS,
 				),
 			);

@@ -1,5 +1,5 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { API } from '$lib/index.js';
+import { API, type FetchFunction } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
 import type { Conversation } from 'missiv-common';
 import { get } from 'svelte/store';
@@ -31,9 +31,11 @@ export function openConversationList(params: {
 	domain: string;
 	namespace: string;
 	pollingInterval?: number;
+	/** the fetch the API calls go through (the in-process server in tests) */
+	fetch?: FetchFunction;
 }) {
 	const pollingInterval = params.pollingInterval || 20;
-	const api = new API(params.endpoint);
+	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 
 	let $conversationList: ConversationList = {
 		step: 'Idle'

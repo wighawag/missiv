@@ -22,7 +22,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 		.use(setup({serverOptions: options}))
 		.post('/sendMessage', validateJSON(ActionSendMessageSchema), async (c) => {
 			const action = c.req.valid('json');
-			const {account, publicKey} = requireAccount(c, action.domain);
+			const {account, domainUser} = requireAccount(c, action.domain);
 			const storage = c.get('config').storage;
 
 			// the conversation is its members: the recipients, the sender among them
@@ -53,14 +53,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const deliverTo = new Set(members.filter((member) => !blockers.has(member)));
 
 			await refuseReplay(c);
-			const {timestampMS, messageID} = await storage.sendMessage(
-				publicKey,
-				account,
-				Date.now(),
-				action,
-				members,
-				deliverTo,
-			);
+			const {timestampMS, messageID} = await storage.sendMessage(domainUser, Date.now(), action, members, deliverTo);
 
 			// a push to each recipient (not the sender, not one who blocked them), after the response
 			const env = c.get('config').env as CustomEnv;

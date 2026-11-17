@@ -4,7 +4,7 @@
 import {describe, it, expect} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {delegatePublicKey, originPublicKeyPublicationMessage} from 'delegated-identity';
-import {API} from 'missiv-client';
+import {API, clearCopies} from 'missiv-client';
 import {conversationIDOf} from 'missiv-common';
 import {createNodeServer} from '../src/index.js';
 
@@ -42,11 +42,12 @@ describe('nodejs platform', () => {
 				conversationID,
 				lastMessageReadTimestampMS: 0,
 				messageType: 'clear',
-				signature: '0x00',
-				messages: [
-					{to: a.address, content: 'hello'},
-					{to: b.address, content: 'hello'},
-				],
+				messages: await clearCopies({
+					scope: {domain: DOMAIN, namespace: '', conversationID},
+					sender: {address: a.address, privateKey: a.delegatePrivateKey},
+					recipients: [b.address],
+					text: 'hello',
+				}),
 			},
 			{privateKey: a.delegatePrivateKey},
 		);

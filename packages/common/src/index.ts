@@ -200,15 +200,24 @@ export type ResponseUnblock = {success: true};
  * Send a message: one copy per member, the sender's own included. The members
  * are the recipients (`to`), so `conversationID` must be `conversationIDOf` them.
  * An encrypted copy names the key it is encrypted to (`toPublicKey`), which must
- * be the recipient's registered key; a clear copy names none.
+ * be the recipient's registered key; a clear copy names none. Each copy carries
+ * the sender's signature over it (`signMessageCopy`), which the server stores and
+ * the reader checks.
  */
 const sendMessageFields = {
 	type: z.literal('sendMessage'),
 	...conversationScope,
 	conversationID: ConversationIDSchema,
 	lastMessageReadTimestampMS: z.number(),
-	signature: String0xSchema,
 };
+
+/** a copy's signature by the sender's delegate key (`signMessageCopy`): the compact signature and the recovery byte */
+export const MessageSignatureSchema = z.custom<String0x>(
+	(v) => typeof v === 'string' && /^0x[0-9a-f]{128}0[01]$/.test(v),
+	{
+		message: 'expected a message signature (0x, 64 bytes compact, the recovery byte)',
+	},
+);
 
 export const MAX_MEMBERS = 32;
 
@@ -217,7 +226,14 @@ export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
 		...sendMessageFields,
 		messageType: z.literal('encrypted'),
 		messages: z
-			.array(z.object({to: AddressSchema, toPublicKey: PublicKeySchema, content: z.string().max(16384)}))
+			.array(
+				z.object({
+					to: AddressSchema,
+					toPublicKey: PublicKeySchema,
+					content: z.string().max(16384),
+					signature: MessageSignatureSchema,
+				}),
+			)
 			.min(2)
 			.max(MAX_MEMBERS),
 	}),
@@ -225,7 +241,14 @@ export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
 		...sendMessageFields,
 		messageType: z.literal('clear'),
 		messages: z
-			.array(z.object({to: AddressSchema, toPublicKey: PublicKeySchema.optional(), content: z.string().max(16384)}))
+			.array(
+				z.object({
+					to: AddressSchema,
+					toPublicKey: PublicKeySchema.optional(),
+					content: z.string().max(16384),
+					signature: MessageSignatureSchema,
+				}),
+			)
 			.min(2)
 			.max(MAX_MEMBERS),
 	}),
@@ -244,11 +267,16 @@ export type ConversationMessage = {
 	recipient: Address;
 	sender: Address;
 	senderPublicKey: PublicKey;
+	/** the sender's ownership proof of `senderPublicKey` (the wallet's signature over its publication message) */
+	senderOwnershipSignature: String0x;
+	/** the app origin that proof names, whose host is `domain` */
+	senderAppOrigin: string;
 	/** the key an encrypted copy is encrypted to; null for a clear copy */
 	recipientPublicKey: PublicKey | null;
 	content: string;
 	timestamp: number;
 	messageType: 'encrypted' | 'clear';
+	/** the sender's signature over this copy (`signMessageCopy`), stored as sent and never checked by the server */
 	signature: String0x;
 };
 
@@ -331,6 +359,13 @@ export function serverOriginOf(url: string): string {
 	const protocol = parsed.protocol === 'wss:' ? 'https:' : parsed.protocol === 'ws:' ? 'http:' : parsed.protocol;
 	return `${protocol}//${parsed.host}`;
 }
+
+export {
+	messageCopyMessage,
+	signMessageCopy,
+	recoverMessageCopySigner,
+	type MessageCopyToSign,
+} from './message-signature.js';
 
 // The ownership proof and the request signature live in delegated-identity,
 // shared with the services that check the same proofs; re-exported here.
