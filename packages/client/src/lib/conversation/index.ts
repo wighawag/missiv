@@ -1,8 +1,8 @@
-import { get, type Readable } from 'svelte/store';
+import type { Readable } from 'svelte/store';
 import { getConversationID, type Address, type PublicKey } from 'missiv-common';
-import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { API, type FetchFunction } from '$lib/index.js';
-import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
+import { API, type FetchFunction } from '$lib/API.js';
+import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
 import {
 	clearCopies,
 	encryptedCopies,
@@ -10,47 +10,6 @@ import {
 	verifyDomainUser,
 	type OpenedMessage
 } from '$lib/messages.js';
-
-// TODO support group chat
-export type ConversationState = { error?: { message: string; cause?: any } } & {
-	conversationID: string;
-	otherUser: OtherUser;
-	account: LoadedAccount;
-} & (
-		| // start in Idle
-		{
-				step: 'Idle';
-				invalidAccount: boolean;
-		  }
-		// will then be "Fetching" to fetch the messages
-		| {
-				step: 'Fetching';
-				conversationID: string;
-		  }
-		// finally it is in "Fetched" step but will still be fetching new messages in the background
-		| {
-				step: 'Fetched';
-				conversationID: string;
-
-				messages: OpenedMessage[];
-		  }
-	);
-
-export type CurrentConversation = Readable<ConversationState> & {
-	/** send encrypted to the other user's verified key; refused when there is none */
-	sendMessage(text: string): Promise<void>;
-	/** send in clear, readable by the server: only when asked, to reach a user with no verified key */
-	sendIntroduction(text: string): Promise<void>;
-};
-
-export type LoadedAccount = {
-	address: `0x${string}`;
-	signer: {
-		address: string;
-		privateKey: string;
-		publicKey: string;
-	};
-};
 
 export type OtherUser = {
 	address: Address;
@@ -61,274 +20,197 @@ export type OtherUser = {
 	unverifiedKey?: boolean;
 };
 
-// TODO remove: markAsAcceptedAndRead
-//   once we handle accepted/naccepted conversation in the UI we do it automatically here
+/** A conversation of two: the account of the registration and `otherUser`. */
+export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
+	| // no registered account
+	{ step: 'Idle'; conversationID: undefined }
+	// fetching the messages for the first time
+	| { step: 'Fetching'; conversationID: string }
+	// fetched, and polled again while subscribed; newest last; each copy opened on its own
+	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[] }
+);
+
+export type CurrentConversation = Readable<ConversationState> & {
+	/** send encrypted to the other user's verified key; refused when there is none */
+	sendMessage(text: string): Promise<void>;
+	/** send in clear, readable by the server: only when asked, to reach a user with no verified key */
+	sendIntroduction(text: string): Promise<void>;
+};
+
 export function openOneConversation(params: {
 	registration: MissivRegistrationStore;
 	endpoint: string;
 	domain: string;
 	namespace: string;
+	/** seconds between two fetches (default 2) */
 	pollingInterval?: number;
-	account: LoadedAccount;
-	otherUser: OtherUser;
+	otherUser: { address: Address; name?: string };
+	/** accept the conversation and mark it read each time a newer message is shown */
 	markAsAcceptedAndRead?: boolean;
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
 }): CurrentConversation {
-	const conversationID = getConversationID(params.account.address, params.otherUser.address);
-
 	const pollingInterval = params.pollingInterval || 2;
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
-
-	let $conversation: ConversationState = {
-		step: 'Fetching',
-		conversationID,
-		account: params.account,
-		// a key is only ever the one this store verified
-		otherUser: { address: params.otherUser.address, name: params.otherUser.name }
+	const { domain, namespace } = params;
+	// a key is only ever the one this store verified
+	const initialOther: OtherUser = {
+		address: params.otherUser.address,
+		name: params.otherUser.name
 	};
-	let _set: (value: ConversationState) => void;
-	let _registration: MissivRegistration = get(params.registration);
 
-	function set(conversation: ConversationState) {
-		$conversation = conversation;
-		_set($conversation);
-		return $conversation;
-	}
+	/** the account of the current run, and how to refresh it */
+	let current:
+		| { address: Address; privateKey: string; conversationID: string; refresh(): Promise<void> }
+		| undefined;
 
-	let fetching = true;
-	let running = false;
-	function onStart() {
-		running = true;
-		// TODO mixing registration and conversaiton steps
-		if (fetching || $conversation.step === 'Fetched') {
-			if (_registration.step !== 'Registered') {
+	const store = activeStore<MissivRegistration, ConversationState>({
+		source: params.registration,
+		key: (registration) => (registration.step === 'Registered' ? registration.address : ''),
+		initial: { step: 'Idle', conversationID: undefined, otherUser: initialOther },
+		run(registration, ctx) {
+			if (registration.step !== 'Registered') {
+				current = undefined;
+				ctx.set({ step: 'Idle', conversationID: undefined, otherUser: initialOther });
 				return;
 			}
-			startFetching(_registration.address);
-		}
-	}
+			const address = registration.address;
+			const privateKey = registration.signer.privateKey;
+			const conversationID = getConversationID(address, params.otherUser.address);
+			const reader = { address, domain, privateKey };
+			ctx.set({ step: 'Fetching', conversationID, otherUser: initialOther });
+			let lastMarked = 0;
 
-	async function startFetching(address: string) {
-		fetchMessagesgainAndAgain(address);
-	}
-
-	let timeout: NodeJS.Timeout | undefined;
-	async function fetchMessagesgainAndAgain(address: string) {
-		await fetchMessages(address);
-		timeout = setTimeout(fetchMessagesgainAndAgain, pollingInterval * 1000, address);
-	}
-
-	async function fetchMessages(address: string) {
-		if (_registration.step !== 'Registered') {
-			return;
-		}
-		if ($conversation.step === 'Idle') {
-			return;
-		}
-		if (!$conversation.otherUser.publicKey) {
-			const { domainUser } = await api.getDomainUser({
-				type: 'getDomainUser',
-				address: $conversation.otherUser.address,
-				domain: params.domain
-			});
-			if (domainUser) {
-				const verified = await verifyDomainUser(domainUser, {
-					address: $conversation.otherUser.address,
-					domain: params.domain
+			async function resolveOtherKey() {
+				const { otherUser } = ctx.get();
+				if (otherUser.publicKey) {
+					return;
+				}
+				const { domainUser } = await api.getDomainUser({
+					type: 'getDomainUser',
+					address: otherUser.address,
+					domain
 				});
-				set({
-					...$conversation,
+				if (!domainUser) {
+					return;
+				}
+				const verified = await verifyDomainUser(domainUser, { address: otherUser.address, domain });
+				ctx.update((state) => ({
+					...state,
 					otherUser: verified
 						? {
-								...$conversation.otherUser,
+								...state.otherUser,
 								publicKey: domainUser.publicKey,
-								name: domainUser.name ?? undefined,
+								name: domainUser.name ?? state.otherUser.name,
 								unverifiedKey: false
 							}
-						: { ...$conversation.otherUser, unverifiedKey: true }
-				});
+						: { ...state.otherUser, unverifiedKey: true }
+				}));
 			}
-		}
-		const { messages: copies } = await api.getMessages(
-			{
-				type: `getMessages`,
-				domain: params.domain,
-				namespace: params.namespace,
-				conversationID
-			},
-			{
-				privateKey: $conversation.account.signer.privateKey
-			}
-		);
 
-		const reader = {
-			address: $conversation.account.address,
-			domain: params.domain,
-			privateKey: $conversation.account.signer.privateKey
-		};
-		const messages = await Promise.all(copies.map((copy) => openMessage(copy, reader)));
-
-		if (params.markAsAcceptedAndRead) {
-			api.acceptConversation(
-				{
-					type: 'acceptConversation',
-					domain: params.domain,
-					namespace: params.namespace,
-					conversationID,
-					lastMessageReadTimestampMS: Date.now() // TODO ?
-				},
-				{
-					privateKey: $conversation.account.signer.privateKey
+			async function fetchMessages() {
+				await resolveOtherKey();
+				const { messages: copies } = await api.getMessages(
+					{ type: 'getMessages', domain, namespace, conversationID },
+					{ privateKey }
+				);
+				const messages = (
+					await Promise.all(copies.map((copy) => openMessage(copy, reader)))
+				).reverse();
+				if (!ctx.active) {
+					return;
 				}
-			);
-		}
-
-		const messageList = messages.reverse();
-
-		if (_registration.address === address) {
-			if ($conversation.step === 'Fetching') {
-				set({
-					...$conversation,
+				ctx.update((state) => ({
 					step: 'Fetched',
-					messages: messageList
-				});
-			} else if ($conversation.step === 'Fetched') {
-				set({
-					...$conversation,
-					messages: messageList
-				});
-			} else {
-				// we ignore
+					conversationID,
+					otherUser: state.otherUser,
+					messages
+				}));
+				const newest = messages[messages.length - 1];
+				if (params.markAsAcceptedAndRead && newest && newest.timestamp > lastMarked) {
+					lastMarked = newest.timestamp;
+					await api.acceptConversation(
+						{
+							type: 'acceptConversation',
+							domain,
+							namespace,
+							conversationID,
+							lastMessageReadTimestampMS: newest.timestamp
+						},
+						{ privateKey }
+					);
+				}
 			}
-		} else {
-			// we ignore
+
+			const run = { address, privateKey, conversationID, refresh: fetchMessages };
+			current = run;
+			const stop = poll(ctx, pollingInterval * 1000, fetchMessages, (err) =>
+				ctx.update((state) => ({
+					...state,
+					error: toStoreError('failed to fetch the messages', err)
+				}))
+			);
+			return () => {
+				stop();
+				if (current === run) current = undefined;
+			};
 		}
+	});
+
+	function requireRun() {
+		if (!current) {
+			throw new Error(`no registered account (or the conversation has no subscriber)`);
+		}
+		return current;
 	}
 
-	function stopFetching() {
-		if (timeout) {
-			clearTimeout(timeout);
-		}
-	}
-
-	async function onRegistrationChanged(
-		oldRegistration: MissivRegistration,
-		newRegistration: MissivRegistration
-	) {
-		const newAddress = newRegistration.step === 'Registered' ? newRegistration.address : undefined;
-		const oldAddress = oldRegistration.step === 'Registered' ? oldRegistration.address : undefined;
-
-		const addressChanged =
-			(newAddress && !oldAddress) || (!newAddress && oldAddress) || newAddress !== oldAddress;
-
-		if (addressChanged) {
-			if (newAddress) {
-				set({
-					step: 'Fetching',
-					account: $conversation.account,
-					conversationID: $conversation.conversationID,
-					otherUser: $conversation.otherUser
-				});
-				fetching = true;
-				startFetching(newAddress);
-			} else {
-				set({
-					step: 'Idle',
-					invalidAccount: true,
-					account: $conversation.account,
-					conversationID: $conversation.conversationID,
-					otherUser: $conversation.otherUser
-				});
-				fetching = false;
-				stopFetching();
-			}
-		}
-	}
-
-	function onStop() {
-		running = false;
-		if (fetching && $conversation.step === 'Fetched') {
-			stopFetching();
-		}
-	}
-	const { subscribe } = derivedWithStartStopNotifier<MissivRegistrationStore, ConversationState>(
-		params.registration,
-		($registration) => {
-			const oldRegistration = _registration;
-			_registration = $registration;
-			onRegistrationChanged(oldRegistration, $registration);
-			return $conversation;
-		},
-		$conversation,
-		(set) => {
-			_set = set;
-			onStart();
-			return onStop;
-		}
-	);
-
-	function sender() {
-		if ($conversation.step === 'Idle') {
-			throw new Error(`Idle`);
-		}
-		return {
-			address: $conversation.account.address,
-			privateKey: $conversation.account.signer.privateKey
-		};
-	}
-
-	function common() {
+	function action(conversationID: string) {
 		return {
 			type: 'sendMessage' as const,
-			domain: params.domain,
-			namespace: params.namespace,
+			domain,
+			namespace,
 			conversationID,
 			lastMessageReadTimestampMS: Date.now()
 		};
 	}
 
 	async function sendMessage(text: string) {
-		const from = sender();
-		const publicKey = $conversation.otherUser.publicKey;
-		if (!publicKey) {
+		const run = requireRun();
+		const { otherUser } = store.get();
+		if (!otherUser.publicKey) {
 			throw new Error(
-				$conversation.otherUser.unverifiedKey
+				otherUser.unverifiedKey
 					? `the other user's key is not proven by their wallet: nothing is sent`
 					: `the other user has no key yet: send an introduction in clear with sendIntroduction`
 			);
 		}
-		const scope = { domain: params.domain, namespace: params.namespace, conversationID };
 		const messages = await encryptedCopies({
-			scope,
-			sender: from,
-			recipient: { address: $conversation.otherUser.address, publicKey },
+			scope: { domain, namespace, conversationID: run.conversationID },
+			sender: run,
+			recipient: { address: otherUser.address, publicKey: otherUser.publicKey },
 			text
 		});
 		await api.sendMessage(
-			{ ...common(), messageType: 'encrypted', messages },
-			{ privateKey: from.privateKey }
+			{ ...action(run.conversationID), messageType: 'encrypted', messages },
+			{ privateKey: run.privateKey }
 		);
+		await run.refresh().catch(() => {});
 	}
 
 	async function sendIntroduction(text: string) {
-		const from = sender();
-		const scope = { domain: params.domain, namespace: params.namespace, conversationID };
+		const run = requireRun();
 		const messages = await clearCopies({
-			scope,
-			sender: from,
-			recipients: [$conversation.otherUser.address],
+			scope: { domain, namespace, conversationID: run.conversationID },
+			sender: run,
+			recipients: [params.otherUser.address],
 			text
 		});
 		await api.sendMessage(
-			{ ...common(), messageType: 'clear', messages },
-			{ privateKey: from.privateKey }
+			{ ...action(run.conversationID), messageType: 'clear', messages },
+			{ privateKey: run.privateKey }
 		);
+		await run.refresh().catch(() => {});
 	}
 
-	return {
-		subscribe,
-		sendMessage,
-		sendIntroduction
-	};
+	return { subscribe: store.subscribe, sendMessage, sendIntroduction };
 }

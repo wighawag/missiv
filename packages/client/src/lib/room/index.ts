@@ -1,500 +1,339 @@
-import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
+import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
+import { activeStore, type StoreError } from '$lib/utils/lifecycle.js';
 import { signRequest } from 'delegated-identity';
-import { serverOriginOf } from 'missiv-common';
+import { serverOriginOf, type ClientMessageType, type ServerMessageType } from 'missiv-common';
 import { toPrivateKey } from '$lib/API.js';
-import type { ClientMessageType, ServerMessageType } from 'missiv-common';
-import { get } from 'svelte/store';
 
-// TODO use ServerMessageType
-export type ChatMessage = { from: string; message: string; pending?: boolean; signature: string };
-export type ChatUser = { address: string };
+/**
+ * A room message. Rooms are unencrypted and relayed by the server, which
+ * attributes each message to the session that sent it (`from`): no per-message
+ * signature. A message of ours is `pending` until the room echoes it, or
+ * `failed` with the room's error.
+ */
+export type ChatMessage = {
+	from: string;
+	message: string;
+	timestamp?: number;
+	pending?: boolean;
+	failed?: StoreError;
+};
+/** A session in the room; one account may have several (tabs, devices). */
+export type ChatUser = { address: string; id: string };
+
+type Connected = { messages: ChatMessage[]; users: ChatUser[] };
 
 export type Room = {
-	// The room can have an error in every state.
-	// a banner or other mechanism to show error should be used.
-	// error should be dismissable
-	error?: { message: string; cause?: any };
+	// the last error, in any step: a disconnection, a refused login, a refused message
+	error?: StoreError;
 } & (
-	| // The room once open starts in "Connecting" step
-	// this will establish the connection and fetch the existing message
-	// address can be undefined or already set here
+	| // connecting (or reconnecting) the socket
 	{
 			step: 'Connecting';
 			address: string | undefined;
 	  }
-	// once connected, it can be in several login status
-	// it can be in "NoAccount" in which case the user is connected yet, but they can still read the messages and other users
-	| {
-			step: 'Connected';
-			address: undefined;
-			loginStatus: 'NoAccount';
-			messages: ChatMessage[];
-			users: ChatUser[];
-	  }
-	// or it can be "LoggedOut" with a session associated with it
-	// in which case the user wallet is connected but it is not logged in.
-	// maybe it is not even registered (see registration)
-	// and loggingIn can be true if it is in the process of loginnging
-	| {
+	// connected with no registered account: messages can be read, not sent
+	| ({ step: 'Connected'; address: undefined; loginStatus: 'NoAccount' } & Connected)
+	// connected, not logged in; `session` once the room sent its challenge
+	| ({
 			step: 'Connected';
 			address: string;
 			loginStatus: 'LoggedOut';
-			messages: ChatMessage[];
-			users: ChatUser[];
-			session: { id: string; challenge: string };
-			loggingIn: boolean;
-	  }
-	// or it can be "LoggedOut" with no session
-	// wallet is connected but no session has been given yet
-	// should arrive shortly
-	| {
-			step: 'Connected';
-			address: string;
-			loginStatus: 'LoggedOut';
-			messages: ChatMessage[];
-			users: ChatUser[];
-	  }
-	// or it can finally be "LoggedIn"
-	// loggingOut can be true if the user is in the process of logging out
-	| {
+			session?: { id: string; challenge: string };
+			loggingIn?: boolean;
+	  } & Connected)
+	// logged in: messages sent are the account's
+	| ({
 			step: 'Connected';
 			address: string;
 			loginStatus: 'LoggedIn';
-			messages: ChatMessage[];
-			users: ChatUser[];
 			session: { id: string; challenge: string };
-			loggingOut: boolean;
-	  }
+			loggingOut?: boolean;
+	  } & Connected)
 );
 
+/** What `openRoom` needs of a WebSocket: the browser's, or a test's. */
+export type RoomSocket = {
+	send(data: string): void;
+	close(): void;
+	addEventListener(type: 'open' | 'close' | 'message', listener: (event: any) => void): void;
+	removeEventListener(type: 'open' | 'close' | 'message', listener: (event: any) => void): void;
+};
+
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
+/**
+ * A room: one socket while subscribed, for the registration's current account
+ * (another account gets a new socket, so a fresh challenge). A lost socket is
+ * reconnected, with a fresh challenge and a new login; every error the room
+ * sends is shown.
+ */
 export function openRoom(params: {
 	url: string;
 	registration: MissivRegistrationStore;
 	autoLogin?: boolean;
+	/** how a socket is made (default: `new WebSocket(url)`) */
+	createWebSocket?: (url: string) => RoomSocket;
+	/** the first reconnection delay, doubled each failure up to 30 s (default 1 s) */
+	reconnectDelayMs?: number;
 }) {
-	// we reuse the same challenge
-	let savedSession: { challenge: string; id: string } | undefined;
-	let loginOnChallengeReceived: boolean = false;
+	const createWebSocket =
+		params.createWebSocket ?? ((url: string) => new WebSocket(url) as unknown as RoomSocket);
+	const baseDelay = params.reconnectDelayMs ?? 1000;
 
-	let _set: (value: Room) => void;
-	let _registration: MissivRegistration = get(params.registration);
+	/** the current run's actions, while subscribed */
+	let current:
+		| {
+				login(): Promise<void>;
+				logout(): void;
+				send(message: string): void;
+				forceClose(): void;
+		  }
+		| undefined;
 
-	const address = 'address' in _registration ? _registration.address : undefined;
-	// console.log({ address });
-	let $room: Room = {
-		step: 'Connecting',
-		address
-	};
+	const store = activeStore<MissivRegistration, Room>({
+		source: params.registration,
+		key: (registration) => (registration.step === 'Registered' ? registration.address : ''),
+		initial: { step: 'Connecting', address: undefined },
+		run(registration, ctx) {
+			const account =
+				registration.step === 'Registered'
+					? { address: registration.address, privateKey: registration.signer.privateKey }
+					: undefined;
+			const address = account?.address;
+			let websocket: RoomSocket | undefined;
+			let session: { id: string; challenge: string } | undefined;
+			let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+			let failures = 0;
 
-	function set(room: Room) {
-		$room = room;
-		_set($room);
-		return $room;
-	}
-	function setError(error: { message: string; cause?: any }) {
-		if ($room) {
-			set({
-				...$room,
-				error
-			});
-		} else {
-			throw new Error(`no room`);
-		}
-	}
+			const withoutSession = (users: ChatUser[], id: string) => users.filter((u) => u.id !== id);
 
-	function onWebsocketOpened(event: Event) {
-		websocketEstablished = true;
-
-		if ($room.address) {
-			set({
-				step: 'Connected',
-				loginStatus: 'LoggedOut',
-				address: $room.address,
-				messages: [],
-				users: []
-			});
-			if (params.autoLogin) {
-				if (!savedSession) {
-					loginOnChallengeReceived = true;
-				} else {
-					login();
-				}
+			function onOpen() {
+				failures = 0;
+				ctx.set(
+					address
+						? { step: 'Connected', loginStatus: 'LoggedOut', address, messages: [], users: [] }
+						: {
+								step: 'Connected',
+								loginStatus: 'NoAccount',
+								address: undefined,
+								messages: [],
+								users: []
+							}
+				);
 			}
-		} else {
-			set({
-				step: 'Connected',
-				loginStatus: 'NoAccount',
-				address: undefined,
-				messages: [],
-				users: []
-			});
-		}
-	}
-	function onWebsocketClosed(event: CloseEvent) {
-		websocketEstablished = false;
-		set({ step: 'Connecting', address: $room.address, error: { message: 'disconnected' } });
 
-		// TODO
-		if (running) {
-			// try again
-			// onStart();
-		}
-	}
-	function onWebsocketMessage(event: MessageEvent) {
-		const msgFromServer: ServerMessageType = JSON.parse(event.data);
+			function onClose() {
+				detach();
+				if (!ctx.active) return;
+				ctx.set({ step: 'Connecting', address, error: { message: 'disconnected' } });
+				const delay = Math.min(baseDelay * 2 ** failures, MAX_RECONNECT_DELAY_MS);
+				failures++;
+				reconnectTimer = setTimeout(connect, delay);
+			}
 
-		if ($room.step === 'Connected') {
-			if ('challenge' in msgFromServer) {
-				savedSession = { challenge: msgFromServer.challenge, id: msgFromServer.id };
-				if ($room.loginStatus === 'LoggedOut') {
-					set({
-						step: 'Connected',
-						loginStatus: 'LoggedOut',
-						address: $room.address,
-						messages: $room.messages,
-						users: $room.users,
-						session: savedSession,
-						loggingIn: false
-					});
-					if (loginOnChallengeReceived) {
-						loginOnChallengeReceived = false;
-						login();
+			function onMessage(event: { data: string }) {
+				let msg: ServerMessageType;
+				try {
+					msg = JSON.parse(event.data);
+				} catch {
+					return;
+				}
+				const room = ctx.get();
+				if (room.step !== 'Connected') return;
+				if ('challenge' in msg) {
+					session = { challenge: msg.challenge, id: msg.id };
+					if (room.loginStatus === 'LoggedOut') {
+						ctx.set({ ...room, session, loggingIn: false });
+						if (params.autoLogin) login().catch(() => {});
 					}
-				}
-			} else if ('message' in msgFromServer) {
-				set({
-					...$room,
-					messages: [
-						...$room.messages.filter((v) => !(v.pending && v.message === msgFromServer.message)),
-						msgFromServer
-					]
-				});
-			} else if ('joined' in msgFromServer) {
-				if (_registration.step === 'Registered' && msgFromServer.joined === _registration.address) {
-					console.log(`self join`, msgFromServer);
-				}
-				if (
-					'session' in $room &&
-					_registration.step === 'Registered' &&
-					msgFromServer.joined === _registration.address &&
-					msgFromServer.id === $room.session.id
-				) {
-					console.log(`logged in!`);
-					// logged in
-					set({
-						step: 'Connected',
-						loginStatus: 'LoggedIn',
-						address: msgFromServer.joined,
-						messages: $room.messages,
-						users: [...$room.users, { address: msgFromServer.joined }],
-						session: $room.session,
-						loggingOut: false
-					});
-				} else {
-					console.log(`someone else joined`, msgFromServer, 'session' in $room && $room.session);
-					set({
-						...$room,
-						users: [...$room.users, { address: msgFromServer.joined }]
-					});
-				}
-			} else if ('quit' in msgFromServer) {
-				// TODO use a websocket identifier so multiple same address can be logged in
-				// this can also be used for messageing pending....
-				// TODO actually, we should prevent this from being possible ?
-				// Or at least the UI should not duplicate them but let them send message
-
-				if (
-					'session' in $room &&
-					_registration.step === 'Registered' &&
-					msgFromServer.quit === _registration.address &&
-					msgFromServer.id === $room.session.id
-				) {
-					// just logged out
-					if ($room.loginStatus === 'LoggedIn') {
-						if (!savedSession) {
-							set({
-								step: 'Connected',
-								loginStatus: 'LoggedOut',
-								address: $room.address,
-								users: (() => {
-									const firstMatchIndex = $room.users.findIndex(
-										(user) => user.address === msgFromServer.quit
-									);
-									if (firstMatchIndex === -1) return $room.users;
-									return $room.users.filter((_, i) => i !== firstMatchIndex);
-								})(),
-								messages: $room.messages,
-								error: { message: 'no challenge save' }
-							});
-						} else {
-							set({
-								step: 'Connected',
-								loginStatus: 'LoggedOut',
-								address: $room.address,
-								users: (() => {
-									const firstMatchIndex = $room.users.findIndex(
-										(user) => user.address === msgFromServer.quit
-									);
-									if (firstMatchIndex === -1) return $room.users;
-									return $room.users.filter((_, i) => i !== firstMatchIndex);
-								})(),
-								messages: $room.messages,
-								session: savedSession,
-								loggingIn: false
-							});
-						}
+				} else if ('message' in msg) {
+					const messages = [...room.messages];
+					// the room relays one socket's messages in order: our oldest pending one with this text is this
+					const index =
+						msg.from === address
+							? messages.findIndex(
+									(m) => m.pending && m.from === address && m.message === msg.message
+								)
+							: -1;
+					const received: ChatMessage = {
+						from: msg.from,
+						message: msg.message,
+						timestamp: msg.timestamp
+					};
+					if (index >= 0) {
+						messages.splice(index, 1);
+					}
+					// pending messages stay last
+					const firstPending = messages.findIndex((m) => m.pending);
+					messages.splice(firstPending >= 0 ? firstPending : messages.length, 0, received);
+					ctx.set({ ...room, messages });
+				} else if ('joined' in msg) {
+					const users = [
+						...withoutSession(room.users, msg.id),
+						{ address: msg.joined, id: msg.id }
+					];
+					if (
+						room.loginStatus === 'LoggedOut' &&
+						session &&
+						msg.id === session.id &&
+						msg.joined === address
+					) {
+						ctx.set({
+							...room,
+							loginStatus: 'LoggedIn',
+							address,
+							session,
+							users,
+							error: undefined
+						});
 					} else {
-						console.error(`quit but not LoggedIn`);
+						ctx.set({ ...room, users });
 					}
-				} else {
-					set({
-						...$room,
-						users: (() => {
-							const firstMatchIndex = $room.users.findIndex(
-								(user) => user.address === msgFromServer.quit
-							);
-							if (firstMatchIndex === -1) return $room.users;
-							return $room.users.filter((_, i) => i !== firstMatchIndex);
-						})()
-					});
+				} else if ('quit' in msg) {
+					const users = withoutSession(room.users, msg.id);
+					if (room.loginStatus === 'LoggedIn' && msg.id === room.session.id) {
+						ctx.set({
+							...room,
+							loginStatus: 'LoggedOut',
+							session: room.session,
+							users,
+							loggingIn: false
+						});
+					} else {
+						ctx.set({ ...room, users });
+					}
+				} else if ('error' in msg) {
+					const error: StoreError = { message: msg.error, code: msg.code };
+					if (room.loginStatus === 'LoggedOut' && room.loggingIn) {
+						// the login was refused
+						ctx.set({ ...room, loggingIn: false, error });
+						return;
+					}
+					// a refused message: our oldest pending one
+					const messages = [...room.messages];
+					const index = messages.findIndex((m) => m.pending);
+					if (index >= 0) {
+						messages[index] = { ...messages[index], pending: false, failed: error };
+					}
+					ctx.set({ ...room, messages, error });
 				}
-			} else if ('error' in msgFromServer) {
-				// id for message or message.message + address is the id ?
-				// rate limit erro should then return the message
-				// or any other error too
-				// so maybe best is to pass a message field for message failure
-				// now handling multiple of these failed message in the frontend would require flaging them as to retry
-				// else we can wait to allow further message until last one is acknowledge,much eaiser that way
-				// if (msgFromServer.type === 'RATE_LIMITED') {
-				// 	// TODO return message to input
-				// }
-				// set({
-				// 	...$room,
-				// 	loggingIn: false,
-				// 	loggedIn: false,
-				// 	error: msgFromServer.error
-				// });
 			}
-		} else {
-			console.error(`not connected`);
-		}
-	}
 
-	let running = false;
-	let websocket: WebSocket | undefined;
-	let websocketEstablished: boolean = false;
-	function onStart() {
-		running = true;
-		websocketEstablished = false;
-		websocket = new WebSocket(params.url);
-		websocket.addEventListener('open', onWebsocketOpened);
-		websocket.addEventListener('close', onWebsocketClosed);
-		websocket.addEventListener('message', onWebsocketMessage);
-	}
+			function detach() {
+				if (!websocket) return;
+				websocket.removeEventListener('open', onOpen);
+				websocket.removeEventListener('close', onClose);
+				websocket.removeEventListener('message', onMessage);
+				websocket = undefined;
+				session = undefined;
+			}
 
-	async function onRegistrationChanged(
-		oldRegistration: MissivRegistration,
-		newRegistration: MissivRegistration
-	) {
-		const newAddress = newRegistration.step === 'Registered' ? newRegistration.address : undefined;
-		const oldAddress = oldRegistration.step === 'Registered' ? oldRegistration.address : undefined;
+			function connect() {
+				reconnectTimer = undefined;
+				if (!ctx.active) return;
+				ctx.set({ step: 'Connecting', address, error: ctx.get().error });
+				const ws = createWebSocket(params.url);
+				websocket = ws;
+				ws.addEventListener('open', onOpen);
+				ws.addEventListener('close', onClose);
+				ws.addEventListener('message', onMessage);
+			}
 
-		// console.log({ newAddress, oldAddress });
+			async function login() {
+				const room = ctx.get();
+				if (
+					!account ||
+					!websocket ||
+					room.step !== 'Connected' ||
+					room.loginStatus !== 'LoggedOut'
+				) {
+					throw new Error(`not logged out`);
+				}
+				if (!session) {
+					throw new Error(`no challenge to sign yet`);
+				}
+				const ws = websocket;
+				const challenge = session;
+				ctx.set({ ...room, loggingIn: true, session: challenge });
+				// the login is a request signature over this socket's challenge: this server, this room, now
+				const signature = await signRequest(
+					{
+						serverOrigin: serverOriginOf(params.url),
+						method: 'GET',
+						path: new URL(params.url).pathname,
+						body: challenge.challenge
+					},
+					toPrivateKey(account.privateKey)
+				);
+				if (ws !== websocket || !ctx.active) return;
+				const msg: ClientMessageType = { address: account.address, signature };
+				ws.send(JSON.stringify(msg));
+			}
 
-		const addressChanged =
-			(newAddress && !oldAddress) || (!newAddress && oldAddress) || newAddress !== oldAddress;
+			function logout() {
+				const room = ctx.get();
+				if (!websocket || room.step !== 'Connected' || room.loginStatus !== 'LoggedIn') {
+					throw new Error(`not logged in`);
+				}
+				ctx.set({ ...room, loggingOut: true });
+				const msg: ClientMessageType = { logout: true };
+				websocket.send(JSON.stringify(msg));
+			}
 
-		if (addressChanged) {
-			if ($room.step === 'Connecting') {
-				// console.log(`Connecting`, { $room });
-				set({
-					step: 'Connecting',
-					address: newAddress
+			function send(message: string) {
+				const room = ctx.get();
+				if (
+					!account ||
+					!websocket ||
+					room.step !== 'Connected' ||
+					room.loginStatus !== 'LoggedIn'
+				) {
+					throw new Error(`not logged in`);
+				}
+				ctx.set({
+					...room,
+					error: undefined,
+					messages: [...room.messages, { from: account.address, message, pending: true }]
 				});
-			} else {
-				if (newAddress) {
-					// console.log(`newAddress`, { $room });
-					if (oldAddress) {
-						logout();
-					}
-
-					set({
-						step: 'Connected',
-						loginStatus: 'LoggedOut',
-						address: newAddress,
-						messages: $room.messages,
-						users: $room.users,
-						session: savedSession
-					});
-
-					if (params.autoLogin) {
-						if (!savedSession) {
-							loginOnChallengeReceived = true;
-						} else {
-							login();
-						}
-					}
-				} else {
-					if ($room.loginStatus === 'LoggedIn') {
-						logout();
-					}
-				}
+				const msg: ClientMessageType = { message };
+				websocket.send(JSON.stringify(msg));
 			}
+
+			const run = {
+				login,
+				logout,
+				send,
+				forceClose: () => websocket?.close()
+			};
+			current = run;
+			connect();
+			return () => {
+				if (reconnectTimer) clearTimeout(reconnectTimer);
+				const ws = websocket;
+				detach();
+				ws?.close();
+				if (current === run) current = undefined;
+			};
 		}
-	}
+	});
 
-	function onStop() {
-		running = false;
-		if (websocket) {
-			websocket.removeEventListener('open', onWebsocketOpened);
-			websocket.addEventListener('close', onWebsocketClosed);
-			websocket.addEventListener('message', onWebsocketMessage);
-			websocket.close();
-			websocketEstablished = false;
-			websocket = undefined;
+	function requireRun() {
+		if (!current) {
+			throw new Error(`the room has no subscriber`);
 		}
-	}
-
-	const { subscribe } = derivedWithStartStopNotifier<MissivRegistrationStore, Room>(
-		params.registration,
-		($registration) => {
-			const oldRegistration = _registration;
-			_registration = $registration;
-			onRegistrationChanged(oldRegistration, $registration);
-			return $room;
-		},
-		$room,
-		(set) => {
-			_set = set;
-			onStart();
-			return onStop;
-		}
-	);
-
-	async function sendMessage(message: string) {
-		if ($room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn') {
-			throw new Error(`not logged in`);
-		}
-
-		if (!websocket) {
-			throw new Error(`no websocket`);
-		}
-
-		const address = _registration.step === 'Registered' && _registration?.address;
-		if (!address) {
-			throw new Error(`no account`);
-		}
-
-		const msg: ClientMessageType = { message, signature: '0x' };
-
-		set({
-			...$room,
-			messages: [...$room.messages, { from: address, ...msg, pending: true }]
-		});
-		// await wait(3);
-		websocket.send(JSON.stringify(msg));
-	}
-
-	async function login() {
-		if (!savedSession) {
-			throw new Error(`no challenge to sign`);
-		}
-		if (
-			$room.step !== 'Connected' ||
-			($room.loginStatus !== 'LoggedOut' && $room.loginStatus !== 'NoAccount')
-		) {
-			throw new Error(`not Logged Out`);
-		}
-
-		if (!websocket) {
-			throw new Error(`no websocket`);
-		}
-
-		const address = _registration.step == 'Registered' && _registration.address;
-		if (!address) {
-			throw new Error(`no account`);
-		}
-
-		const signer = _registration.step == 'Registered' && _registration.signer;
-		if (!signer) {
-			throw new Error(`no signer`);
-		}
-
-		console.log(`logging in....`);
-		set({
-			step: 'Connected',
-			loginStatus: 'LoggedOut',
-			address,
-			messages: $room.messages,
-			users: $room.users,
-			loggingIn: true,
-			session: savedSession
-		});
-		// the login is a request signature over the challenge: this server, this room, now
-		const roomURL = new URL(params.url);
-		const signature = await signRequest(
-			{
-				serverOrigin: serverOriginOf(params.url),
-				method: 'GET',
-				path: roomURL.pathname,
-				body: savedSession.challenge
-			},
-			toPrivateKey(signer.privateKey)
-		);
-		const msg: ClientMessageType = { address, signature };
-
-		websocket.send(JSON.stringify(msg));
-	}
-
-	function logout() {
-		loginOnChallengeReceived = false;
-		if ($room.step !== 'Connected' || $room.loginStatus !== 'LoggedIn') {
-			throw new Error(`not Logged In`);
-		}
-
-		if (!websocket) {
-			throw new Error(`no websocket`);
-		}
-
-		set({
-			step: 'Connected',
-			loginStatus: 'LoggedIn',
-			address: $room.address,
-			messages: $room.messages,
-			users: $room.users,
-			session: $room.session,
-			loggingOut: true
-		});
-
-		const msg: ClientMessageType = { logout: true };
-		try {
-			websocket.send(JSON.stringify(msg));
-		} catch (err) {
-			// TODO ?
-			console.error(err);
-		}
-
-		set({
-			step: 'Connected',
-			loginStatus: 'LoggedOut',
-			address: $room.address,
-			messages: $room.messages,
-			users: $room.users,
-			loggingIn: false,
-			session: $room.session
-		});
-	}
-
-	function debug_forceClose() {
-		websocket?.close();
+		return current;
 	}
 
 	return {
-		subscribe,
-		sendMessage,
-		login,
-		debug_forceClose
+		subscribe: store.subscribe,
+		/** send a message; it is `pending` until the room echoes it, `failed` with the room's error otherwise */
+		async sendMessage(message: string) {
+			requireRun().send(message);
+		},
+		login: () => requireRun().login(),
+		logout: () => requireRun().logout(),
+		/** close the socket as a network failure would (the room reconnects) */
+		debug_forceClose: () => current?.forceClose()
 	};
 }
 

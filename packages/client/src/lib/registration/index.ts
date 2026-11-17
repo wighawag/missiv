@@ -1,31 +1,37 @@
 import { API, type FetchFunction } from '$lib/API.js';
 import type { DomainUser } from 'missiv-common';
-import { derived, type Readable } from 'svelte/store';
+import type { Readable } from 'svelte/store';
 import { publicKeyOf, verifyDomainUser } from '$lib/messages.js';
+import {
+	activeStore,
+	toStoreError,
+	type RunContext,
+	type StoreError
+} from '$lib/utils/lifecycle.js';
 
 type Signer = { address: `0x${string}`; privateKey: string; publicKey: string };
 type AccountWithSigner = { address: `0x${string}`; signer: Signer };
 export type Account = AccountWithSigner | { address: `0x${string}`; signer: undefined } | undefined;
 export type AccountStore = Readable<Account>;
 
-export type MissivRegistration = { error?: { message: string; cause?: any } } & (
+export type MissivRegistration = { error?: StoreError } & (
 	| {
-			// Default State, no Account to fetch registration status for
+			// no account (or no signer) to fetch a registration for
 			step: 'Idle';
 			domain: string;
 	  }
 	| {
-			// Account is Available, Fetching registration status
+			// fetching the account's registration
 			step: 'Fetching';
 			domain: string;
 			address: `0x${string}`;
 			signer: Signer;
 	  }
 	| {
-			// Account is Available, but not registered yet
+			// not registered in this domain yet (or registering)
 			step: 'Unregistered';
 			domain: string;
-			registering: boolean; // can be registering
+			registering: boolean;
 			/**
 			 * another key is registered for this account in this domain (another device,
 			 * or a key the server cannot prove): registering this one replaces it, and the
@@ -36,18 +42,20 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 			signer: Signer;
 	  }
 	| {
-			// Account is Available and registered
+			// registered: the server's record is this signer's key, proven by this wallet
 			step: 'Registered';
 			domain: string;
-			editing: boolean; // can be editing
+			editing: boolean;
 			address: `0x${string}`;
 			signer: Signer;
-			user: CompleteUser;
+			user: DomainUser;
 	  }
 );
 
 /** @deprecated the domain user is the whole user now: use `DomainUser` */
 export type CompleteUser = DomainUser;
+
+const RETRY_MS = 5000;
 
 export function createMissivRegistration(params: {
 	endpoint: string;
@@ -61,281 +69,77 @@ export function createMissivRegistration(params: {
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
 }) {
-	const api: API = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
+	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
+	const domain = params.domain;
 	const appOrigin =
 		params.appOrigin ?? (typeof window !== 'undefined' ? window.location.origin : undefined);
 
-	let $missivRegistration: MissivRegistration = {
-		step: 'Idle',
-		domain: params.domain
-	};
-	let _set: (value: MissivRegistration) => void;
-	let _account: Account | undefined;
+	/** the run of the current account, while subscribed */
+	let current:
+		| { address: `0x${string}`; signer: Signer; ctx: RunContext<MissivRegistration> }
+		| undefined;
 
-	async function getRegisteredUser(address: `0x${string}`): Promise<CompleteUser | undefined> {
-		const { domainUser } = await api.getDomainUser({
-			type: 'getDomainUser',
-			address: address,
-			domain: params.domain
-		});
+	async function getRegisteredUser(address: `0x${string}`): Promise<DomainUser | undefined> {
+		const { domainUser } = await api.getDomainUser({ type: 'getDomainUser', address, domain });
 		return domainUser;
 	}
 
-	function fetchAgain(address: `0x${string}`, signer: Signer) {
-		if (address !== _account?.address) {
-			// account change in between, ignore
-			return;
-		}
-		fetch(address, signer);
-	}
-
-	async function fetch(address: `0x${string}`, signer: Signer) {
-		set({
-			step: 'Fetching',
-			domain: params.domain,
-			address,
-			signer
-		});
-
-		let registeredUser: CompleteUser | undefined;
-		try {
-			registeredUser = await getRegisteredUser(address);
-		} catch (err) {
-			set({
-				step: 'Fetching',
-				domain: params.domain,
-				address,
-				signer,
-				error: { message: 'failed to fetch profile', cause: err }
-			});
-
-			// TODO ? or manual
-			// setTimeout(fetchAgain, 1000);
-			return;
-		}
-		if (address !== _account?.address) {
-			// account change in between, ignore
-			return;
-		}
-		const mine = registeredUser && (await isThisKey(registeredUser, address, signer));
-		if (address !== _account?.address) {
-			return;
-		}
-		if (registeredUser && mine) {
-			set({
-				step: 'Registered',
-				domain: params.domain,
-				address,
-				signer: signer,
-				user: registeredUser,
-				editing: false
-			});
-		} else {
-			set({
-				step: 'Unregistered',
-				domain: params.domain,
-				registering: false,
-				address,
-				signer,
-				otherKey: !!registeredUser
-			});
-		}
-	}
-
-	/** Whether the server's record is this signer's key, proven by this account's wallet. */
-	async function isThisKey(user: CompleteUser, address: `0x${string}`, signer: Signer) {
-		return (
+	/** The registration the server holds for this signer: Registered only for this key, proven by this wallet. */
+	async function stateOf(address: `0x${string}`, signer: Signer): Promise<MissivRegistration> {
+		const user = await getRegisteredUser(address);
+		if (
+			user &&
 			user.publicKey === publicKeyOf(signer) &&
-			(await verifyDomainUser(user, { address, domain: params.domain }))
-		);
-	}
-
-	async function onAccountChanged() {
-		const address = _account?.address;
-		const signer = _account?.signer;
-
-		if (address && signer) {
-			await fetch(address, signer);
-		} else {
-			set({
-				step: 'Idle',
-				domain: params.domain
-			});
+			(await verifyDomainUser(user, { address, domain }))
+		) {
+			return { step: 'Registered', domain, address, signer, user, editing: false };
 		}
+		return { step: 'Unregistered', domain, address, signer, registering: false, otherKey: !!user };
 	}
 
-	const { subscribe } = derived<Readable<Account>, MissivRegistration>(
-		params.account,
-		($account, set) => {
-			_set = set;
-			const changes =
-				($account?.signer && !_account?.signer) ||
-				(!$account?.signer && _account?.signer) ||
-				$account?.signer?.address !== _account?.signer?.address;
-
-			if (changes) {
-				_account = $account;
-				onAccountChanged();
+	const store = activeStore<Account, MissivRegistration>({
+		source: params.account,
+		key: (account) => (account?.signer ? `${account.address}:${account.signer.address}` : ''),
+		initial: { step: 'Idle', domain },
+		run(account, ctx) {
+			if (!account?.signer) {
+				current = undefined;
+				ctx.set({ step: 'Idle', domain });
+				return;
 			}
-		},
-		$missivRegistration
-	);
-
-	function set(missivRegistration: MissivRegistration) {
-		$missivRegistration = missivRegistration;
-		_set($missivRegistration);
-		return $missivRegistration;
-	}
-	function setError(error: { message: string; cause?: any }) {
-		if ($missivRegistration) {
-			set({
-				...$missivRegistration,
-				error
-			});
-		} else {
-			throw new Error(`no missivRegistration`);
-		}
-	}
-
-	async function register(
-		signature: `0x${string}`, // TODO is that 0x
-		options?: {
-			name?: string;
-			description?: string;
-		}
-	) {
-		const address = _account?.address;
-		const signer = _account?.signer;
-		if (!(address && signer)) {
-			throw new Error(`no account`);
-		}
-
-		set({
-			step: 'Unregistered',
-			domain: params.domain,
-			registering: true,
-			address,
-			signer
-		});
-
-		try {
-			await api.register(
-				{
-					type: 'register',
-					address,
-					domain: params.domain,
-					appOrigin: requireAppOrigin(),
-					signature,
-					name: options?.name,
-					description: options?.description
-				},
-				{
-					privateKey: signer.privateKey
+			const { address, signer } = account;
+			const run = { address, signer, ctx };
+			current = run;
+			ctx.set({ step: 'Fetching', domain, address, signer });
+			let retry: ReturnType<typeof setTimeout> | undefined;
+			const load = async () => {
+				try {
+					const state = await stateOf(address, signer);
+					ctx.set(state);
+				} catch (err) {
+					ctx.set({
+						step: 'Fetching',
+						domain,
+						address,
+						signer,
+						error: toStoreError('failed to fetch the registration', err)
+					});
+					if (ctx.active) retry = setTimeout(load, RETRY_MS);
 				}
-			);
-		} catch (err) {
-			set({
-				step: 'Unregistered',
-				domain: params.domain,
-				registering: false,
-				address,
-				signer,
-				error: { message: `failed to register user` }
-			});
-			throw err;
+			};
+			load();
+			return () => {
+				if (retry) clearTimeout(retry);
+				if (current === run) current = undefined;
+			};
 		}
+	});
 
-		let registeredUser: CompleteUser | undefined;
-		try {
-			registeredUser = await getRegisteredUser(address);
-		} catch (err) {}
-
-		if (address !== _account?.address) {
-			// account change in between, ignore
-			return;
+	function requireRun() {
+		if (!current) {
+			throw new Error(`no account (or the registration store has no subscriber)`);
 		}
-
-		if (registeredUser && (await isThisKey(registeredUser, address, signer))) {
-			set({
-				step: 'Registered',
-				domain: params.domain,
-				address: address,
-				signer: signer,
-				user: registeredUser,
-				editing: false
-			});
-		} else {
-			set({
-				step: 'Unregistered',
-				domain: params.domain,
-				registering: false,
-				address,
-				signer,
-				error: { message: `failed to get registered user` }
-			});
-			throw new Error(`fauled to get registered user`);
-		}
-	}
-
-	async function edit(options: { name?: string; description?: string }) {
-		const address = _account?.address;
-		const signer = _account?.signer;
-		if (!(address && signer)) {
-			throw new Error(`no account`);
-		}
-
-		if ($missivRegistration.step !== 'Registered') {
-			throw new Error(`not even registered`);
-		}
-
-		set({
-			step: 'Registered',
-			domain: params.domain,
-			address: $missivRegistration.address,
-			signer: $missivRegistration.signer,
-			user: $missivRegistration.user,
-			editing: true
-		});
-		await api.editUser(
-			{
-				type: 'editUser',
-				domain: params.domain,
-				name: options?.name,
-				description: options?.description
-			},
-			{
-				privateKey: signer.privateKey
-			}
-		);
-
-		const registeredUser = await getRegisteredUser(address);
-
-		if (address !== _account?.address) {
-			// account change in between, ignore
-			return;
-		}
-
-		if (registeredUser) {
-			set({
-				step: 'Registered',
-				domain: params.domain,
-				address: address,
-				signer: signer,
-				user: registeredUser,
-				editing: false
-			});
-		} else {
-			set({
-				step: 'Registered',
-				domain: params.domain,
-				address,
-				signer,
-				editing: false,
-				user: $missivRegistration.user,
-				error: { message: `failed to get registered user` }
-			});
-			throw new Error(`fauled to get registered user`);
-		}
+		return current;
 	}
 
 	function requireAppOrigin(): string {
@@ -345,8 +149,70 @@ export function createMissivRegistration(params: {
 		return appOrigin;
 	}
 
+	/**
+	 * Register this signer's key for the account, with the wallet's signature over
+	 * its publication message for `appOrigin`. Replaces another key of the account
+	 * in this domain. Rejects with the server's error, also set on the store.
+	 */
+	async function register(
+		signature: `0x${string}`,
+		options?: { name?: string; description?: string }
+	) {
+		const { address, signer, ctx } = requireRun();
+		ctx.set({ step: 'Unregistered', domain, address, signer, registering: true });
+		try {
+			await api.register(
+				{
+					type: 'register',
+					address,
+					domain,
+					appOrigin: requireAppOrigin(),
+					signature,
+					name: options?.name,
+					description: options?.description
+				},
+				{ privateKey: signer.privateKey }
+			);
+			const state = await stateOf(address, signer);
+			if (state.step !== 'Registered') {
+				throw new Error(`the server does not hold this key after registering it`);
+			}
+			ctx.set(state);
+		} catch (err) {
+			ctx.set({
+				step: 'Unregistered',
+				domain,
+				address,
+				signer,
+				registering: false,
+				error: toStoreError('failed to register', err)
+			});
+			throw err;
+		}
+	}
+
+	/** Edit the account's profile in this domain. Rejects with the server's error, also set on the store. */
+	async function edit(options: { name?: string; description?: string }) {
+		const { address, signer, ctx } = requireRun();
+		const state = ctx.get();
+		if (state.step !== 'Registered') {
+			throw new Error(`not registered`);
+		}
+		ctx.set({ ...state, editing: true, error: undefined });
+		try {
+			await api.editUser(
+				{ type: 'editUser', domain, name: options.name, description: options.description },
+				{ privateKey: signer.privateKey }
+			);
+			ctx.set(await stateOf(address, signer));
+		} catch (err) {
+			ctx.set({ ...state, editing: false, error: toStoreError('failed to edit the profile', err) });
+			throw err;
+		}
+	}
+
 	return {
-		subscribe,
+		subscribe: store.subscribe,
 		/** the origin the publication signature must name */
 		get appOrigin() {
 			return requireAppOrigin();

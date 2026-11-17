@@ -1,43 +1,74 @@
 <script lang="ts">
 	import { openOneConversation } from '$lib/index.js';
 	import { registration } from '../state.js';
+	import { MISSIV_DOMAIN, PUBLIC_MISSIV_HTTP_ENDPOINT } from '../config.js';
 	import ImgBlockie from '../utils/ethereum/ImgBlockie.svelte';
 
 	export type ChatProps = {
-		account: {
-			address: `0x${string}`;
-			signer: { address: `0x${string}`; privateKey: string; publicKey: string };
-		};
-		otherUser: { address: `0x${string}` }; // TODO publicKey
+		otherUser: { address: `0x${string}` };
 	};
 
-	let { account, otherUser }: ChatProps = $props();
+	let { otherUser }: ChatProps = $props();
 
 	const conversation = openOneConversation({
-		registration: registration,
-		account,
-		domain: 'localhost:5173',
+		registration,
+		domain: MISSIV_DOMAIN,
 		otherUser,
-		endpoint: 'http://localhost:8787',
-		namespace: 'default', // TODO remove
+		endpoint: PUBLIC_MISSIV_HTTP_ENDPOINT,
+		namespace: 'default',
 		markAsAcceptedAndRead: false,
 		pollingInterval: 2
 	});
 
 	let message = $state('');
+	let sendError = $state<string | undefined>();
 
-	$inspect(conversation);
+	async function send(inClear: boolean) {
+		sendError = undefined;
+		try {
+			if (inClear) {
+				await conversation.sendIntroduction(message);
+			} else {
+				await conversation.sendMessage(message);
+			}
+			message = '';
+		} catch (err) {
+			sendError = err instanceof Error ? err.message : String(err);
+		}
+	}
 </script>
 
 <ImgBlockie address={otherUser.address} style="width: 24px; height: 24px;" />
 
 {#if $conversation.step === 'Fetched'}
 	{#each $conversation.messages as message}
-		<p>{message.content}</p>
+		{#if message.error}
+			<p class="error">({message.error.message})</p>
+		{:else}
+			<p>{message.messageType === 'clear' ? '(in clear) ' : ''}{message.content}</p>
+		{/if}
 	{/each}
 {:else}
 	<p>{$conversation.step}</p>
 {/if}
+{#if $conversation.error}
+	<p class="error">{$conversation.error.message}</p>
+{/if}
 
 <input type="text" bind:value={message} />
-<button onclick={() => conversation.sendMessage(message)}>send</button>
+{#if $conversation.otherUser.publicKey}
+	<button onclick={() => send(false)}>send</button>
+{:else if $conversation.otherUser.unverifiedKey}
+	<p class="error">their key is not proven by their wallet: messaging is disabled</p>
+{:else}
+	<button onclick={() => send(true)}>send an introduction in clear</button>
+{/if}
+{#if sendError}
+	<p class="error">{sendError}</p>
+{/if}
+
+<style>
+	.error {
+		color: darkred;
+	}
+</style>

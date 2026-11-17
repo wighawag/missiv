@@ -331,12 +331,14 @@ export function getConversationID(accountA: Address, accountB: Address) {
 export type ClientMessageType =
 	// the login: `signature` is delegated-identity's request signature over the
 	// challenge (method GET, the room's path, the server's origin)
-	{address: `0x${string}`; signature: string} | {message: string; signature: `0x${string}`} | {logout: true};
+	// a message: attributed by the server to the session's account, not signed (rooms
+	// are unencrypted and server-relayed, ADR-0002)
+	{address: `0x${string}`; signature: string} | {message: string} | {logout: true};
 
 export type ServerMessageType =
 	| {challenge: string; id: string}
 	| {joined: `0x${string}`; id: string; publicKey: `0x${string}`}
-	| {message: string; from: string; timestamp: number; signature: `0x${string}`}
+	| {message: string; from: `0x${string}`; timestamp: number}
 	| {quit: string; id: string}
 	| {error: string; code?: ErrorCode};
 

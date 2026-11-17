@@ -117,7 +117,7 @@
 {#if $profileShown && $account && $account.signer}
 	<Modal oncancel={() => profileShown.hide()} title="Profile" description="">
 		<div class="modal-content">
-			<Conversation account={$account} otherUser={$profileShown} />
+			<Conversation otherUser={$profileShown} />
 		</div>
 	</Modal>
 {/if}

@@ -56,6 +56,10 @@
 						{message.message}
 						{#if message.pending}
 							<span class="spinner">⟳</span>
+						{:else if message.failed}
+							<span class="failed" title={message.failed.message}
+								>not sent: {message.failed.message}</span
+							>
 						{/if}
 					</p>
 				{/each}

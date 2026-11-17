@@ -255,6 +255,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			if (session.limiter && !session.limiter.checkLimit()) {
 				this.send(ws, {
 					error: 'Your IP is being rate-limited, please try again later.',
+					code: 'rate_limited',
 				});
 				return;
 			}
@@ -280,7 +281,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			}
 
 			if (!session.address) {
-				this.send(ws, {error: 'Not Logged In!'});
+				this.send(ws, {error: 'Not Logged In!', code: 'unauthenticated'});
 				return;
 			}
 			if (session.authorization && !session.authorized) {
@@ -290,14 +291,14 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			}
 
 			if (!('message' in data && data.message)) {
-				this.send(ws, {error: 'Expected message field'});
+				this.send(ws, {error: 'Expected message field', code: 'invalid_request'});
 				return;
 			}
 
 			// Block people from sending overly long messages. This is also enforced on the client,
 			// so to trigger this the user must be bypassing the client code.
 			if (data.message.length > 256) {
-				this.send(ws, {error: 'Message too long.'});
+				this.send(ws, {error: 'Message too long.', code: 'invalid_request'});
 				return;
 			}
 
@@ -308,7 +309,6 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				timestamp: Math.max(Date.now(), this.lastTimestamp + 1),
 				message: data.message,
 				from: session.address,
-				signature: data.signature,
 			};
 			this.lastTimestamp = messageReformated.timestamp;
 
@@ -333,13 +333,13 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	 */
 	async login(ws: WebSocket, session: Session, data: {address: `0x${string}`; signature: string}) {
 		if (!data.signature) {
-			this.send(ws, {error: 'Expected signature'});
+			this.send(ws, {error: 'Expected signature', code: 'invalid_request'});
 			return;
 		}
 		const address = data.address.toLowerCase() as `0x${string}`;
 		const {domainUser} = await this.dbStorage.getDomainUser(session.domain, address);
 		if (!domainUser) {
-			this.send(ws, {error: `User not found on domain: ${session.domain}`});
+			this.send(ws, {error: `User not found on domain: ${session.domain}`, code: 'unauthenticated'});
 			return;
 		}
 		const recovered = recoverRequestSigner({
@@ -350,7 +350,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			signature: data.signature,
 		});
 		if (!recovered.ok || recovered.publicKey !== domainUser.publicKey) {
-			this.send(ws, {error: 'Invalid signature'});
+			this.send(ws, {error: 'Invalid signature', code: 'unauthenticated'});
 			return;
 		}
 		if (session.address === domainUser.user) {

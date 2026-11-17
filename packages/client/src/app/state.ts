@@ -66,11 +66,13 @@ export const listShown = {
 	}
 };
 
-const _profileShown = writable<{ address: string } | undefined>(undefined);
+const _profileShown = writable<{ address: `0x${string}` } | undefined>(undefined);
 export const profileShown = {
 	subscribe: _profileShown.subscribe,
 	show(user: { address: string }) {
-		_profileShown.set(user);
+		// addresses are compared lowercase everywhere in missiv
+		user = { address: user.address.toLowerCase() as `0x${string}` };
+		_profileShown.set(user as { address: `0x${string}` });
 	},
 	hide() {
 		_profileShown.set(undefined);

@@ -68,7 +68,6 @@ function conversationOf(user: TestUser, other: TestUser, fetch: typeof globalThi
 		endpoint: SERVER_URL,
 		domain: DOMAIN,
 		namespace: NAMESPACE,
-		account: accountOf(user),
 		otherUser: {address: other.address},
 		fetch,
 	});
@@ -113,10 +112,12 @@ describe('keys are verified against their ownership proof', () => {
 			B,
 			lyingFetch((user) => (user.user === B.address ? {...user, publicKey: C.delegatePublicKey} : user)),
 		);
+		const stop = conversation.subscribe(() => {});
 		const state = await until(conversation, (s) => !!s.otherUser.unverifiedKey);
 		expect(state.otherUser.publicKey).toBeUndefined();
 		await expect(conversation.sendMessage('for B only')).rejects.toThrow(/not proven/);
 		expect(await h.messages(B, conversationIDOf([A.address, B.address]))).toEqual([]);
+		stop();
 	});
 });
 
@@ -124,6 +125,7 @@ describe('nothing is sent in clear unless asked', () => {
 	it('refuses to send to a user with no key, and sends an introduction when asked', async () => {
 		const D = await createUser(); // never registered
 		const conversation = conversationOf(A, D);
+		const stop = conversation.subscribe(() => {});
 		await until(conversation, (s) => s.step === 'Fetched');
 		await expect(conversation.sendMessage('secret')).rejects.toThrow(/sendIntroduction/);
 		expect(await h.messages(A, conversationIDOf([A.address, D.address]))).toEqual([]);
@@ -131,16 +133,19 @@ describe('nothing is sent in clear unless asked', () => {
 		await conversation.sendIntroduction('hello, register to read encrypted messages');
 		const [copy] = await h.messages(A, conversationIDOf([A.address, D.address]));
 		expect(copy.messageType).toBe('clear');
+		stop();
 	});
 
 	it('sends encrypted to a verified key: the server stores no text', async () => {
 		const conversation = conversationOf(A, B);
+		const stop = conversation.subscribe(() => {});
 		await until(conversation, (s) => s.step === 'Fetched' && !!s.otherUser.publicKey);
 		await conversation.sendMessage('only for B');
 		const [copy] = await h.messages(B, conversationIDOf([A.address, B.address]));
 		expect(copy.messageType).toBe('encrypted');
 		expect(copy.content).not.toContain('only for B');
 		expect(await openMessage(copy, reader(B))).toMatchObject({content: 'only for B'});
+		stop();
 	});
 });
 
