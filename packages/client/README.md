@@ -1,58 +1,47 @@
-# create-svelte
+# missiv-client
 
-Everything you need to build a Svelte library, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/main/packages/create-svelte).
+The client of missiv, a messaging system for Ethereum accounts: Svelte stores (`svelte/store`) over missiv's HTTP API and rooms. The server is an untrusted relay: this library checks every key against the wallet's ownership proof and every message against its sender's signature, and decrypts each message on its own (`docs/adr/0003-the-client-verifies-the-server-relays.md` in the repo).
 
-Read more about creating a library [in the docs](https://svelte.dev/docs/kit/packaging).
+## The account
 
-## Creating a project
+Every store follows a registration store, which follows the app's account: `{address, signer: {address, privateKey, publicKey}}` (the wallet address and its delegate key, `@etherplay/connect`'s origin account), or `undefined`.
 
-If you're seeing this, you've probably already done this step. Congrats!
+```ts
+import {
+	createMissivRegistration,
+	openConversationList,
+	openOneConversation,
+	openRoom
+} from 'missiv-client';
 
-```bash
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
+const registration = createMissivRegistration({
+	endpoint: 'https://missiv.example',
+	domain: 'game.example',
+	appOrigin: 'https://game.example', // the page's origin by default
+	account // a Readable<Account>
+});
 ```
+
+`step` is `Idle` (no signer), `Fetching`, `Unregistered` (`otherKey` when another key of the account is registered in the domain: registering replaces it), or `Registered` (the server's record is this signer's key, proven by this wallet). `register(ownershipSignature, {name?, description?})` takes the wallet's signature over `originPublicKeyPublicationMessage(appOrigin, publicKey)`; `edit({name?, description?})`.
+
+## The stores
+
+Each store works only while it has a subscriber, and only for the registration's current account: subscribe to start polling or connect, unsubscribe to stop; another account restarts it. Each has an `error` (`{message, code?, cause?}`, `code` being the server's: `invalid_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `internal`) and takes an optional `fetch`.
+
+- `openConversationList({registration, endpoint, domain, namespace, pollingInterval?})`: `conversations`, `numUnaccepted` (requests), `numUnread` (accepted, with a message newer than their last read).
+- `openOneConversation({registration, endpoint, domain, namespace, otherUser: {address}, markAsAcceptedAndRead?, pollingInterval?})`: `messages`, each `{content}` or `{error: {code: 'unverified' | 'undecryptable'}}`; `otherUser.publicKey` is set only once verified (`unverifiedKey` when the server's key fails its proof). `sendMessage(text)` encrypts to that key and is refused without one; `sendIntroduction(text)` sends in clear, readable by the server, and only when called.
+- `openRoom({url, registration, autoLogin?, createWebSocket?, reconnectDelayMs?})`: `messages` (`pending` until the room echoes one, `failed` with the room's error otherwise), `users` (one per session), `loginStatus`; `sendMessage`, `login`, `logout`. A lost socket is reconnected with a fresh challenge. Room messages are unencrypted and attributed by the server.
+
+Below the stores: `API` (each call signed with delegated-identity's request envelope, a refusal thrown as `MissivAPIError` with its `status` and `code`), and `verifyDomainUser`, `encryptedCopies`, `clearCopies`, `openMessage`.
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+`src/lib` is the library, `src/routes` and `src/app` a demo app against a local missiv (`PUBLIC_MISSIV_HTTP_ENDPOINT`).
 
 ```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+pnpm dev      # the demo app
+pnpm build    # svelte-check, the demo app, and the package (svelte-package, publint)
+pnpm test
 ```
 
-Everything inside `src/lib` is part of your library, everything inside `src/routes` can be used as a showcase or preview app.
-
-## Building
-
-To build your library:
-
-```bash
-npm run package
-```
-
-To create a production version of your showcase app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
-
-## Publishing
-
-Go into the `package.json` and give your package the desired name through the `"name"` option. Also consider adding a `"license"` field and point it to a `LICENSE` file which you can create from a template (one popular option is the [MIT license](https://opensource.org/license/mit/)).
-
-To publish your library to [npm](https://www.npmjs.com):
-
-```bash
-npm publish
-```
+The stores' tests run against the in-process server, in the repo's `test/client-server`.

@@ -5,6 +5,9 @@ blockedBy: []
 covers: []
 ---
 
+reason: superseded by S3c item 9 (S3-12 of jolly-roger's template-tree plan), which built it: each copy carries the sender's signature over `missiv message v1` (`signMessageCopy` in missiv-common), the server stores it per copy with the sender's ownership proof and checks neither, and missiv-client's `openMessage` verifies both on read. The preimage is recorded in `docs/adr/0003-the-client-verifies-the-server-relays.md`.
+
+
 ## What to build
 
 Change the message-send model so the sender's authorship signature is **per message** and computed **over the payload as stored** (the `content` the server holds: ciphertext in the `encrypted` case, plaintext in the `clear` case), instead of the current single top-level `action.signature` that is copied verbatim onto every stored message.

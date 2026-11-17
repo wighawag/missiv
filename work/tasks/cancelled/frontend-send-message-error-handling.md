@@ -5,6 +5,9 @@ blockedBy: []
 covers: []
 ---
 
+reason: superseded by S3c item 10 (S3-14 of jolly-roger's template-tree plan), which built it: a room message the room refuses is marked `failed` with the room's error and code (`rate_limited`, `invalid_request`, `unauthenticated`, `forbidden`), the room's `error` is set, and an HTTP send rejects with `MissivAPIError` (status and code); tested in `test/client-server/test/stores.test.ts`.
+
+
 ## What to build
 
 When a user sends a message in the client and the server rejects or fails it, surface that failure to the user instead of silently dropping it. The server already returns error conditions on the send paths — a rate-limit rejection ("Your IP is being rate-limited, please try again later."), a "Not Logged In!" state, an "Expected message field" / "Message too long." validation error, and generic connection errors — but the frontend does not currently present these back to the sender. Wire the client's send flow so a failed send is caught and shown (and, where it makes sense, lets the user retry), covering at least the rate-limit case explicitly.

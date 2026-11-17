@@ -6,16 +6,16 @@
   👾🌍 A Messaging System for Ethereum Accounts
 </h2>
 
-Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts to send messages to each other. The backend stores these messages, and clients can retrieve them. Messages are encrypted, but if a recipient is not yet registered (i.e., their public key is not yet public), the sender can send an introductory message in clear text to make contact.
+Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts to send messages to each other. The backend stores these messages, and clients can retrieve them. Messages are encrypted end to end, and the server is an untrusted relay: the client checks every key against the wallet's ownership proof and every message against its sender's signature. If a recipient is not yet registered (their public key is not yet published), the sender can choose to send an introductory message in clear text to make contact. See `CONTEXT.md`, `docs/architecture.md` and `docs/adr/`.
 
 
 ## Features
 
-- **User Registration**: APIs for user registration and message handling.
-- **Platform Support**: Support for different platforms like Bun and Cloudflare Workers.
-- **Asynchronous Messaging**: Allow users to send each other messages saved in inbox. 
-- **WebSocket Connections**: Manage WebSocket connections for real-time messaging.
-- **Message Broadcasting**: Broadcast messages to all connected clients.
+- **Registration**: a wallet publishes a delegate key per domain, with its ownership proof (delegated-identity).
+- **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, and a push to the recipient through push-notification-server.
+- **Rooms**: real-time public chat over WebSocket, optionally gated by a contract call.
+- **Platforms**: Node.js, Bun and Cloudflare Workers, from one platform-agnostic server (`missiv-server`) and one schema with numbered migrations.
+- **Client**: Svelte stores (`missiv-client`).
 
 
 ## Getting Started
@@ -24,8 +24,8 @@ Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts 
 
 - Node.js
 - pnpm
-- zellij
-- bun
+- zellij (for `pnpm start`)
+- bun and wrangler, only for their platforms
 
 ### Installation
 
@@ -43,5 +43,7 @@ pnpm start
 ### Running Tests
 
 ```bash
-pnpm test
+pnpm format:check && pnpm build && pnpm test
 ```
+
+The verify (`dorfl.json`): no test opens a port; the client-server tests run the server in process.
