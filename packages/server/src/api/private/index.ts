@@ -14,6 +14,7 @@ import {
 import {refuseReplay, requireAccount, setup} from '../../setup.js';
 import {MissivError, validateJSON} from '../../errors.js';
 import {conversationIDOf} from 'missiv-common';
+import {pushNotifierFromEnv} from '../../push.js';
 import {Env} from '../../env.js';
 
 export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
@@ -52,7 +53,41 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const deliverTo = new Set(members.filter((member) => !blockers.has(member)));
 
 			await refuseReplay(c);
-			const {timestampMS} = await storage.sendMessage(publicKey, account, Date.now(), action, members, deliverTo);
+			const {timestampMS, messageID} = await storage.sendMessage(
+				publicKey,
+				account,
+				Date.now(),
+				action,
+				members,
+				deliverTo,
+			);
+
+			// a push to each recipient (not the sender, not one who blocked them), after the response
+			const env = c.get('config').env as CustomEnv;
+			const notifier = options.getPushNotifier ? options.getPushNotifier(env) : pushNotifierFromEnv(env);
+			if (notifier) {
+				const recipients = members.filter((member) => member !== account && deliverTo.has(member));
+				const pushes = storage.domainUsersOf(action.domain, recipients).then((users) =>
+					Promise.all(
+						users.map((user) =>
+							notifier.notify({
+								domain: action.domain,
+								namespace: action.namespace,
+								conversationID: action.conversationID,
+								messageID,
+								sender: account,
+								recipient: user.user,
+								appOrigin: user.appOrigin,
+							}),
+						),
+					),
+				);
+				const settled = pushes.catch((err) => console.error(`push failed`, err));
+				if (options.waitUntil) {
+					options.waitUntil(c, settled);
+				}
+			}
+
 			return c.json({timestampMS});
 		})
 		.post('/getConversations', validateJSON(ActionGetConversationsSchema), async (c) => {

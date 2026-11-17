@@ -9,6 +9,10 @@ export type Env = {
 	 * set it behind a proxy that rewrites the host or the scheme
 	 */
 	SERVER_ORIGIN?: string;
+	/** push-notification-server's URL: a new direct message is pushed to its recipients when set */
+	PUSH_SERVER_URL?: string;
+	/** the token push-notification-server issued for each domain: `<domain>=<token>,...` (secrets) */
+	PUSH_TOKENS?: string;
 	/** the JSON-RPC endpoint of a chain, for contract-gated rooms */
 	[chainId: `CHAIN_${string}`]: string | undefined;
 };

@@ -261,6 +261,18 @@ export class RemoteSQLStorage {
 		return new Set(results.map((row) => row.user).filter((user) => memberSet.has(user)));
 	}
 
+	/** The domain users of these addresses (the registered ones). */
+	async domainUsersOf(domain: string, addresses: Address[]): Promise<DomainUser[]> {
+		const users: DomainUser[] = [];
+		for (const address of addresses) {
+			const {domainUser} = await this.getDomainUser(domain, address);
+			if (domainUser) {
+				users.push(domainUser);
+			}
+		}
+		return users;
+	}
+
 	/** The registered keys of these addresses in the domain. */
 	async publicKeysOf(domain: string, addresses: Address[]): Promise<Map<Address, PublicKey>> {
 		const keys = new Map<Address, PublicKey>();

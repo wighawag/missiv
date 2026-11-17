@@ -6,7 +6,7 @@
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
 import {conversationIDOf, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
-import {createServer, migrate} from 'missiv-server';
+import {createServer, migrate, type PushNotifier} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
 import {API} from 'missiv-client';
@@ -60,7 +60,7 @@ export {conversationIDOf};
 
 export type Harness = ReturnType<typeof createHarness>;
 
-export function createHarness(env: Record<string, string | undefined> = {}) {
+export function createHarness(env: Record<string, string | undefined> = {}, options?: {notifier?: PushNotifier}) {
 	const db = new RemoteLibSQL(createClient({url: ':memory:'}));
 	const app = createServer({
 		services: {
@@ -77,6 +77,7 @@ export function createHarness(env: Record<string, string | undefined> = {}) {
 		getEnv() {
 			return env as any;
 		},
+		getPushNotifier: options?.notifier ? () => options.notifier : undefined,
 		upgradeWebSocket() {
 			return (() => {}) as any;
 		},

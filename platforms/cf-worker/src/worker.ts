@@ -177,6 +177,8 @@ export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 export const app = createServer<CloudflareWorkerEnv>({
 	services,
 	getEnv: (c: Context<{Bindings: CloudflareWorkerEnv}>) => c.env,
+	// the pushes of a new message run after the response
+	waitUntil: (c, promise) => c.executionCtx.waitUntil(promise),
 	upgradeWebSocket,
 });
 

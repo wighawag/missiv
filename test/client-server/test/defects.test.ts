@@ -1,8 +1,9 @@
 // One test per defect the S3 review reproduced (missiv work/notes/observations/),
-// written before its fix. A test marked `it.fails` is a known defect: it passes
-// while the defect is there, and the fix turns it into a plain `it`.
+// each written before its fix as an `it.fails` and turned into an `it` by the fix,
+// then the tests of what S3b built around them.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {signRequest} from 'delegated-identity';
+import {pushKey, pushMessage, type NewMessageNotification} from 'missiv-server';
 import {
 	createHarness,
 	createUser,
@@ -329,5 +330,35 @@ describe('key replacement (S3-10)', () => {
 				{privateKey: A.delegatePrivateKey},
 			),
 		).rejects.toMatchObject({status: 409});
+	});
+});
+
+describe('a push on a new message (S3-2)', () => {
+	function recordingNotifier() {
+		const notified: NewMessageNotification[] = [];
+		return {notified, notifier: {notify: async (n: NewMessageNotification) => void notified.push(n)}};
+	}
+
+	it('notifies each recipient once, never the sender, keyed by the message and naming no content', async () => {
+		const {notified, notifier} = recordingNotifier();
+		const p = createHarness({}, {notifier});
+		await p.registerAll([A, B, C]);
+		await p.send({from: A, to: [B, C], content: 'secret words'});
+		expect(notified.map((n) => n.recipient).sort()).toEqual([B.address, C.address].sort());
+		expect(notified.every((n) => n.sender === A.address && n.domain === DOMAIN)).toBe(true);
+		const [message] = await p.messages(B, conversationIDOf([A.address, B.address, C.address]));
+		expect(notified.map((n) => pushKey(n))).toContain(`missiv:${DOMAIN}:${message.id}:${B.address}`);
+		expect(JSON.stringify(notified.map((n) => pushMessage(n)))).not.toContain('secret words');
+	});
+
+	it('does not notify a recipient who blocked the sender', async () => {
+		const {notified, notifier} = recordingNotifier();
+		const p = createHarness({}, {notifier});
+		await p.registerAll([A, B]);
+		await p.send({from: A, to: B, content: 'first'});
+		await p.reject(B, conversationIDOf([A.address, B.address]));
+		notified.length = 0;
+		await p.send({from: A, to: B, content: 'second'});
+		expect(notified).toEqual([]);
 	});
 });

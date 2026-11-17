@@ -2,6 +2,7 @@ import {Context} from 'hono';
 import {Bindings, MiddlewareHandler} from 'hono/types';
 import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
+import type {PushNotifier} from './push.js';
 
 export type ServerObjectStorage = {
 	get<T = unknown>(key: string): Promise<T | undefined>;
@@ -70,6 +71,13 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 		getIP?(c: Context): string | undefined;
 	};
 	getEnv: (c: Context<{Bindings: Env}>) => Env;
+	/**
+	 * The notifier of new direct messages; by default the one PUSH_SERVER_URL and
+	 * PUSH_TOKENS configure, none when they are unset.
+	 */
+	getPushNotifier?: (env: Env) => PushNotifier | undefined;
+	/** keep the request's runtime alive for work after the response (cf-worker: `executionCtx.waitUntil`) */
+	waitUntil?: (c: Context, promise: Promise<unknown>) => void;
 	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
 		any,
 		string,
