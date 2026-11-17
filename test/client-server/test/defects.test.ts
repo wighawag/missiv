@@ -83,7 +83,7 @@ describe('a key acts only in its domain (request-key-acts-in-any-domain)', () =>
 });
 
 describe('conversations the server keeps honest (send-message-trusts-client-conversation-id)', () => {
-	it.fails('refuses a send into a conversation whose members do not include the sender', async () => {
+	it('refuses a send into a conversation whose members do not include the sender', async () => {
 		await h.send({from: A, to: B, content: 'from A'});
 		await expect(
 			h.send({from: C, to: B, content: 'injected', conversationID: conversationIDOf([A.address, B.address])}),
@@ -91,13 +91,13 @@ describe('conversations the server keeps honest (send-message-trusts-client-conv
 		expect(await h.contents(B, conversationIDOf([A.address, B.address]))).toEqual(['from A']);
 	});
 
-	it.fails('refuses a conversationID that is not its members', async () => {
+	it('refuses a conversationID that is not its members', async () => {
 		await expect(h.send({from: A, to: B, content: 'x', conversationID: 'free-form'})).rejects.toThrow();
 	});
 });
 
 describe('reject blocks the sender (S3-9)', () => {
-	it.fails('a rejected sender reaches the recipient under no conversation', async () => {
+	it('a rejected sender reaches the recipient under no conversation', async () => {
 		await h.send({from: A, to: B, content: 'spam 1'});
 		const [request] = await h.unaccepted(B);
 		await h.reject(B, request.conversationID);
@@ -136,7 +136,7 @@ describe('signed requests are not replayable (signed-requests-are-replayable-and
 });
 
 describe('a second key for the same wallet (re-registering-a-new-key-keeps-the-old-one)', () => {
-	it.fails('replaces the first, so the new key authenticates', async () => {
+	it('replaces the first, so the new key authenticates', async () => {
 		const second = newDelegateKey();
 		await h.api.register(
 			{
@@ -195,5 +195,139 @@ describe('the request envelope (S3-6)', () => {
 				{privateKey: user.delegatePrivateKey},
 			),
 		).rejects.toThrow();
+	});
+});
+
+describe('conversation checks (S3-8)', () => {
+	it('refuses an encrypted copy not encrypted to its recipient key', async () => {
+		await expect(
+			h.api.sendMessage(
+				{
+					type: 'sendMessage',
+					domain: DOMAIN,
+					namespace: 'test',
+					conversationID: conversationIDOf([A.address, B.address]),
+					lastMessageReadTimestampMS: 0,
+					messageType: 'encrypted',
+					signature: '0x00',
+					messages: [
+						{to: A.address, toPublicKey: B.delegatePublicKey, content: 'x'},
+						{to: B.address, toPublicKey: C.delegatePublicKey, content: 'x'},
+					],
+				},
+				{privateKey: A.delegatePrivateKey},
+			),
+		).rejects.toMatchObject({status: 409});
+	});
+
+	it("refuses a send without the sender's own copy", async () => {
+		await expect(
+			h.api.sendMessage(
+				{
+					type: 'sendMessage',
+					domain: DOMAIN,
+					namespace: 'test',
+					conversationID: conversationIDOf([B.address, C.address]),
+					lastMessageReadTimestampMS: 0,
+					messageType: 'clear',
+					signature: '0x00',
+					messages: [
+						{to: B.address, content: 'x'},
+						{to: C.address, content: 'x'},
+					],
+				},
+				{privateKey: A.delegatePrivateKey},
+			),
+		).rejects.toMatchObject({status: 400});
+	});
+
+	it('pages messages newest first', async () => {
+		for (let i = 0; i < 5; i++) {
+			await h.send({from: A, to: B, content: `m${i}`});
+		}
+		const conversationID = conversationIDOf([A.address, B.address]);
+		const first = await h.api.getMessages(
+			{type: 'getMessages', domain: DOMAIN, namespace: 'test', conversationID, limit: 2},
+			{privateKey: B.delegatePrivateKey},
+		);
+		expect(first.messages.map((m) => m.content)).toEqual(['m4', 'm3']);
+		expect(first.cursor).toBeDefined();
+		const rest = await h.api.getMessages(
+			{type: 'getMessages', domain: DOMAIN, namespace: 'test', conversationID, limit: 10, before: first.cursor},
+			{privateKey: B.delegatePrivateKey},
+		);
+		expect(rest.messages.map((m) => m.content)).toEqual(['m2', 'm1', 'm0']);
+		expect(rest.cursor).toBeUndefined();
+	});
+
+	it('pages conversations by their last message', async () => {
+		await h.send({from: A, to: B, content: 'ab'});
+		await h.send({from: C, to: B, content: 'cb'});
+		const first = await h.api.getConversations(
+			{type: 'getConversations', domain: DOMAIN, namespace: 'test', limit: 1},
+			{privateKey: B.delegatePrivateKey},
+		);
+		expect(first.conversations.map((c) => c.conversationID)).toEqual([conversationIDOf([B.address, C.address])]);
+		const rest = await h.api.getConversations(
+			{type: 'getConversations', domain: DOMAIN, namespace: 'test', limit: 1, before: first.cursor},
+			{privateKey: B.delegatePrivateKey},
+		);
+		expect(rest.conversations.map((c) => c.conversationID)).toEqual([conversationIDOf([A.address, B.address])]);
+		expect(rest.cursor).toBeUndefined();
+	});
+});
+
+describe('unblock (S3-9)', () => {
+	it('lets a blocked sender reach the recipient again', async () => {
+		await h.send({from: A, to: B, content: 'first'});
+		await h.reject(B, conversationIDOf([A.address, B.address]));
+		await h.api.unblock({type: 'unblock', domain: DOMAIN, address: A.address}, {privateKey: B.delegatePrivateKey});
+		await h.send({from: A, to: B, content: 'again'});
+		expect(await h.contents(B, conversationIDOf([A.address, B.address]))).toContain('again');
+	});
+});
+
+describe('key replacement (S3-10)', () => {
+	it('re-registering the same key is idempotent and keeps it', async () => {
+		await h.register(A, {name: 'alice'});
+		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: A.address});
+		expect(domainUser?.publicKey).toBe(A.delegatePublicKey);
+		expect(domainUser?.name).toBe('alice');
+	});
+
+	it('the replaced key no longer authenticates', async () => {
+		const second = newDelegateKey();
+		await h.api.register(
+			{
+				type: 'register',
+				domain: DOMAIN,
+				appOrigin: APP_ORIGIN,
+				address: A.address,
+				signature: await A.signPublication(second.publicKey),
+			},
+			{privateKey: second.privateKey},
+		);
+		await expect(
+			h.api.getConversations(
+				{type: 'getConversations', domain: DOMAIN, namespace: 'test'},
+				{privateKey: A.delegatePrivateKey},
+			),
+		).rejects.toMatchObject({status: 401});
+	});
+
+	it('refuses a key already registered for another account', async () => {
+		const other = await createUser();
+		await expect(
+			h.api.register(
+				{
+					type: 'register',
+					domain: DOMAIN,
+					appOrigin: APP_ORIGIN,
+					address: other.address,
+					signature: await other.signPublication(A.delegatePublicKey),
+				},
+				{privateKey: A.delegatePrivateKey},
+			),
+		).rejects.toMatchObject({status: 409});
 	});
 });

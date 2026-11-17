@@ -178,7 +178,8 @@ export function openOneConversation(params: {
 				if (!content) {
 					const sharedKey =
 						message.sender.toLowerCase() == $conversation.account.address.toLowerCase()
-							? getSharedKey($conversation.account, message.recipientPublicKey)
+							? // an encrypted copy always names its key
+								getSharedKey($conversation.account, message.recipientPublicKey!)
 							: getSharedKey($conversation.account, message.senderPublicKey);
 
 					const [nonceb64, ciphertextb64] = message.content.split(/:(.*)/s);
@@ -312,14 +313,11 @@ export function openOneConversation(params: {
 					// TODO server optimization: unencrypted: only need one message and a list of recipients
 					{
 						content: text,
-
-						to: $conversation.otherUser.address,
-						toPublicKey: '0xff' // TODO
+						to: $conversation.otherUser.address
 					},
 					{
 						content: text,
-						to: $conversation.account.address,
-						toPublicKey: '0xff' // TODO
+						to: $conversation.account.address
 					}
 				],
 				conversationID: $conversation.conversationID,

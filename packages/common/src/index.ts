@@ -2,6 +2,8 @@
 // with its TypeScript type inferred from it, so the server validates exactly what
 // the client is typed against. One source; nothing here is declared twice.
 import {z} from 'zod';
+import {keccak_256} from '@noble/hashes/sha3';
+import {bytesToHex} from '@noble/hashes/utils';
 
 // ------------------------------------------------------------------------------------------------
 // primitives
@@ -120,23 +122,37 @@ const conversationScope = {
 	namespace: NamespaceSchema,
 };
 
-export const ActionGetConversationsSchema = z.object({type: z.literal('getConversations'), ...conversationScope});
+/** a page: at most `limit` (default and maximum 100) items older than the cursor `before` */
+const pageFields = {
+	limit: z.number().int().min(1).max(100).optional(),
+	before: z.string().max(512).optional(),
+};
+export const MAX_PAGE_SIZE = 100;
+
+export const ActionGetConversationsSchema = z.object({
+	type: z.literal('getConversations'),
+	...conversationScope,
+	...pageFields,
+});
 export type ActionGetConversations = z.infer<typeof ActionGetConversationsSchema>;
-export type ResponseGetConversations = {conversations: Conversation[]};
+/** `cursor` is set when there are older items: pass it as `before` for the next page */
+export type ResponseGetConversations = {conversations: Conversation[]; cursor?: string};
 
 export const ActionGetUnacceptedConversationsSchema = z.object({
 	type: z.literal('getUnacceptedConversations'),
 	...conversationScope,
+	...pageFields,
 });
 export type ActionGetUnacceptedConversations = z.infer<typeof ActionGetUnacceptedConversationsSchema>;
-export type ResponseGetUnacceptedConversations = {unacceptedConversations: Conversation[]};
+export type ResponseGetUnacceptedConversations = {unacceptedConversations: Conversation[]; cursor?: string};
 
 export const ActionGetAcceptedConversationsSchema = z.object({
 	type: z.literal('getAcceptedConversations'),
 	...conversationScope,
+	...pageFields,
 });
 export type ActionGetAcceptedConversations = z.infer<typeof ActionGetAcceptedConversationsSchema>;
-export type ResponseGetAcceptedConversations = {acceptedConversations: Conversation[]};
+export type ResponseGetAcceptedConversations = {acceptedConversations: Conversation[]; cursor?: string};
 
 export const ActionAcceptConversationSchema = z.object({
 	type: z.literal('acceptConversation'),
@@ -156,6 +172,10 @@ export const ActionMarkAsReadSchema = z.object({
 export type ActionMarkAsRead = z.infer<typeof ActionMarkAsReadSchema>;
 export type ResponseMarkAsRead = {success: true};
 
+/**
+ * Reject a conversation request. In a conversation of two, it also blocks the
+ * other member in the domain: nothing they send reaches you until `unblock`.
+ */
 export const ActionRejectConversationSchema = z.object({
 	type: z.literal('rejectConversation'),
 	...conversationScope,
@@ -164,31 +184,51 @@ export const ActionRejectConversationSchema = z.object({
 export type ActionRejectConversation = z.infer<typeof ActionRejectConversationSchema>;
 export type ResponseRejectConversation = {success: true};
 
+export const ActionUnblockSchema = z.object({
+	type: z.literal('unblock'),
+	domain: DomainSchema,
+	address: AddressSchema,
+});
+export type ActionUnblock = z.infer<typeof ActionUnblockSchema>;
+export type ResponseUnblock = {success: true};
+
 // ------------------------------------------------------------------------------------------------
 // messages
 // ------------------------------------------------------------------------------------------------
 
+/**
+ * Send a message: one copy per member, the sender's own included. The members
+ * are the recipients (`to`), so `conversationID` must be `conversationIDOf` them.
+ * An encrypted copy names the key it is encrypted to (`toPublicKey`), which must
+ * be the recipient's registered key; a clear copy names none.
+ */
 const sendMessageFields = {
 	type: z.literal('sendMessage'),
 	...conversationScope,
 	conversationID: ConversationIDSchema,
 	lastMessageReadTimestampMS: z.number(),
-	messages: z
-		.array(
-			z.object({
-				to: AddressSchema,
-				toPublicKey: PublicKeySchema,
-				content: z.string().max(16384),
-			}),
-		)
-		.min(1)
-		.max(32),
 	signature: String0xSchema,
 };
 
+export const MAX_MEMBERS = 32;
+
 export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
-	z.object({...sendMessageFields, messageType: z.literal('encrypted')}),
-	z.object({...sendMessageFields, messageType: z.literal('clear')}),
+	z.object({
+		...sendMessageFields,
+		messageType: z.literal('encrypted'),
+		messages: z
+			.array(z.object({to: AddressSchema, toPublicKey: PublicKeySchema, content: z.string().max(16384)}))
+			.min(2)
+			.max(MAX_MEMBERS),
+	}),
+	z.object({
+		...sendMessageFields,
+		messageType: z.literal('clear'),
+		messages: z
+			.array(z.object({to: AddressSchema, toPublicKey: PublicKeySchema.optional(), content: z.string().max(16384)}))
+			.min(2)
+			.max(MAX_MEMBERS),
+	}),
 ]);
 export type ActionSendMessage = z.infer<typeof ActionSendMessageSchema>;
 export type ActionSendEncryptedMessage = Extract<ActionSendMessage, {messageType: 'encrypted'}>;
@@ -204,7 +244,8 @@ export type ConversationMessage = {
 	recipient: Address;
 	sender: Address;
 	senderPublicKey: PublicKey;
-	recipientPublicKey: PublicKey;
+	/** the key an encrypted copy is encrypted to; null for a clear copy */
+	recipientPublicKey: PublicKey | null;
 	content: string;
 	timestamp: number;
 	messageType: 'encrypted' | 'clear';
@@ -215,9 +256,11 @@ export const ActionGetMessagesSchema = z.object({
 	type: z.literal('getMessages'),
 	...conversationScope,
 	conversationID: ConversationIDSchema,
+	...pageFields,
 });
 export type ActionGetMessages = z.infer<typeof ActionGetMessagesSchema>;
-export type ResponseGetMessages = {messages: ConversationMessage[]};
+/** newest first; `cursor` is set when there are older messages: pass it as `before` */
+export type ResponseGetMessages = {messages: ConversationMessage[]; cursor?: string};
 
 // ------------------------------------------------------------------------------------------------
 // admin
@@ -229,6 +272,19 @@ export type ActionReset = z.infer<typeof ActionResetSchema>;
 // ------------------------------------------------------------------------------------------------
 // helpers
 // ------------------------------------------------------------------------------------------------
+
+/**
+ * The ID of the conversation between these members (lowercased, deduplicated):
+ * `getConversationID` of the two for two, else keccak256 of the sorted addresses
+ * joined by `:`. The server derives it the same way and refuses any other.
+ */
+export function conversationIDOf(members: Address[]): string {
+	const sorted = [...new Set(members.map((v) => v.toLowerCase()))].sort() as Address[];
+	if (sorted.length === 2) {
+		return getConversationID(sorted[0], sorted[1]);
+	}
+	return `0x${bytesToHex(keccak_256(sorted.join(':')))}`;
+}
 
 export function getConversationID(accountA: Address, accountB: Address) {
 	accountA = accountA.toLowerCase() as PublicKey;

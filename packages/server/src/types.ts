@@ -94,6 +94,7 @@ export {
 	ActionRejectConversationSchema,
 	ActionResetSchema,
 	ActionSendMessageSchema,
+	ActionUnblockSchema,
 	AddressSchema,
 	PublicKeySchema,
 } from 'missiv-common';

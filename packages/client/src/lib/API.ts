@@ -11,6 +11,7 @@ import type {
 	ActionRegisterDomainUser,
 	ActionRejectConversation,
 	ActionSendMessage,
+	ActionUnblock,
 	ErrorCode,
 	ErrorResponse,
 	ResponseAcceptConversation,
@@ -23,7 +24,8 @@ import type {
 	ResponseMarkAsRead,
 	ResponseRegisterDomainUser,
 	ResponseRejectConversation,
-	ResponseSendMessage
+	ResponseSendMessage,
+	ResponseUnblock
 } from 'missiv-common';
 
 export type FetchFunction = typeof fetch;
@@ -149,6 +151,11 @@ export class API {
 
 	async rejectConversation(action: ActionRejectConversation, options: APIOptions) {
 		return this.call<ResponseRejectConversation>('/private/rejectConversation', action, options);
+	}
+
+	/** Let a member you blocked (by rejecting their conversation) reach you again. */
+	async unblock(action: ActionUnblock, options: APIOptions) {
+		return this.call<ResponseUnblock>('/private/unblock', action, options);
 	}
 
 	async markAsRead(action: ActionMarkAsRead, options: APIOptions) {

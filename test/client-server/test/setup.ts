@@ -5,8 +5,7 @@
 // production; a test that needs another configuration passes its own env.
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {keccak_256} from '@noble/hashes/sha3';
-import {getConversationID, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
+import {conversationIDOf, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
 import {createServer, migrate} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -57,14 +56,7 @@ export function newDelegateKey() {
 	return {privateKey, publicKey: toHex(getPublicKey(privateKey))};
 }
 
-/** The conversation ID of a member set: the pair's for two, else keccak256 of the sorted addresses. */
-export function conversationIDOf(members: `0x${string}`[]): string {
-	const sorted = [...new Set(members.map((v) => v.toLowerCase()))].sort();
-	if (sorted.length === 2) {
-		return getConversationID(sorted[0] as `0x${string}`, sorted[1] as `0x${string}`);
-	}
-	return toHex(keccak_256(sorted.join(':')));
-}
+export {conversationIDOf};
 
 export type Harness = ReturnType<typeof createHarness>;
 
