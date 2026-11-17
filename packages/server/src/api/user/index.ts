@@ -7,7 +7,7 @@ import {
 	ServerOptions,
 } from '../../types.js';
 import {Address} from 'missiv-common';
-import {fromDomainToOrigin, recoverAccount} from 'missiv-identity';
+import {fromDomainToOrigin, recoverAccount} from 'delegated-identity';
 import {getAuth, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {zValidator} from '@hono/zod-validator';

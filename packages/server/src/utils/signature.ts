@@ -1,5 +1,5 @@
 // missiv's own request signature: keccak256 over the raw body (or the room's
-// challenge), with no envelope. missiv-identity's signRequest / recoverRequestSigner
+// challenge), with no envelope. delegated-identity's signRequest / recoverRequestSigner
 // is its successor (server origin, route, timestamp); adopting it at missiv's
 // routes and the room login is step S3's (S3-6), so this stays until then.
 import {keccak_256} from '@noble/hashes/sha3';

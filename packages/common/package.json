@@ -36,6 +36,6 @@
     "format:write": "prettier --write ."
   },
   "dependencies": {
-    "missiv-identity": "workspace:*"
+    "delegated-identity": "^0.1.0"
   }
 }

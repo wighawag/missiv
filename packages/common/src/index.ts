@@ -223,6 +223,6 @@ export type ServerMessageType =
 	| {quit: string; id: string}
 	| {error: string; cause?: any; stack?: string};
 
-// The ownership proof's message and origin live in missiv-identity, shared with
+// The ownership proof's message and origin live in delegated-identity, shared with
 // the services that check the same proof; re-exported here for missiv's callers.
-export {fromDomainToOrigin, originPublicKeyPublicationMessage} from 'missiv-identity';
+export {fromDomainToOrigin, originPublicKeyPublicationMessage} from 'delegated-identity';

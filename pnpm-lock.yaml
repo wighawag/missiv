@@ -93,9 +93,9 @@ importers:
 
   packages/common:
     dependencies:
-      missiv-identity:
-        specifier: workspace:*
-        version: link:../identity
+      delegated-identity:
+        specifier: ^0.1.0
+        version: 0.1.0(typescript@5.8.2)(zod@3.24.2)
     devDependencies:
       as-soon:
         specifier: ^0.0.11
@@ -110,31 +110,6 @@ importers:
         specifier: ^5.8.2
         version: 5.8.2
 
-  packages/identity:
-    dependencies:
-      '@noble/hashes':
-        specifier: ^1.7.1
-        version: 1.7.1
-      '@noble/secp256k1':
-        specifier: ^2.2.3
-        version: 2.2.3
-      viem:
-        specifier: ^2.23.13
-        version: 2.23.13(typescript@5.8.2)(zod@3.24.2)
-    devDependencies:
-      as-soon:
-        specifier: ^0.0.11
-        version: 0.0.11
-      prettier:
-        specifier: ^3.5.3
-        version: 3.5.3
-      typescript:
-        specifier: ^5.8.2
-        version: 5.8.2
-      vitest:
-        specifier: ^3.0.9
-        version: 3.0.9(@types/node@22.13.10)(supports-color@8.1.1)(terser@5.39.0)(tsx@4.19.3)(yaml@2.7.0)
-
   packages/server:
     dependencies:
       '@hono/zod-validator':
@@ -146,6 +121,9 @@ importers:
       '@noble/secp256k1':
         specifier: ^2.2.3
         version: 2.2.3
+      delegated-identity:
+        specifier: ^0.1.0
+        version: 0.1.0(typescript@5.8.2)(zod@3.24.2)
       eip-1193:
         specifier: ^0.6.3
         version: 0.6.3
@@ -155,9 +133,6 @@ importers:
       missiv-common:
         specifier: workspace:*
         version: link:../common
-      missiv-identity:
-        specifier: workspace:*
-        version: link:../identity
       named-logs:
         specifier: ^0.3.2
         version: 0.3.2
@@ -3125,6 +3100,9 @@ packages:
 
   defu@6.1.4:
     resolution: {integrity: sha512-mEQCMmwJu317oSz8CwdIOdwf3xMif1ttiM8LTufzc3g6kR+9Pe236twL8j3IYT1F7GfRgGcW6MWxzZjLIkuHIg==}
+
+  delegated-identity@0.1.0:
+    resolution: {integrity: sha512-yK1pKE9oY+9mlZ2KAqQ8L7m0rngG9/j1UcTlHydhsKzOr/wldaVENFEHq5XG2dKRmVch1RUCxJqAKZCVg390ew==}
 
   denodeify@1.2.1:
     resolution: {integrity: sha512-KNTihKNmQENUZeKu5fzfpzRqR5S2VMp4gl9RFHiWzj9DfvYQPMJ6XHKNaQxaGCXwPk6y9yme3aUoaiAe+KX+vg==}
@@ -8507,6 +8485,17 @@ snapshots:
       clone: 1.0.4
 
   defu@6.1.4: {}
+
+  delegated-identity@0.1.0(typescript@5.8.2)(zod@3.24.2):
+    dependencies:
+      '@noble/hashes': 1.7.1
+      '@noble/secp256k1': 2.2.3
+      viem: 2.23.13(typescript@5.8.2)(zod@3.24.2)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
 
   denodeify@1.2.1: {}
 
