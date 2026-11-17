@@ -17,6 +17,9 @@ importers:
       prettier:
         specifier: ^3.5.3
         version: 3.5.3
+      prettier-plugin-svelte:
+        specifier: ^3.3.3
+        version: 3.3.3(prettier@3.5.3)(svelte@5.23.2)
       set-defaults:
         specifier: ^0.0.5
         version: 0.0.5
@@ -45,7 +48,7 @@ importers:
         specifier: ^0.1.1
         version: 0.1.1
       missiv-common:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../common
     devDependencies:
       '@etherplay/connect':
@@ -146,7 +149,7 @@ importers:
         specifier: ^4.7.5
         version: 4.7.5
       missiv-common:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../common
       named-logs:
         specifier: ^0.3.2
@@ -198,10 +201,10 @@ importers:
         specifier: ^0.3.12
         version: 0.3.12
       missiv-common:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/common
       missiv-server:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/server
       named-logs-context:
         specifier: ^0.1.1
@@ -238,10 +241,10 @@ importers:
         specifier: ^4.7.5
         version: 4.7.5
       missiv-common:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/common
       missiv-server:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/server
       named-logs:
         specifier: ^0.3.2
@@ -290,7 +293,7 @@ importers:
         specifier: ^0.3.12
         version: 0.3.12
       missiv-server:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/server
       named-logs-context:
         specifier: ^0.1.1

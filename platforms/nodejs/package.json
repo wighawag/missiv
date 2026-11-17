@@ -26,7 +26,7 @@
     "commander": "^13.1.0",
     "hono": "^4.7.5",
     "ldenv": "^0.3.12",
-    "missiv-server": "workspace:*",
+    "missiv-server": "workspace:^",
     "named-logs-context": "^0.1.1",
     "remote-sql-libsql": "^0.0.6"
   },
