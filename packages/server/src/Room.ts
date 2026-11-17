@@ -36,7 +36,6 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	sessions: Map<WebSocket, Session> = new Map();
 
 	dbStorage!: RemoteSQLStorage; // set in instantiate
-	requireLogin: boolean;
 	env: CustomEnv;
 	identifier: {name: string; domain: string; authorization: string | undefined} | undefined;
 
@@ -46,7 +45,6 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	constructor(env: CustomEnv) {
 		super();
 		this.env = env;
-		this.requireLogin = false; // TODO env ?
 	}
 
 	// as this is an abstract class, we defer instantiation logic to the subclass
@@ -111,14 +109,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			return new Response(`There are ${numConnections} WebSocket clients connected to this Server Object instance.`);
 		}
 
-		// Unknown path, reply with usage info.
-		return new Response(`
-  This Server Object supports the following endpoints:
-    /websocket
-      - Creates a WebSocket connection. Any messages sent to it are echoed with a prefix.
-    /getCurrentConnections
-      - A regular HTTP GET endpoint that returns the number of currently connected WebSocket clients.
-  `);
+		return new Response('not found', {status: 404});
 	}
 
 	pendingSessionSend(session: Session, ws: WebSocket, message: string | ServerMessageType) {
@@ -271,11 +262,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 					address: `0x${string}`;
 					publicKey: `0x${string}`;
 				};
-				// TODO remove
-				const DEBUG = false;
-				if (DEBUG && data.signature === '0x') {
-					newUser = {address: data.address, publicKey: '0xff'};
-				} else {
+				{
 					const user = await this.dbStorage.getCompleteUser(session.domain, data.address);
 					if (!user || !user.completeUser) {
 						this.send(ws, {error: `User not found on domain: ${session.domain}`});
@@ -404,7 +391,8 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 		} catch (err: any) {
 			// Report any exceptions directly back to the client. As with our handleErrors() this
 			// probably isn't what you'd want to do in production, but it's convenient when testing.
-			this.send(ws, {error: 'failed to establish connection', cause: err.message || err, stack: err.stack});
+			console.error(err);
+			this.send(ws, {error: 'internal error', code: 'internal'});
 		}
 	}
 

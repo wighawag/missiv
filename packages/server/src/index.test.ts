@@ -5,7 +5,7 @@ describe('createServer', () => {
 	// a platform without WebSockets passes an upgradeWebSocket that throws when
 	// called (nodejs did): building the app must not call it
 	// (work/notes/observations/nodejs-platform-cannot-start.md)
-	it.fails('builds an app without calling upgradeWebSocket', () => {
+	it('builds an app without calling upgradeWebSocket', () => {
 		createServer({
 			services: {
 				getDB: () => {

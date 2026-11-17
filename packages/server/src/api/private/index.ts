@@ -11,23 +11,23 @@ import {
 	ServerOptions,
 } from '../../types.js';
 import {getAuth, setup} from '../../setup.js';
-import {zValidator} from '@hono/zod-validator';
+import {MissivError, validateJSON} from '../../errors.js';
 
 import {Env} from '../../env.js';
 
 export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
-		.post('/sendMessage', zValidator('json', ActionSendMessageSchema), async (c) => {
+		.post('/sendMessage', validateJSON(ActionSendMessageSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const timestampMS = Date.now();
 			const {account, publicKey} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 			if (!publicKey) {
-				throw new Error(`no publicKey authenticated`);
+				throw new MissivError('unauthenticated', 'no key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -35,12 +35,12 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const result = await storage.sendMessage(publicKey, account, timestampMS, action);
 			return c.json(result);
 		})
-		.post('/getConversations', zValidator('json', ActionGetConversationsSchema), async (c) => {
+		.post('/getConversations', validateJSON(ActionGetConversationsSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -48,13 +48,13 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const result = await storage.getConversations(action.domain, action.namespace, account);
 			return c.json(result);
 		})
-		.post('/getAcceptedConversations', zValidator('json', ActionGetAcceptedConversationsSchema), async (c) => {
+		.post('/getAcceptedConversations', validateJSON(ActionGetAcceptedConversationsSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -62,13 +62,13 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const result = await storage.getAcceptedConversations(action.domain, action.namespace, account);
 			return c.json(result);
 		})
-		.post('/getUnacceptedConversations', zValidator('json', ActionGetUnacceptedConversationsSchema), async (c) => {
+		.post('/getUnacceptedConversations', validateJSON(ActionGetUnacceptedConversationsSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -76,13 +76,13 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const result = await storage.getUnacceptedConversations(action.domain, action.namespace, account);
 			return c.json(result);
 		})
-		.post('/markAsRead', zValidator('json', ActionMarkAsReadSchema), async (c) => {
+		.post('/markAsRead', validateJSON(ActionMarkAsReadSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -91,13 +91,13 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			return c.json({success: true});
 		})
 
-		.post('/rejectConversation', zValidator('json', ActionRejectConversationSchema), async (c) => {
+		.post('/rejectConversation', validateJSON(ActionRejectConversationSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -105,7 +105,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			await storage.rejectConversation(account, action);
 			return c.json({success: true});
 		})
-		.post('/getMessages', zValidator('json', ActionGetMessagesSchema), async (c) => {
+		.post('/getMessages', validateJSON(ActionGetMessagesSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
@@ -113,20 +113,20 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const result = await storage.getMessages(account, action);
 			return c.json(result);
 		})
-		.post('/acceptConversation', zValidator('json', ActionAcceptConversationSchema), async (c) => {
+		.post('/acceptConversation', validateJSON(ActionAcceptConversationSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
 			const timestampMS = Date.now();
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');

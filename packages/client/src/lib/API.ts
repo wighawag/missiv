@@ -22,10 +22,25 @@ import type {
 	ResponseGetMissivUser,
 	ResponseGetUnacceptedConversations,
 	ResponseRegisterDomainUser,
-	ResponseSendMessage
+	ResponseSendMessage,
+	ErrorCode,
+	ErrorResponse
 } from 'missiv-common';
 
 export type FetchFunction = typeof fetch;
+
+/** A refusal or failure answered by the server: its HTTP status and missiv's error code. */
+export class MissivAPIError extends Error {
+	constructor(
+		readonly status: number,
+		readonly code: ErrorCode | string,
+		message: string,
+		readonly details?: unknown
+	) {
+		super(message);
+		this.name = 'MissivAPIError';
+	}
+}
 
 export type APIOptions =
 	| { signature: string }
@@ -73,20 +88,20 @@ export class API {
 			body,
 			headers
 		});
-		if (resp.status !== 200 && resp.status !== 201) {
+		if (!resp.ok) {
 			const text = await resp.text();
-			console.error(`failed`, text);
-			throw new Error(text);
+			let error: ErrorResponse['error'] | undefined;
+			try {
+				error = (JSON.parse(text) as ErrorResponse).error;
+			} catch {}
+			throw new MissivAPIError(
+				resp.status,
+				error?.code || 'internal',
+				error?.message || text || resp.statusText,
+				error?.details
+			);
 		}
-
-		if (resp) {
-			const json = (await resp.json()) as T;
-			// console.log({ json });
-			return json;
-		} else {
-			console.error(`failed with no response`);
-			throw new Error(`no response`);
-		}
+		return (await resp.json()) as T;
 	}
 
 	async register(action: ActionRegisterDomainUser, options: APIOptions) {

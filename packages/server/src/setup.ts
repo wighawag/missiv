@@ -5,6 +5,7 @@ import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {Address, PublicKey} from 'missiv-common';
 import {Context} from 'hono';
 import {recoverPublicKey} from './utils/signature.js';
+import {MissivError} from './errors.js';
 
 export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
 	serverOptions: ServerOptions<CustomEnv>;
@@ -45,19 +46,21 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 		if (authentication) {
 			if (authentication.startsWith('FAKE:')) {
 				if (!env.DEV) {
-					const message = `FAKE authentication only allowed in dev mode`;
-					console.error(message);
-					throw new Error(message);
+					throw new MissivError('unauthenticated', 'FAKE authentication only allowed in dev mode');
 				}
 				const splitted = authentication.split(':');
 
 				publicKey = PublicKeySchema.parse(splitted[1].toLowerCase());
 
 				if (!publicKey) {
-					throw new Error(`no publicKey provided in FAKE mode`);
+					throw new MissivError('unauthenticated', 'no publicKey provided in FAKE mode');
 				}
 			} else {
-				publicKey = recoverPublicKey(authentication, rawContent);
+				try {
+					publicKey = recoverPublicKey(authentication, rawContent);
+				} catch {
+					throw new MissivError('unauthenticated', 'malformed request signature');
+				}
 			}
 
 			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);

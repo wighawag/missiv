@@ -5,9 +5,12 @@ import {getPrivateChatAPI} from './api/private/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
-import {hc} from 'hono/client';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
+import {MissivError} from './errors.js';
+import type {ErrorResponse} from 'missiv-common';
+
+export {MissivError};
 
 export type {Env};
 
@@ -30,12 +33,7 @@ const corsSetup = cors({
 	allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
 	exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
 	maxAge: 600,
-	credentials: true,
 });
-
-// export let serverHandle: {
-// 	options: ServerOptions<Env>
-// };
 
 export function createServer<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>().get('/', (c) => {
@@ -48,43 +46,32 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 	const adminAPI = getAdminAPI(options);
 
 	return app
-		.route('/api/public', publicChatAPI)
 		.use('/*', corsSetup)
+		.route('/api/public', publicChatAPI)
 		.route('/api/user', userAPI)
 		.route('/api/private', privateChatAPI)
 		.route('/api/admin', adminAPI)
 		.onError((err, c) => {
 			const config = c.get('config');
 			const env = config?.env || {};
-			console.error(err);
-			if (err instanceof HTTPException) {
-				if (err.res) {
-					return err.getResponse();
-				}
+			if (err instanceof MissivError) {
+				return c.json(err.toResponseBody(), err.status);
 			}
-
+			if (err instanceof HTTPException) {
+				return err.getResponse();
+			}
+			console.error(err);
 			return c.json(
 				{
-					success: false,
-					errors: [
-						{
-							name: 'name' in err ? err.name : undefined,
-							code: 'code' in err ? err.code : 5000,
-							status: 'status' in err ? err.status : undefined,
-							message: err.message,
-							cause: env.DEV ? err.cause : undefined,
-							stack: env.DEV ? err.stack : undefined,
-						},
-					],
-				},
+					error: {
+						code: 'internal',
+						message: err.message,
+						...(env.DEV ? {details: {cause: err.cause, stack: err.stack}} : {}),
+					},
+				} satisfies ErrorResponse,
 				500,
 			);
 		});
 }
 
 export type App = ReturnType<typeof createServer<{}>>;
-
-// this is a trick to calculate the type when compiling
-const client = hc<App>('');
-export type Client = typeof client;
-export const createClient = (...args: Parameters<typeof hc>): Client => hc<App>(...args);

@@ -10,12 +10,12 @@ import {Address} from 'missiv-common';
 import {fromDomainToOrigin, recoverAccount} from 'delegated-identity';
 import {getAuth, setup} from '../../setup.js';
 import {Env} from '../../env.js';
-import {zValidator} from '@hono/zod-validator';
+import {MissivError, validateJSON} from '../../errors.js';
 
 export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
-		.post('/register', zValidator('json', ActionRegisterDomainUserSchema), async (c) => {
+		.post('/register', validateJSON(ActionRegisterDomainUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const env = config.env;
@@ -23,7 +23,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 			const timestampMS = Date.now();
 			const {publicKey} = getAuth(c);
 			if (!publicKey) {
-				throw new Error(`no publicKey authenticated`);
+				throw new MissivError('unauthenticated', 'no key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -31,7 +31,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 			let address: Address;
 			if (action.signature === '0x0000000000000000000000000000000000000000000000000000000000000000') {
 				if (!env.DEV) {
-					throw new Error(`FAKE authentication only allowed in dev mode`);
+					throw new MissivError('forbidden', 'FAKE authentication only allowed in dev mode');
 				}
 				address = action.address;
 			} else {
@@ -41,8 +41,9 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 					ownershipSignature: action.signature,
 				});
 				if (address != action.address) {
-					throw new Error(
-						`no matching address from signature for domain ${action.domain}: ${address} != ${action.address}`,
+					throw new MissivError(
+						'forbidden',
+						`the ownership signature does not recover ${action.address} for domain ${action.domain}`,
 					);
 				}
 			}
@@ -56,7 +57,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 				201,
 			);
 		})
-		.post('/editUser', zValidator('json', ActionEditDomainUserSchema), async (c) => {
+		.post('/editUser', validateJSON(ActionEditDomainUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 			const env = config.env;
@@ -64,7 +65,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 			const timestampMS = Date.now();
 			const {account} = getAuth(c);
 			if (!account) {
-				throw new Error(`no account authenticated`);
+				throw new MissivError('unauthenticated', 'no registered key signed this request');
 			}
 
 			const action = c.req.valid('json');
@@ -78,7 +79,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 				201,
 			);
 		})
-		.post('/getUser', zValidator('json', ActionGetMissivUserSchema), async (c) => {
+		.post('/getUser', validateJSON(ActionGetMissivUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 
@@ -87,7 +88,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 			const result = await storage.getUser(action.address);
 			return c.json(result);
 		})
-		.post('/getCompleteUser', zValidator('json', ActionGetCompleteUserSchema), async (c) => {
+		.post('/getCompleteUser', validateJSON(ActionGetCompleteUserSchema), async (c) => {
 			const config = c.get('config');
 			const storage = config.storage;
 

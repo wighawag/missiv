@@ -17,29 +17,15 @@ type WebsocketResponse = MiddlewareHandler<
 >;
 
 export function getPublicChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
-	const {services, upgradeWebSocket} = options;
+	const {services} = options;
 
 	const app = new Hono<{Bindings: CustomEnv}>()
-		.get('/', async (c) => {
-			return c.text('Hello World!');
-		})
 		// we need to cast the function as WebsocketResponse so client get the correct type
 		// but by doing so. we then need to also type the context manually
 		.get('/room/:name/ws', ((c: Context<{Bindings: CustomEnv}, '/room/:name/ws', BlankInput>) => {
 			const room = services.getRoom(options.getEnv(c), c.req.param().name);
 			return room.fetch(c.req.raw);
-		}) as WebsocketResponse)
-		.get(
-			'/ws',
-			upgradeWebSocket(() => {
-				return {
-					onMessage(event, ws) {
-						ws.send(`Echo: ${event.data}`);
-					},
-					onClose: () => {},
-				};
-			}),
-		);
+		}) as WebsocketResponse);
 
 	return app;
 }

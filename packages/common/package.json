@@ -36,6 +36,7 @@
     "format:write": "prettier --write ."
   },
   "dependencies": {
-    "delegated-identity": "^0.1.0"
+    "delegated-identity": "^0.1.0",
+    "zod": "^3.24.2"
   }
 }

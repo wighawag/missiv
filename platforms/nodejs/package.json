@@ -10,7 +10,7 @@
   },
   "files": [
     "dist",
-    "stc",
+    "src",
     ".env.default"
   ],
   "dependencies": {

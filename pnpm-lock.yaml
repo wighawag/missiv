@@ -99,6 +99,9 @@ importers:
       delegated-identity:
         specifier: ^0.1.0
         version: 0.1.0(typescript@5.8.2)(zod@3.24.2)
+      zod:
+        specifier: ^3.24.2
+        version: 3.24.2
     devDependencies:
       as-soon:
         specifier: ^0.0.11

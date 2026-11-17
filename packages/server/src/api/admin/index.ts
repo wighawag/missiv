@@ -1,20 +1,13 @@
 import {Hono} from 'hono';
-import {Assert, IsZodExactly, ServerOptions} from '../../types.js';
+import {ActionResetSchema, ServerOptions} from '../../types.js';
 import {setup} from '../../setup.js';
 import {Env} from '../../env.js';
-import {z} from 'zod';
-import {zValidator} from '@hono/zod-validator';
-
-type ResetAction = {reset: boolean};
-const ResetActionSchema = z.object({
-	reset: z.boolean(),
-});
-type ZodMatchResetAction = Assert<IsZodExactly<typeof ResetActionSchema, ResetAction>>;
+import {MissivError, validateJSON} from '../../errors.js';
 
 export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
-		.post('/db-reset', zValidator('json', ResetActionSchema), async (c) => {
+		.post('/db-reset', validateJSON(ActionResetSchema), async (c) => {
 			const config = c.get('config');
 			const env = config.env;
 			const storage = config.storage;
@@ -23,7 +16,7 @@ export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 
 			if (action.reset) {
 				if (!(env as any).DEV) {
-					throw new Error(`kv api not available unless in dev mode`);
+					throw new MissivError('forbidden', 'db-reset is not available in this configuration');
 				}
 				await storage.reset();
 				return c.json({success: true});
