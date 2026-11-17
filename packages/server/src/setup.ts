@@ -4,7 +4,7 @@ import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {Address, DomainUser, PublicKey} from 'missiv-common';
 import {Context} from 'hono';
-import {recoverPublicKey} from './utils/signature.js';
+import {DEFAULT_MAX_REQUEST_AGE_MS, recoverRequestSigner, REQUEST_SIGNATURE_HEADER} from 'delegated-identity';
 import {MissivError} from './errors.js';
 
 export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
@@ -23,6 +23,8 @@ declare module 'hono' {
 		publicKey?: PublicKey;
 		/** the wallet and domain that key is registered for, when it is */
 		domainUser?: DomainUser;
+		/** the request signature and its timestamp, when the request is signed */
+		requestSignature?: {signature: string; timestamp: number};
 	}
 }
 
@@ -52,6 +54,28 @@ export function requireAccount(c: Context, domain: string): {account: Address; p
 	return {account: domainUser.user, publicKey};
 }
 
+/**
+ * Refuse a request whose signature was already accepted: for the routes that must
+ * not run twice (a replayed send would store the message again). The signature is
+ * kept until its time window has passed; delegated-identity keeps no such store.
+ */
+export async function refuseReplay(c: Context): Promise<void> {
+	const requestSignature = c.get('requestSignature');
+	if (!requestSignature) {
+		throw new MissivError('unauthenticated', 'the request is not signed');
+	}
+	const accepted = await c
+		.get('config')
+		.storage.acceptRequestSignature(
+			requestSignature.signature,
+			requestSignature.timestamp + DEFAULT_MAX_REQUEST_AGE_MS,
+			Date.now(),
+		);
+	if (!accepted) {
+		throw new MissivError('conflict', 'this signed request was already accepted');
+	}
+}
+
 export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): MiddlewareHandler {
 	const {services, getEnv} = options.serverOptions;
 	const {getDB} = services;
@@ -61,16 +85,27 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 		const storage = new RemoteSQLStorage(getDB(env));
 		c.set('config', {storage, env});
 
-		const authentication = c.req.header('SIGNATURE');
-		if (authentication) {
-			let publicKey: PublicKey;
-			try {
-				publicKey = recoverPublicKey(authentication, await c.req.text());
-			} catch {
-				throw new MissivError('unauthenticated', 'malformed request signature');
+		const signature = c.req.header(REQUEST_SIGNATURE_HEADER);
+		if (signature) {
+			const url = new URL(c.req.url);
+			const recovered = recoverRequestSigner({
+				serverOrigin: env.SERVER_ORIGIN || url.origin,
+				method: c.req.method,
+				path: url.pathname + url.search,
+				body: await c.req.text(),
+				signature,
+			});
+			if (!recovered.ok) {
+				throw new MissivError(
+					'unauthenticated',
+					recovered.reason === 'expired'
+						? 'the request signature is outside its time window'
+						: 'malformed request signature',
+				);
 			}
-			c.set('publicKey', publicKey);
-			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);
+			c.set('publicKey', recovered.publicKey);
+			c.set('requestSignature', {signature, timestamp: recovered.timestamp});
+			const {domainUser} = await storage.getDomainUserByPublicKey(recovered.publicKey);
 			if (domainUser) {
 				c.set('domainUser', domainUser);
 			}

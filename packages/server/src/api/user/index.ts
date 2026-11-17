@@ -5,8 +5,9 @@ import {
 	ActionRegisterDomainUserSchema,
 	ServerOptions,
 } from '../../types.js';
-import {fromDomainToOrigin, recoverAccount} from 'delegated-identity';
-import {requireAccount, requireSigner, setup} from '../../setup.js';
+import {recoverAccount} from 'delegated-identity';
+import {isOriginOfDomain} from 'missiv-common';
+import {refuseReplay, requireAccount, requireSigner, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {MissivError, validateJSON} from '../../errors.js';
 
@@ -16,11 +17,14 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 		.post('/register', validateJSON(ActionRegisterDomainUserSchema), async (c) => {
 			const action = c.req.valid('json');
 			const publicKey = requireSigner(c);
+			if (!isOriginOfDomain(action.appOrigin, action.domain)) {
+				throw new MissivError('invalid_request', `${action.appOrigin} is not an origin of ${action.domain}`);
+			}
 
 			let address: string;
 			try {
 				address = await recoverAccount({
-					appOrigin: fromDomainToOrigin(action.domain),
+					appOrigin: action.appOrigin,
 					publicKey,
 					ownershipSignature: action.signature,
 				});
@@ -34,6 +38,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 				);
 			}
 
+			await refuseReplay(c);
 			await c.get('config').storage.register(action.address, publicKey, action.signature, Date.now(), action);
 			return c.json({ok: true, message: 'Registered'} as const, 201);
 		})

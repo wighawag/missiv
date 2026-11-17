@@ -96,8 +96,8 @@ export class RemoteSQLStorage {
 		action: ActionRegisterDomainUser,
 	) {
 		const statement = this.db.prepare(`
-			INSERT INTO DomainUsers (user, domain, publicKey, signature, name, description, added, lastPresence)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+			INSERT INTO DomainUsers (user, domain, publicKey, signature, appOrigin, name, description, added, lastPresence)
+			VALUES (?1, ?2, ?3, ?4, ?8, ?5, ?6, ?7, ?7)
 			ON CONFLICT (user, domain) DO UPDATE SET
 				name = coalesce(excluded.name, name),
 				description = coalesce(excluded.description, description),
@@ -113,11 +113,32 @@ export class RemoteSQLStorage {
 					action.name ?? null,
 					action.description ?? null,
 					timestampMS,
+					action.appOrigin,
 				)
 				.all();
 		} catch (err) {
 			if (isUniqueViolation(err)) {
 				throw new MissivError('conflict', 'this key is already registered for another account or domain');
+			}
+			throw err;
+		}
+	}
+
+	/**
+	 * Record a request signature until `expiresAt`, dropping the expired ones;
+	 * false when it was already recorded (a replay).
+	 */
+	async acceptRequestSignature(signature: string, expiresAt: number, now: number): Promise<boolean> {
+		await this.db.prepare(`DELETE FROM RequestSignatures WHERE expiresAt < ?1`).bind(now).all();
+		try {
+			await this.db
+				.prepare(`INSERT INTO RequestSignatures (signature, expiresAt) VALUES (?1, ?2)`)
+				.bind(signature, expiresAt)
+				.all();
+			return true;
+		} catch (err) {
+			if (isUniqueViolation(err)) {
+				return false;
 			}
 			throw err;
 		}

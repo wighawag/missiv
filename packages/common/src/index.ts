@@ -54,12 +54,14 @@ const ProfileFields = {
 /**
  * Publish a delegate key for a domain: `signature` is the wallet's EIP-191
  * signature over the publication message of the key that signs this request,
- * for the domain's origin. The profile is the domain's: a domain shows only
- * what was registered in it.
+ * for `appOrigin`, the origin of the app (its scheme, host and port, as the
+ * wallet was shown it), whose host is `domain`. The profile is the domain's: a
+ * domain shows only what was registered in it.
  */
 export const ActionRegisterDomainUserSchema = z.object({
 	type: z.literal('register'),
 	domain: DomainSchema,
+	appOrigin: z.string().min(1).max(300),
 	signature: String0xSchema,
 	address: AddressSchema,
 	...ProfileFields,
@@ -80,8 +82,10 @@ export type DomainUser = {
 	user: Address;
 	domain: string;
 	publicKey: PublicKey;
-	/** the wallet's signature over the publication message of `publicKey` for the domain's origin */
+	/** the wallet's signature over the publication message of `publicKey` for `appOrigin` */
 	signature: String0x;
+	/** the app origin the wallet signed for, whose host is `domain` */
+	appOrigin: string;
 	name: string | null;
 	description: string | null;
 	added: number;
@@ -241,9 +245,9 @@ export function getConversationID(accountA: Address, accountB: Address) {
 // ------------------------------------------------------------------------------------------------
 
 export type ClientMessageType =
-	| {address: `0x${string}`; signature: `0x${string}`}
-	| {message: string; signature: `0x${string}`}
-	| {logout: true};
+	// the login: `signature` is delegated-identity's request signature over the
+	// challenge (method GET, the room's path, the server's origin)
+	{address: `0x${string}`; signature: string} | {message: string; signature: `0x${string}`} | {logout: true};
 
 export type ServerMessageType =
 	| {challenge: string; id: string}
@@ -252,6 +256,34 @@ export type ServerMessageType =
 	| {quit: string; id: string}
 	| {error: string; code?: ErrorCode};
 
-// The ownership proof's message and origin live in delegated-identity, shared with
-// the services that check the same proof; re-exported here for missiv's callers.
-export {fromDomainToOrigin, originPublicKeyPublicationMessage} from 'delegated-identity';
+/** Whether `appOrigin` is an origin whose host is `domain` (or is `domain` itself). */
+export function isOriginOfDomain(appOrigin: string, domain: string): boolean {
+	if (appOrigin === domain) {
+		return true;
+	}
+	try {
+		const url = new URL(appOrigin);
+		return url.origin === appOrigin && url.host === domain;
+	} catch {
+		return false;
+	}
+}
+
+/** The origin of an HTTP or WebSocket URL as a server sees it (`ws:` as `http:`, `wss:` as `https:`). */
+export function serverOriginOf(url: string): string {
+	const parsed = new URL(url);
+	const protocol = parsed.protocol === 'wss:' ? 'https:' : parsed.protocol === 'ws:' ? 'http:' : parsed.protocol;
+	return `${protocol}//${parsed.host}`;
+}
+
+// The ownership proof and the request signature live in delegated-identity,
+// shared with the services that check the same proofs; re-exported here.
+export {
+	fromDomainToOrigin,
+	originPublicKeyPublicationMessage,
+	signRequest,
+	recoverRequestSigner,
+	recoverAccount,
+	REQUEST_SIGNATURE_HEADER,
+	DEFAULT_MAX_REQUEST_AGE_MS,
+} from 'delegated-identity';

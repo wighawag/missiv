@@ -106,6 +106,7 @@ export function createHarness(env: Record<string, string | undefined> = {}) {
 				address: user.address,
 				signature: user.ownershipSignature,
 				domain: options?.domain || DOMAIN,
+				appOrigin: APP_ORIGIN,
 				name: options?.name,
 			},
 			{privateKey: user.delegatePrivateKey},

@@ -1,5 +1,4 @@
-import { signAsync } from '@noble/secp256k1';
-import { keccak_256 } from '@noble/hashes/sha3';
+import { REQUEST_SIGNATURE_HEADER, signRequest } from 'delegated-identity';
 import type {
 	ActionAcceptConversation,
 	ActionEditDomainUser,
@@ -47,6 +46,14 @@ export type APIOptions = { privateKey: Uint8Array | string };
 
 export { getPublicKey } from '@noble/secp256k1';
 
+/** A delegate private key as delegated-identity takes it: bytes, or 0x-prefixed hex. */
+export function toPrivateKey(privateKey: Uint8Array | string): Uint8Array | `0x${string}` {
+	if (typeof privateKey !== 'string') {
+		return privateKey;
+	}
+	return (privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`) as `0x${string}`;
+}
+
 export class API {
 	protected fetchFunction: FetchFunction;
 
@@ -71,15 +78,15 @@ export class API {
 			...extraHeaders
 		};
 		const body = JSON.stringify(action);
+		const url = new URL(this.endpoint + '/api' + path);
 		if (options) {
-			const privateKey =
-				typeof options.privateKey == 'string' && options.privateKey.startsWith('0x')
-					? options.privateKey.slice(2)
-					: options.privateKey;
-			const signature = await signAsync(keccak_256(body), privateKey);
-			headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
+			// delegated-identity's envelope: this server, this route, now, this body
+			headers[REQUEST_SIGNATURE_HEADER] = await signRequest(
+				{ serverOrigin: url.origin, method: 'POST', path: url.pathname + url.search, body },
+				toPrivateKey(options.privateKey)
+			);
 		}
-		const resp = await this.fetchFunction(this.endpoint + '/api' + path, {
+		const resp = await this.fetchFunction(url.toString(), {
 			method: 'POST',
 			body,
 			headers

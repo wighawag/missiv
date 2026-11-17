@@ -15,5 +15,7 @@ allowBuilds:
   workerd: true
   '@parcel/watcher': false
   sharp: false
+# pnpm 11 refuses a release younger than its minimum age; delegated-identity was
+# published the day this depended on it. Drop the entry once it is older.
 minimumReleaseAgeExclude:
-  - delegated-identity@0.1.0
+  - delegated-identity@0.1.0 || 0.1.1

@@ -1,7 +1,8 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
 import { derivedWithStartStopNotifier } from '$lib/utils/store.js';
-import { keccak_256 } from '@noble/hashes/sha3';
-import { signAsync } from '@noble/secp256k1';
+import { signRequest } from 'delegated-identity';
+import { serverOriginOf } from 'missiv-common';
+import { toPrivateKey } from '$lib/API.js';
 import type { ClientMessageType, ServerMessageType } from 'missiv-common';
 import { get } from 'svelte/store';
 
@@ -420,11 +421,6 @@ export function openRoom(params: {
 			throw new Error(`no signer`);
 		}
 
-		const privateKey =
-			typeof signer.privateKey == 'string' && signer.privateKey.startsWith('0x')
-				? signer.privateKey.slice(2)
-				: signer.privateKey;
-
 		console.log(`logging in....`);
 		set({
 			step: 'Connected',
@@ -435,9 +431,17 @@ export function openRoom(params: {
 			loggingIn: true,
 			session: savedSession
 		});
-		const signatureObject = await signAsync(keccak_256(savedSession.challenge), privateKey); // Sync methods below
-		const signature =
-			`${signatureObject.toCompactHex()}:${signatureObject.recovery}` as `0x${string}`; // TODO atually it is not 0x
+		// the login is a request signature over the challenge: this server, this room, now
+		const roomURL = new URL(params.url);
+		const signature = await signRequest(
+			{
+				serverOrigin: serverOriginOf(params.url),
+				method: 'GET',
+				path: roomURL.pathname,
+				body: savedSession.challenge
+			},
+			toPrivateKey(signer.privateKey)
+		);
 		const msg: ClientMessageType = { address, signature };
 
 		websocket.send(JSON.stringify(msg));

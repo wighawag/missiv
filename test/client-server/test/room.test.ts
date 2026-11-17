@@ -2,8 +2,7 @@
 // platform, no port.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {Room} from 'missiv-server';
-import {keccak_256} from '@noble/hashes/sha3';
-import {signAsync} from '@noble/secp256k1';
+import {signRequest} from 'delegated-identity';
 import {createHarness, createUser, DOMAIN, type Harness, type TestUser} from './setup.js';
 
 type FakeSocket = {sent: string[]; send(m: string): void; close(): void};
@@ -42,7 +41,13 @@ function createRoom(h: Harness, name: string) {
 	const room: any = new TestRoom({});
 	room.instantiate();
 	const [domain, authorization] = name.slice(1).split('!');
-	room.identifier = {name, domain, authorization};
+	room.identifier = {
+		name,
+		domain,
+		authorization,
+		serverOrigin: 'http://localhost',
+		path: `/api/public/room/${name}/ws`,
+	};
 	return {room, stored};
 }
 
@@ -54,11 +59,11 @@ async function connect(room: any): Promise<FakeSocket & {challenge: string}> {
 }
 
 async function login(room: any, ws: FakeSocket & {challenge: string}, user: TestUser) {
-	const s = await signAsync(keccak_256(ws.challenge), user.delegatePrivateKey);
-	await room.webSocketMessage(
-		ws,
-		JSON.stringify({address: user.address, signature: `${s.toCompactHex()}:${s.recovery}`}),
+	const signature = await signRequest(
+		{serverOrigin: 'http://localhost', method: 'GET', path: room.identifier.path, body: ws.challenge},
+		user.delegatePrivateKey,
 	);
+	await room.webSocketMessage(ws, JSON.stringify({address: user.address, signature}));
 	// the rate limiter counts the login too, and lifts its cooldown a tick later
 	await new Promise((resolve) => setTimeout(resolve, 5));
 }

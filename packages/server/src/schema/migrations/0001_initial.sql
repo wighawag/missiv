@@ -3,13 +3,15 @@
 -- empty database.
 
 -- A wallet's delegate key in one domain: the ownership proof (the wallet's
--- signature over the publication message of `publicKey` for the domain's origin)
--- and the profile it shows in that domain. A key belongs to one (user, domain).
+-- signature over the publication message of `publicKey` for `appOrigin`, the
+-- domain's origin) and the profile it shows in that domain. A key belongs to one
+-- (user, domain).
 CREATE TABLE DomainUsers (
   user TEXT NOT NULL,
   domain TEXT NOT NULL,
   publicKey TEXT NOT NULL,
   signature TEXT NOT NULL,
+  appOrigin TEXT NOT NULL,
   name TEXT,
   description TEXT,
   added INTEGER NOT NULL,

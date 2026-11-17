@@ -2,13 +2,16 @@ import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './ty
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from 'missiv-common';
-import {recoverPublicKey} from './utils/signature.js';
+import {recoverRequestSigner} from 'delegated-identity';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {Methods} from 'eip-1193';
 import {RemoteSQL} from 'remote-sql';
 
 export type Session = {
+	/** what a login signature names: the server's origin and the room's path */
+	serverOrigin: string;
+	path: string;
 	address?: `0x${string}`;
 	publicKey?: `0x${string}`;
 	id: string;
@@ -22,6 +25,9 @@ export type Session = {
 };
 
 type HybernatedData = Record<string, unknown> & {
+	/** what a login signature names: the server's origin and the room's path */
+	serverOrigin: string;
+	path: string;
 	address?: `0x${string}`;
 	publicKey?: `0x${string}`;
 	domain: string;
@@ -37,7 +43,9 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 
 	dbStorage!: RemoteSQLStorage; // set in instantiate
 	env: CustomEnv;
-	identifier: {name: string; domain: string; authorization: string | undefined} | undefined;
+	identifier:
+		| {name: string; domain: string; authorization: string | undefined; serverOrigin: string; path: string}
+		| undefined;
 
 	abstract getDB(env: Env): RemoteSQL;
 	abstract getRateLimiter(env: Env, idOrName: ServerObjectId | string): ServerObject;
@@ -93,8 +101,14 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				} else {
 					return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
 				}
-				// console.log({name, domain, authorization});
-				this.identifier = {name, domain, authorization};
+				const url = new URL(request.url);
+				this.identifier = {
+					name,
+					domain,
+					authorization,
+					serverOrigin: this.env.SERVER_ORIGIN || url.origin,
+					path: url.pathname,
+				};
 			} else if (this.identifier.name !== name) {
 				return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
 			}
@@ -162,6 +176,8 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			domain: this.identifier.domain,
 			authorization: this.identifier.authorization,
 			authorized: false,
+			serverOrigin: this.identifier.serverOrigin,
+			path: this.identifier.path,
 		};
 		if (limiterId) {
 			this.saveSocketData(ws, {
@@ -171,6 +187,8 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				authorized: false,
 				challenge: session.challenge,
 				id: session.id,
+				serverOrigin: session.serverOrigin,
+				path: session.path,
 			});
 		} else {
 			this.saveSocketData(ws, {
@@ -179,6 +197,8 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 				authorized: false,
 				challenge: session.challenge,
 				id: session.id,
+				serverOrigin: session.serverOrigin,
+				path: session.path,
 			});
 		}
 		this.sessions.set(ws, session);
@@ -268,11 +288,15 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 						this.send(ws, {error: `User not found on domain: ${session.domain}`});
 						return;
 					}
-					let recoveredPublicKey: string | undefined;
-					try {
-						recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
-					} catch {}
-					if (recoveredPublicKey !== domainUser.publicKey) {
+					// the login is a request signature over the challenge (delegated-identity's envelope)
+					const recovered = recoverRequestSigner({
+						serverOrigin: session.serverOrigin,
+						method: 'GET',
+						path: session.path,
+						body: session.challenge,
+						signature: data.signature,
+					});
+					if (!recovered.ok || recovered.publicKey !== domainUser.publicKey) {
 						this.send(ws, {error: 'Invalid signature'});
 						return;
 					}

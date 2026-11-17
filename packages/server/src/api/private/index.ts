@@ -10,7 +10,7 @@ import {
 	ActionSendMessageSchema,
 	ServerOptions,
 } from '../../types.js';
-import {requireAccount, setup} from '../../setup.js';
+import {refuseReplay, requireAccount, setup} from '../../setup.js';
 import {validateJSON} from '../../errors.js';
 import {Env} from '../../env.js';
 
@@ -20,6 +20,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 		.post('/sendMessage', validateJSON(ActionSendMessageSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account, publicKey} = requireAccount(c, action.domain);
+			await refuseReplay(c);
 			const {timestampMS} = await c.get('config').storage.sendMessage(publicKey, account, Date.now(), action);
 			return c.json({timestampMS});
 		})

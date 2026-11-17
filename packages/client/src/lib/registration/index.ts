@@ -45,9 +45,16 @@ export type CompleteUser = DomainUser;
 export function createMissivRegistration(params: {
 	endpoint: string;
 	domain: string;
+	/**
+	 * the app's origin, which the wallet's publication signature names (its host is
+	 * `domain`); defaults to the page's origin in a browser
+	 */
+	appOrigin?: string;
 	account: Readable<Account>;
 }) {
 	const api: API = new API(params.endpoint);
+	const appOrigin =
+		params.appOrigin ?? (typeof window !== 'undefined' ? window.location.origin : undefined);
 
 	let $missivRegistration: MissivRegistration = {
 		step: 'Idle',
@@ -195,6 +202,7 @@ export function createMissivRegistration(params: {
 					type: 'register',
 					address,
 					domain: params.domain,
+					appOrigin: requireAppOrigin(),
 					signature,
 					name: options?.name,
 					description: options?.description
@@ -308,8 +316,19 @@ export function createMissivRegistration(params: {
 		}
 	}
 
+	function requireAppOrigin(): string {
+		if (!appOrigin) {
+			throw new Error(`no appOrigin: pass it to createMissivRegistration outside a browser`);
+		}
+		return appOrigin;
+	}
+
 	return {
 		subscribe,
+		/** the origin the publication signature must name */
+		get appOrigin() {
+			return requireAppOrigin();
+		},
 		register,
 		edit,
 		getRegisteredUser

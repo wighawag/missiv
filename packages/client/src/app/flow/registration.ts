@@ -1,6 +1,6 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import type { CompleteUser, MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { fromDomainToOrigin, originPublicKeyPublicationMessage } from 'missiv-common';
+import { originPublicKeyPublicationMessage } from 'missiv-common';
 
 export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
 	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';
@@ -134,7 +134,7 @@ export function createRegistrationFlow(
 			signature = await params.requestSignature(
 				$flow.address,
 				originPublicKeyPublicationMessage(
-					fromDomainToOrigin($missivRegistration.domain),
+					missivRegistration.appOrigin,
 					$missivRegistration.signer.publicKey as `0x${string}`
 				)
 			);

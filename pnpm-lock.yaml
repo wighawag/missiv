@@ -41,6 +41,9 @@ importers:
       '@scure/base':
         specifier: ^1.2.4
         version: 1.2.4
+      delegated-identity:
+        specifier: ^0.1.1
+        version: 0.1.1
       missiv-common:
         specifier: workspace:*
         version: link:../common
@@ -97,8 +100,8 @@ importers:
   packages/common:
     dependencies:
       delegated-identity:
-        specifier: ^0.1.0
-        version: 0.1.0(typescript@5.8.2)(zod@3.24.2)
+        specifier: ^0.1.1
+        version: 0.1.1
       zod:
         specifier: ^3.24.2
         version: 3.24.2
@@ -128,8 +131,8 @@ importers:
         specifier: ^2.2.3
         version: 2.2.3
       delegated-identity:
-        specifier: ^0.1.0
-        version: 0.1.0(typescript@5.8.2)(zod@3.24.2)
+        specifier: ^0.1.1
+        version: 0.1.1
       eip-1193:
         specifier: ^0.6.3
         version: 0.6.3
@@ -317,6 +320,9 @@ importers:
       '@noble/secp256k1':
         specifier: ^2.2.3
         version: 2.2.3
+      delegated-identity:
+        specifier: ^0.1.1
+        version: 0.1.1
       missiv-client:
         specifier: workspace:*
         version: link:../../packages/client
@@ -3025,8 +3031,8 @@ packages:
   defu@6.1.4:
     resolution: {integrity: sha512-mEQCMmwJu317oSz8CwdIOdwf3xMif1ttiM8LTufzc3g6kR+9Pe236twL8j3IYT1F7GfRgGcW6MWxzZjLIkuHIg==}
 
-  delegated-identity@0.1.0:
-    resolution: {integrity: sha512-yK1pKE9oY+9mlZ2KAqQ8L7m0rngG9/j1UcTlHydhsKzOr/wldaVENFEHq5XG2dKRmVch1RUCxJqAKZCVg390ew==}
+  delegated-identity@0.1.1:
+    resolution: {integrity: sha512-JnsY+IMX/ebUAb8buUgr4/LYbLe4sWHD96wwvmwqtNxi6zGpbilpBdDM5cxKHwFiZGehP2/Zl03t2t+b1o1jDg==}
 
   denodeify@1.2.1:
     resolution: {integrity: sha512-KNTihKNmQENUZeKu5fzfpzRqR5S2VMp4gl9RFHiWzj9DfvYQPMJ6XHKNaQxaGCXwPk6y9yme3aUoaiAe+KX+vg==}
@@ -8225,16 +8231,10 @@ snapshots:
 
   defu@6.1.4: {}
 
-  delegated-identity@0.1.0(typescript@5.8.2)(zod@3.24.2):
+  delegated-identity@0.1.1:
     dependencies:
       '@noble/hashes': 1.7.1
       '@noble/secp256k1': 2.2.3
-      viem: 2.23.13(typescript@5.8.2)(zod@3.24.2)
-    transitivePeerDependencies:
-      - bufferutil
-      - typescript
-      - utf-8-validate
-      - zod
 
   denodeify@1.2.1: {}
 

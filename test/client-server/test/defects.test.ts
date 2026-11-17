@@ -2,12 +2,14 @@
 // written before its fix. A test marked `it.fails` is a known defect: it passes
 // while the defect is there, and the fix turns it into a plain `it`.
 import {describe, it, expect, beforeEach} from 'vitest';
+import {signRequest} from 'delegated-identity';
 import {
 	createHarness,
 	createUser,
 	newDelegateKey,
 	conversationIDOf,
 	DOMAIN,
+	APP_ORIGIN,
 	type Harness,
 	type TestUser,
 } from './setup.js';
@@ -40,6 +42,7 @@ describe('production configuration (no DEV)', () => {
 				{
 					type: 'register',
 					domain: DOMAIN,
+					appOrigin: APP_ORIGIN,
 					address: user.address,
 					signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
 				},
@@ -104,7 +107,7 @@ describe('reject blocks the sender (S3-9)', () => {
 });
 
 describe('signed requests are not replayable (signed-requests-are-replayable-and-undomained)', () => {
-	it.fails('refuses the same signed send twice', async () => {
+	it('refuses the same signed send twice', async () => {
 		const body = JSON.stringify({
 			type: 'sendMessage',
 			domain: DOMAIN,
@@ -136,12 +139,61 @@ describe('a second key for the same wallet (re-registering-a-new-key-keeps-the-o
 	it.fails('replaces the first, so the new key authenticates', async () => {
 		const second = newDelegateKey();
 		await h.api.register(
-			{type: 'register', domain: DOMAIN, address: A.address, signature: await A.signPublication(second.publicKey)},
+			{
+				type: 'register',
+				domain: DOMAIN,
+				appOrigin: APP_ORIGIN,
+				address: A.address,
+				signature: await A.signPublication(second.publicKey),
+			},
 			{privateKey: second.privateKey},
 		);
 		await h.api.getConversations(
 			{type: 'getConversations', domain: DOMAIN, namespace: 'test'},
 			{privateKey: second.privateKey},
 		);
+	});
+});
+
+describe('the request envelope (S3-6)', () => {
+	async function signedGetConversations(serverOrigin: string, timestamp?: number) {
+		const body = JSON.stringify({type: 'getConversations', domain: DOMAIN, namespace: 'test'});
+		const signature = await signRequest(
+			{serverOrigin, method: 'POST', path: '/api/private/getConversations', body, timestamp},
+			A.delegatePrivateKey,
+		);
+		return h.app.request('http://localhost/api/private/getConversations', {
+			method: 'POST',
+			headers: {'content-type': 'application/json', SIGNATURE: signature},
+			body,
+		});
+	}
+
+	it('accepts a request signed for this server', async () => {
+		expect((await signedGetConversations('http://localhost')).status).toBe(200);
+	});
+
+	it('refuses a request signed for another server', async () => {
+		expect((await signedGetConversations('https://elsewhere.example')).status).toBe(401);
+	});
+
+	it('refuses a request signed more than 60 s ago', async () => {
+		expect((await signedGetConversations('http://localhost', Date.now() - 61_000)).status).toBe(401);
+	});
+
+	it('refuses a registration whose origin is not the domain', async () => {
+		const user = await createUser();
+		await expect(
+			h.api.register(
+				{
+					type: 'register',
+					domain: DOMAIN,
+					appOrigin: 'https://evil.example',
+					address: user.address,
+					signature: user.ownershipSignature,
+				},
+				{privateKey: user.delegatePrivateKey},
+			),
+		).rejects.toThrow();
 	});
 });
