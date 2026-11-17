@@ -19,3 +19,7 @@ This runs on EVERY route the `setup` middleware is mounted on (user / private / 
 ## Suggested direction (not yet decided)
 
 Gate it behind `env.DEV` (like `FAKE:` auth and `db-reset`), or move it to an explicit admin/init path, rather than honouring it on any public route. Low severity; capture-only for now.
+
+## Update (2026-11-17, the S3 review of origin/main 79fe3ab)
+
+The bun platform's own bootstrap depends on it: an in-memory bun database is created by POSTing `getUser?_initDB=true` (`platforms/bun/src/cli.ts:388-402`), so closing the parameter needs a replacement bootstrap at the same time (the nodejs platform's bootstrap targets a route that does not exist, see `nodejs-platform-cannot-start.md`). With no migrations (`schema-has-no-migrations-and-misaimed-indexes.md`), `setup()` is also the only way a deployed database gets new tables.

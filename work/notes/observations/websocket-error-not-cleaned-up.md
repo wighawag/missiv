@@ -26,3 +26,7 @@ Fixing this is NOT a one-line uncomment: the handler must be re-enabled AND each
 ## Suggested direction (not yet decided)
 
 Re-enable `webSocketError` in `Room.ts` and wire the `error` event in both platform adapters so error'd sockets get the same `closeOrErrorHandler` cleanup as closed ones.
+
+## Update (2026-11-17, the S3 review of origin/main 79fe3ab)
+
+On cf-worker the dispatch is also doubled: the socket is accepted with the Hibernation API and given `addEventListener` handlers that pass the client end of the pair (`cloudflare-room-wires-two-websocket-dispatch-paths.md`). The error-cleanup fix belongs with that one, in `Room` and each platform's dispatch.

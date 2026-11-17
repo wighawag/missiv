@@ -38,3 +38,7 @@ But the test sends the inverse: a per-message `signature: FAKE_SIG` inside each 
 ## Suggested next step
 
 Route this to a task once the direction is decided (fix the tests to match the current schema, vs change the schema to match intended behaviour). Until then the `verify` gate's `pnpm test` step is red for a pre-existing reason unrelated to the contract onboarding.
+
+## Update (2026-11-17, the S3 review of origin/main 79fe3ab)
+
+After the register fix above, the expected state is 4 failing of 6 (the four `sendMessage` cases), not the 5 of 6 the jolly-roger plan's S3 quotes. Not re-measured: the suite spawns `missiv-server-bun` on port 2001 and this machine has no bun. Besides the schema, the suite's `src/cli.ts:10` targets a `room/:name/websocket` route that does not exist, and its server instance is named `fuzd`. The per-message-signature task it routes to describes the client's read side wrongly (`api-shape-duplicated-and-unversioned.md`). What the suite exercises is otherwise covered by `test/client-server` in-process, so its value is the bun platform itself.
