@@ -6,8 +6,8 @@ import {
 	ActionRegisterDomainUserSchema,
 	ServerOptions,
 } from '../../types.js';
-import {recoverMessageAddress} from 'viem';
-import {Address, fromDomainToOrigin, originPublicKeyPublicationMessage} from 'missiv-common';
+import {Address} from 'missiv-common';
+import {recoverAccount} from 'missiv-identity';
 import {getAuth, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {zValidator} from '@hono/zod-validator';
@@ -35,17 +35,15 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 				}
 				address = action.address;
 			} else {
-				const message = originPublicKeyPublicationMessage(
-					fromDomainToOrigin(action.domain),
-					publicKey as `0x${string}`,
-				);
-				const addressRecovered = await recoverMessageAddress({
-					message,
-					signature: action.signature,
+				address = await recoverAccount({
+					domain: action.domain,
+					publicKey: publicKey as `0x${string}`,
+					ownershipSignature: action.signature,
 				});
-				address = addressRecovered.toLowerCase() as `0x${string}`;
 				if (address != action.address) {
-					throw new Error(`no matching address from signature: ${message}, ${address} != ${action.address}`);
+					throw new Error(
+						`no matching address from signature for domain ${action.domain}: ${address} != ${action.address}`,
+					);
 				}
 			}
 

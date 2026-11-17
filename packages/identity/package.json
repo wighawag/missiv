@@ -1,0 +1,45 @@
+{
+  "name": "missiv-identity",
+  "version": "0.1.0",
+  "description": "An account's delegate key and its proofs: the wallet's signature authorizing a delegate key for an origin, and the delegate's signature over a request",
+  "keywords": [
+    "ethereum",
+    "delegate",
+    "signature",
+    "authentication"
+  ],
+  "author": "Ronan Sandford",
+  "license": "AGPL-3.0-only",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "@noble/hashes": "^1.7.1",
+    "@noble/secp256k1": "^2.2.3",
+    "viem": "^2.23.13"
+  },
+  "devDependencies": {
+    "as-soon": "^0.0.11",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "as-soon -w src pnpm build",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest"
+  }
+}

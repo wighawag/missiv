@@ -211,10 +211,6 @@ export function getConversationID(accountA: Address, accountB: Address) {
 	}
 }
 
-export function originPublicKeyPublicationMessage(orig: string, publicKey: `0x${string}`): string {
-	return `Origin: ${orig}\n\nIMPORTANT: Only sign on trusted websites.\n\nThis authorizes the following Public Key to represent your account:\n\n${publicKey}\n\nOthers can use this key to write encrypted messages to you securely.`;
-}
-
 export type ClientMessageType =
 	| {address: `0x${string}`; signature: `0x${string}`}
 	| {message: string; signature: `0x${string}`}
@@ -227,12 +223,6 @@ export type ServerMessageType =
 	| {quit: string; id: string}
 	| {error: string; cause?: any; stack?: string};
 
-export function fromDomainToOrigin(domain: string) {
-	if (domain.startsWith('https://')) {
-		return domain;
-	}
-	if (domain === 'localhost' || domain.startsWith('localhost:')) {
-		return `http://${domain}`;
-	}
-	return `https://${domain}`;
-}
+// The ownership proof's message and origin live in missiv-identity, shared with
+// the services that check the same proof; re-exported here for missiv's callers.
+export {fromDomainToOrigin, originPublicKeyPublicationMessage} from 'missiv-identity';

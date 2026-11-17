@@ -34,5 +34,8 @@
     "dev": "as-soon -w src pnpm build",
     "format:check": "prettier --check .",
     "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "missiv-identity": "workspace:*"
   }
 }
