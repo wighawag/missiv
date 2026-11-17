@@ -4,7 +4,7 @@ import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {Address, PublicKey} from 'missiv-common';
 import {Context} from 'hono';
-import {recoverRequestSigner} from 'missiv-identity';
+import {recoverPublicKey} from './utils/signature.js';
 
 export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
 	serverOptions: ServerOptions<CustomEnv>;
@@ -57,7 +57,7 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 					throw new Error(`no publicKey provided in FAKE mode`);
 				}
 			} else {
-				publicKey = recoverRequestSigner(authentication, rawContent);
+				publicKey = recoverPublicKey(authentication, rawContent);
 			}
 
 			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);

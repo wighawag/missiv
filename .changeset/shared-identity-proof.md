@@ -3,4 +3,4 @@
 'missiv-server': patch
 ---
 
-The ownership proof (a wallet's signature authorizing a delegate key for an origin) and the request signature (the delegate key's signature over a body) now live in the new package missiv-identity (0.1.0, its first release), so other services check the same proofs: missiv-common re-exports `originPublicKeyPublicationMessage` and `fromDomainToOrigin` from it, and missiv-server recovers both through it, unchanged in behaviour.
+The ownership proof (a wallet's signature authorizing a delegate key for an app origin) now lives in the new package missiv-identity (0.2.0; 0.1.0 was the extraction alone), shared with the other services that check it: missiv-common re-exports `originPublicKeyPublicationMessage` and `fromDomainToOrigin` from it (`fromDomainToOrigin` now keeps an `http://` origin as it is), and missiv-server's `/register` recovers the account through it, unchanged in behaviour. missiv's own raw-body request signature is unchanged; missiv-identity's request envelope replaces it in a later release.

@@ -7,7 +7,7 @@ import {
 	ServerOptions,
 } from '../../types.js';
 import {Address} from 'missiv-common';
-import {recoverAccount} from 'missiv-identity';
+import {fromDomainToOrigin, recoverAccount} from 'missiv-identity';
 import {getAuth, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {zValidator} from '@hono/zod-validator';
@@ -36,7 +36,7 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 				address = action.address;
 			} else {
 				address = await recoverAccount({
-					domain: action.domain,
+					appOrigin: fromDomainToOrigin(action.domain),
 					publicKey: publicKey as `0x${string}`,
 					ownershipSignature: action.signature,
 				});

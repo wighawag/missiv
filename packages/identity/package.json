@@ -1,7 +1,7 @@
 {
   "name": "missiv-identity",
-  "version": "0.1.0",
-  "description": "An account's delegate key and its proofs: the wallet's signature authorizing a delegate key for an origin, and the delegate's signature over a request",
+  "version": "0.2.0",
+  "description": "An account delegate key and its proofs: the wallet signature authorizing a delegate key for an app origin, and the delegate signature over a request envelope",
   "keywords": [
     "ethereum",
     "delegate",
@@ -9,7 +9,7 @@
     "authentication"
   ],
   "author": "Ronan Sandford",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },

@@ -2,7 +2,7 @@ import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './ty
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from 'missiv-common';
-import {recoverRequestSigner} from 'missiv-identity';
+import {recoverPublicKey} from './utils/signature.js';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {Methods} from 'eip-1193';
@@ -282,7 +282,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 						return;
 					}
 					const publicKey = user.completeUser.publicKey;
-					const recoveredPublicKey = recoverRequestSigner(data.signature, session.challenge);
+					const recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
 					if (recoveredPublicKey !== publicKey) {
 						this.send(ws, {error: 'Invalid signature'});
 						return;
