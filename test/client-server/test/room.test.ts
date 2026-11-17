@@ -1,7 +1,7 @@
 // The Room driven directly on fake sockets, against the harness's database: no
 // platform, no port.
 import {describe, it, expect, beforeEach} from 'vitest';
-import {Room} from 'missiv-server';
+import {Room, createInProcessRooms} from 'missiv-server';
 import {signRequest} from 'delegated-identity';
 import {createHarness, createUser, DOMAIN, type Harness, type TestUser} from './setup.js';
 
@@ -88,12 +88,33 @@ describe('public room', () => {
 });
 
 describe('gated room (gated-room-accepts-writes-without-authorization)', () => {
-	it.fails('stores nothing from a session whose authorization failed', async () => {
+	it('stores nothing from a session whose authorization failed', async () => {
 		// chain 1 is not configured, so the authorization cannot pass
 		const {room, stored} = createRoom(h, `@${DOMAIN}!1:0x1111111111111111111111111111111111111111:0x:0x01`);
 		const ws = await connect(room);
 		await login(room, ws, A);
 		await room.webSocketMessage(ws, JSON.stringify({message: 'not allowed here', signature: '0x'}));
 		expect([...stored.values()]).toEqual([]);
+	});
+});
+
+describe('in-process rooms (createInProcessRooms)', () => {
+	it('one room per name, holding its own history', async () => {
+		const rooms = createInProcessRooms({getDB: () => h.db});
+		const room = rooms.getRoom({}, `@${DOMAIN}`);
+		expect(rooms.getRoom({}, `@${DOMAIN}`)).toBe(room);
+		const refused = room.prepareConnection(new Request(`http://localhost/api/public/room/${DOMAIN}/ws`));
+		expect(refused?.status).toBe(400);
+		expect(room.prepareConnection(new Request(`http://localhost/api/public/room/@${DOMAIN}/ws`))).toBeUndefined();
+
+		const ws = await connect(room);
+		room.addWebSocket(ws as any);
+		await login(room, ws, A);
+		await room.webSocketMessage(ws, JSON.stringify({message: 'kept', signature: '0x'}));
+		const history = await room.getStorage().list<string>();
+		expect([...history.values()].map((v) => JSON.parse(v).message)).toEqual(['kept']);
+
+		await room.webSocketClose(ws as any, 1000, '', true);
+		expect(room.getWebSockets()).toEqual([]);
 	});
 });

@@ -60,6 +60,15 @@ export type Services<Env extends Bindings = Bindings> = {
 
 export type ServerOptions<Env extends Bindings = Bindings> = {
 	services: Services<Env>;
+	/**
+	 * Rooms held in this process (nodejs, bun), upgraded through `upgradeWebSocket`
+	 * rather than a Durable Object's fetch: see `createInProcessRooms`.
+	 */
+	inProcessRooms?: {
+		getRoom(env: Env, name: string): InProcessRoom;
+		/** the client's IP, for the rate limiter */
+		getIP?(c: Context): string | undefined;
+	};
 	getEnv: (c: Context<{Bindings: Env}>) => Env;
 	upgradeWebSocket: (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<
 		any,
@@ -75,6 +84,16 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 //         json: UpgradedWebSocketResponseInputJSONType;
 //     };
 // }>;
+
+/** What the public API needs of a room held in process. */
+export type InProcessRoom = {
+	prepareConnection(request: Request): Response | undefined;
+	addWebSocket(ws: WebSocket): void;
+	webSocketOpen(ws: WebSocket, metadata: {ip?: string}): Promise<void>;
+	webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void>;
+	webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void>;
+	webSocketError(ws: WebSocket, error: unknown): Promise<void>;
+};
 
 export type ServerObject = {
 	fetch(input: RequestInfo, init?: RequestInit): Promise<Response>;

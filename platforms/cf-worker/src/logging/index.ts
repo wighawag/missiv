@@ -1,5 +1,5 @@
 import {track} from 'workers-logger';
-import {Env} from '../env';
+import type {CloudflareWorkerEnv as Env} from '../env.js';
 import {logflareReport} from './logflare';
 import {consoleReporter} from './basicReporters';
 

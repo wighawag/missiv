@@ -5,6 +5,12 @@
     "access": "public"
   },
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "missiv-server-nodejs": "./dist/cli.js"
   },
@@ -14,9 +20,11 @@
     ".env.default"
   ],
   "dependencies": {
-    "@hono/node-server": "^1.13.8",
+    "@hono/node-server": "^1.19.11",
+    "@hono/node-ws": "^1.3.1",
     "@libsql/client": "^0.15.0",
     "commander": "^13.1.0",
+    "hono": "^4.7.5",
     "ldenv": "^0.3.12",
     "missiv-server": "workspace:*",
     "named-logs-context": "^0.1.1",
@@ -25,10 +33,15 @@
   "devDependencies": {
     "@types/node": "^22.13.10",
     "as-soon": "^0.0.11",
+    "delegated-identity": "^0.1.1",
+    "missiv-client": "workspace:*",
+    "missiv-common": "workspace:*",
     "prettier": "^3.5.3",
     "set-defaults": "^0.0.5",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "viem": "^2.23.13",
+    "vitest": "^3.0.9"
   },
   "scripts": {
     "prepare": "set-defaults .env.default",
@@ -36,6 +49,7 @@
     "build": "tsc",
     "build:watch": "as-soon -w src tsc",
     "format:check": "prettier --check .",
-    "format:write": "prettier --write ."
+    "format:write": "prettier --write .",
+    "test": "vitest"
   }
 }

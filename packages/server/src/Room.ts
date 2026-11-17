@@ -86,41 +86,43 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 		});
 	}
 
+	/**
+	 * Check a connection request for this room and learn the room from it (its
+	 * name, domain, authorization, the server's origin and the path a login
+	 * signs): an error response, or undefined when the socket may be upgraded.
+	 */
+	prepareConnection(request: Request): Response | undefined {
+		const name = request.url.split('/').slice(-2)[0];
+		if (!this.identifier) {
+			if (!name.startsWith('@')) {
+				return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
+			}
+			const [domain, authorization] = name.slice(1).split('!');
+			const url = new URL(request.url);
+			// the host the client addressed: an upgrade's URL may be rebuilt on a default
+			// host by the platform (node-ws does), its Host header is not
+			const host = request.headers.get('host') || url.host;
+			this.identifier = {
+				name,
+				domain,
+				authorization: authorization || undefined,
+				serverOrigin: this.env.SERVER_ORIGIN || `${url.protocol}//${host}`,
+				path: url.pathname,
+			};
+		} else if (this.identifier.name !== name) {
+			return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
+		}
+		return undefined;
+	}
+
 	// Handle HTTP requests from clients.
 	async fetch(request: Request): Promise<Response> {
 		if (request.url.endsWith('/ws')) {
-			const name = request.url.split('/').slice(-2)[0];
-			if (!this.identifier) {
-				let domain: string;
-				let authorization: string | undefined;
-				if (name.startsWith('@')) {
-					const roomID = name.slice(1);
-					const splitted = roomID.split('!');
-					domain = splitted[0];
-					authorization = splitted[1] || undefined;
-				} else {
-					return new Response(`Invalid Room Name: ${name} (needs to start with "@")`, {status: 400});
-				}
-				const url = new URL(request.url);
-				this.identifier = {
-					name,
-					domain,
-					authorization,
-					serverOrigin: this.env.SERVER_ORIGIN || url.origin,
-					path: url.pathname,
-				};
-			} else if (this.identifier.name !== name) {
-				return new Response(`Room name mismatch: ${this.identifier.name} !== ${name}`, {status: 400});
+			const refused = this.prepareConnection(request);
+			if (refused) {
+				return refused;
 			}
 			return this.upgradeWebsocket(request);
-		} else if (request.url.endsWith('/getCurrentConnections')) {
-			// TODO cors ?
-			// Retrieves all currently connected websockets accepted via `acceptWebSocket()`.
-			let numConnections: number = this.getWebSockets().length;
-			if (numConnections == 1) {
-				return new Response(`There is ${numConnections} WebSocket client connected to this Server Object instance.`);
-			}
-			return new Response(`There are ${numConnections} WebSocket clients connected to this Server Object instance.`);
 		}
 
 		return new Response('not found', {status: 404});
@@ -223,7 +225,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			this.pendingSessionSend(session, ws, value);
 		});
 
-		// TODO use this message as replay protection to require signing
+		// the challenge a login signs (fresh per socket, so a login cannot be replayed)
 		this.send(ws, {challenge, id});
 	}
 
@@ -273,116 +275,17 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 					return;
 				}
 			} else if ('address' in data) {
-				if (!('signature' in data && data.signature)) {
-					this.send(ws, {error: 'Expected signature'});
-					return;
-				}
-
-				let newUser: {
-					address: `0x${string}`;
-					publicKey: `0x${string}`;
-				};
-				{
-					const {domainUser} = await this.dbStorage.getDomainUser(session.domain, data.address);
-					if (!domainUser) {
-						this.send(ws, {error: `User not found on domain: ${session.domain}`});
-						return;
-					}
-					// the login is a request signature over the challenge (delegated-identity's envelope)
-					const recovered = recoverRequestSigner({
-						serverOrigin: session.serverOrigin,
-						method: 'GET',
-						path: session.path,
-						body: session.challenge,
-						signature: data.signature,
-					});
-					if (!recovered.ok || recovered.publicKey !== domainUser.publicKey) {
-						this.send(ws, {error: 'Invalid signature'});
-						return;
-					}
-
-					newUser = {address: domainUser.user, publicKey: domainUser.publicKey};
-				}
-
-				if (!session.address) {
-					session.address = newUser.address;
-					session.publicKey = newUser.publicKey;
-				} else if (session.address === newUser.address) {
-					// we ignore this request
-					return;
-				} else {
-					this.broadcast({quit: session.address, id: session.id});
-					session.address = newUser.address;
-					session.publicKey = newUser.publicKey;
-				}
-
-				if (session.authorization) {
-					// console.log(`Authorization: ${session.authorization}`);
-					const authorizationParams = session.authorization.split(':');
-					const chainId = authorizationParams[0];
-					const contractAddress = authorizationParams[1] as `0x${string}`;
-					const callData = authorizationParams[2] as `0x${string}`;
-					const expectedResult = authorizationParams[3] as `0x${string}`;
-					const chainURL = this.env[`CHAIN_${chainId}`];
-					const actualData = callData.replaceAll('(address)', session.address.slice(2)) as `0x${string}`;
-
-					if (!chainURL) {
-						this.send(ws, {error: `do not support chain with id ${chainId}`});
-						return;
-					}
-
-					const rpc = createCurriedJSONRPC<Methods>(chainURL);
-					const response = await rpc.call('eth_call')([
-						{
-							to: contractAddress,
-							data: actualData,
-						},
-					]);
-
-					if (!response.success) {
-						console.error(response.error);
-						this.send(ws, {
-							error: `failed to execute authorization request: (${response.error.code}) ${response.error.message}`,
-						});
-						return;
-					}
-
-					if (response.value != expectedResult) {
-						this.send(ws, {error: `authorization not passed: got ${response.value}, expected ${expectedResult}`});
-						return;
-					}
-
-					session.authorized = true;
-				}
-
-				// TODO use signature prevent replay ?
-
-				// The first message the client sends is the user info message with their name. Save it
-				// into their session object.
-
-				// attach name to the webSocket so it survives hibernation
-				this.saveSocketData(ws, {
-					address: session.address,
-					publicKey: session.publicKey,
-					authorized: session.authorized,
-				});
-
-				// Deliver all the messages we queued up since the user connected.
-				if (session.blockedMessages) {
-					session.blockedMessages.forEach((queued) => {
-						ws.send(queued);
-					});
-					delete session.blockedMessages;
-				}
-
-				// Broadcast to all other connections that this user has joined.
-				this.broadcast({joined: session.address, id: session.id, publicKey: newUser.publicKey});
-
+				await this.login(ws, session, data);
 				return;
 			}
 
 			if (!session.address) {
 				this.send(ws, {error: 'Not Logged In!'});
+				return;
+			}
+			if (session.authorization && !session.authorized) {
+				// a contract-gated room: only a session the contract admitted may write
+				this.send(ws, {error: 'Not authorized in this room', code: 'forbidden'});
 				return;
 			}
 
@@ -422,6 +325,96 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 		}
 	}
 
+	/**
+	 * A login: the key registered for the address in the room's domain signed the
+	 * challenge (delegated-identity's envelope), and, in a contract-gated room, the
+	 * contract admits the address. Nothing about the session changes unless both
+	 * hold: a refused login leaves it as it was.
+	 */
+	async login(ws: WebSocket, session: Session, data: {address: `0x${string}`; signature: string}) {
+		if (!data.signature) {
+			this.send(ws, {error: 'Expected signature'});
+			return;
+		}
+		const address = data.address.toLowerCase() as `0x${string}`;
+		const {domainUser} = await this.dbStorage.getDomainUser(session.domain, address);
+		if (!domainUser) {
+			this.send(ws, {error: `User not found on domain: ${session.domain}`});
+			return;
+		}
+		const recovered = recoverRequestSigner({
+			serverOrigin: session.serverOrigin,
+			method: 'GET',
+			path: session.path,
+			body: session.challenge,
+			signature: data.signature,
+		});
+		if (!recovered.ok || recovered.publicKey !== domainUser.publicKey) {
+			this.send(ws, {error: 'Invalid signature'});
+			return;
+		}
+		if (session.address === domainUser.user) {
+			return;
+		}
+
+		let authorized = false;
+		if (session.authorization) {
+			authorized = await this.isAuthorized(session.authorization, domainUser.user);
+			if (!authorized) {
+				this.send(ws, {error: 'authorization not passed', code: 'forbidden'});
+				return;
+			}
+		}
+
+		if (session.address) {
+			this.broadcast({quit: session.address, id: session.id});
+		}
+		session.address = domainUser.user;
+		session.publicKey = domainUser.publicKey;
+		session.authorized = authorized;
+		// attached to the socket so it survives hibernation
+		this.saveSocketData(ws, {address: session.address, publicKey: session.publicKey, authorized});
+
+		// deliver what was queued while the session could not read
+		if (session.blockedMessages) {
+			session.blockedMessages.forEach((queued) => ws.send(queued));
+			delete session.blockedMessages;
+		}
+		this.broadcast({joined: session.address, id: session.id, publicKey: session.publicKey});
+	}
+
+	/**
+	 * Whether the room's contract admits `address`: an `eth_call` of the
+	 * authorization's call data, `(address)` replaced by the address, against the
+	 * chain configured as `CHAIN_<chainId>`, must return the expected result. Any
+	 * failure is a refusal; its detail goes to the log, not to the client.
+	 */
+	async isAuthorized(authorization: string, address: `0x${string}`): Promise<boolean> {
+		const [chainId, contractAddress, callData, expectedResult] = authorization.split(':');
+		const chainURL = this.env[`CHAIN_${chainId}`];
+		if (!chainURL || !contractAddress || !callData || !expectedResult) {
+			console.error(`room authorization: chain ${chainId} not configured or authorization malformed`);
+			return false;
+		}
+		try {
+			const rpc = createCurriedJSONRPC<Methods>(chainURL);
+			const response = await rpc.call('eth_call')([
+				{
+					to: contractAddress as `0x${string}`,
+					data: callData.replaceAll('(address)', address.slice(2)) as `0x${string}`,
+				},
+			]);
+			if (!response.success) {
+				console.error(`room authorization: eth_call failed`, response.error);
+				return false;
+			}
+			return String(response.value).toLowerCase() === expectedResult.toLowerCase();
+		} catch (err) {
+			console.error(`room authorization: eth_call failed`, err);
+			return false;
+		}
+	}
+
 	send(ws: WebSocket, msg: ServerMessageType) {
 		ws.send(JSON.stringify(msg));
 	}
@@ -440,14 +433,13 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	}
 
 	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-		console.log(`closing...`, code, reason, wasClean);
 		this.closeOrErrorHandler(ws);
 	}
 
-	// TODO
-	// async webSocketError(ws: WebSocket, error: any) {
-	// 	this.closeOrErrorHandler(ws);
-	// }
+	async webSocketError(ws: WebSocket, error: unknown) {
+		console.error(`websocket error`, error);
+		this.closeOrErrorHandler(ws);
+	}
 
 	// broadcast() broadcasts a message to all clients.
 	broadcast(message: string | ServerMessageType) {

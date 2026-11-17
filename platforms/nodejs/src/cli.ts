@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import 'named-logs-context';
-import {createServer, migrate, type Env} from 'missiv-server';
 import {serve} from '@hono/node-server';
-import {RemoteLibSQL} from 'remote-sql-libsql';
-import {createClient} from '@libsql/client';
+import {createNodeServer, type NodeJSEnv} from './index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
@@ -15,10 +13,6 @@ loadEnv({
 	defaultEnvFile: path.join(__dirname, '../.env.default'),
 });
 
-type NodeJSEnv = Env & {
-	DB: string;
-};
-
 async function main() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
 	const program = new Command();
@@ -26,7 +20,7 @@ async function main() {
 	program
 		.name('missiv-server-nodejs')
 		.version(pkg.version)
-		.usage(`missiv-server-nodejs [--port 2000] [--sql <sql-folder>]`)
+		.usage(`missiv-server-nodejs [--port 2000]  (env: DB, a libSQL URL, :memory: by default)`)
 		.description('run missiv-server-nodejs as a node process')
 		.option('-p, --port <port>');
 
@@ -40,37 +34,13 @@ async function main() {
 	const port = options.port ? parseInt(options.port) : 2000;
 
 	const env = process.env as NodeJSEnv;
+	const {app, injectWebSocket} = await createNodeServer({db: env.DB || ':memory:', env});
 
-	const db = env.DB;
-
-	const client = createClient({
-		url: db,
-	});
-	const remoteSQL = new RemoteLibSQL(client);
-
-	const app = createServer<NodeJSEnv>({
-		services: {
-			getDB: () => remoteSQL,
-			getRoom: () => {
-				throw new Error(`getRoom not implemented for nodejs`);
-			},
-			getRateLimiter: () => {
-				throw new Error(`getRateLimiter not implemented for nodejs`);
-			},
-		},
-		getEnv: () => env,
-		upgradeWebSocket: () => {
-			throw new Error(`upgradeWebSocket not implemented for nodejs`);
-		},
-	});
-
-	// the schema: the migrations this database has not had
-	await migrate(remoteSQL);
-
-	serve({
+	const server = serve({
 		fetch: app.fetch,
 		port,
 	});
+	injectWebSocket(server);
 
 	console.log(`Server is running on http://localhost:${port}`);
 }

@@ -34,16 +34,16 @@ export class RemoteBunSQL implements RemoteSQL {
 	prepare(sql: string): SQLPreparedStatement {
 		return new BunSQLPreparedStatement(this.client, sql);
 	}
+	/**
+	 * All statements in one transaction. bun:sqlite's transactions are synchronous,
+	 * so the statements run synchronously inside it (an async callback would let
+	 * the transaction commit at its first await, before the rest had run).
+	 */
 	async batch<T = any>(list: SQLPreparedStatement[]): Promise<SQLResult<T>[]> {
-		const transact = this.client.transaction(async (list: SQLPreparedStatement[]) => {
-			const result: any[] = [];
-			for (const statement of list) {
-				result.push(await statement.all());
-			}
-			return result;
-		});
-		const response = await transact(list);
-		// console.log({response});
+		const transact = this.client.transaction((statements: BunSQLPreparedStatement[]) =>
+			statements.map((statement) => statement.query.all(...statement.args)),
+		);
+		const response = transact(list as BunSQLPreparedStatement[]);
 		return response.map((res: any) => ({results: res})) as SQLResult<T>[];
 	}
 }

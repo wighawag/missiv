@@ -21,12 +21,14 @@ export type {
 	ServerObjectId,
 	AbstractServerObject,
 	ServerObjectStorage,
+	InProcessRoom,
 } from './types.js';
 
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
 export {RateLimiter} from './RateLimiter.js';
 export {migrate, resetDatabase} from './schema/migrate.js';
+export {createInProcessRooms, InMemoryRoom, InMemoryRateLimiter, InMemoryObjectStorage} from './memory.js';
 
 const corsSetup = cors({
 	origin: '*',
