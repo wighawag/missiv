@@ -1,5 +1,5 @@
--- missiv 1.0's schema. A database made by missiv 0.x (Users, DomainUsers with
--- domainUsername, Messages with a JSON blob) is not migrated: 1.0 starts from an
+-- missiv 0.4's schema. A database made by missiv 0.3 or earlier (Users, DomainUsers with
+-- domainUsername, Messages with a JSON blob) is not migrated: 0.4 starts from an
 -- empty database.
 
 -- A wallet's delegate key in one domain: the ownership proof (the wallet's

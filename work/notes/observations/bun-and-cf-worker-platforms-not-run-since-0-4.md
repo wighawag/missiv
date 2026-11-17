@@ -1,6 +1,6 @@
 ---
-title: The bun and cf-worker platforms have not been run since the 1.0 rework, only typechecked
-slug: bun-and-cf-worker-platforms-not-run-since-1-0
+title: The bun and cf-worker platforms have not been run since the 0.4 rework, only typechecked
+slug: bun-and-cf-worker-platforms-not-run-since-0-4
 date: 2026-11-17
 ---
 
