@@ -21,10 +21,11 @@
     "wrangler": "^4.2.0"
   },
   "scripts": {
-    "init:db": "wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/01_users.sql && wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/02_conversations.sql",
+    "init:db": "wrangler d1 migrations apply missiv-db --local",
     "dev": "wrangler dev --port 34003",
     "deploy": "wrangler deploy",
     "format:check": "prettier --check .",
-    "format:write": "prettier --write ."
+    "format:write": "prettier --write .",
+    "migrate:remote": "wrangler d1 migrations apply missiv-db --remote"
   }
 }

@@ -1,5 +1,5 @@
 import { API } from '$lib/API.js';
-import type { DomainUser, MissivUser } from 'missiv-common';
+import type { DomainUser } from 'missiv-common';
 import { derived, type Readable } from 'svelte/store';
 
 type Signer = { address: `0x${string}`; privateKey: string; publicKey: string };
@@ -39,7 +39,8 @@ export type MissivRegistration = { error?: { message: string; cause?: any } } & 
 	  }
 );
 
-export type CompleteUser = DomainUser & MissivUser;
+/** @deprecated the domain user is the whole user now: use `DomainUser` */
+export type CompleteUser = DomainUser;
 
 export function createMissivRegistration(params: {
 	endpoint: string;
@@ -56,11 +57,12 @@ export function createMissivRegistration(params: {
 	let _account: Account | undefined;
 
 	async function getRegisteredUser(address: `0x${string}`): Promise<CompleteUser | undefined> {
-		const { completeUser } = await api.getCompleteUser({
+		const { domainUser } = await api.getDomainUser({
+			type: 'getDomainUser',
 			address: address,
 			domain: params.domain
 		});
-		return completeUser;
+		return domainUser;
 	}
 
 	function fetchAgain(address: `0x${string}`, signer: Signer) {
@@ -170,8 +172,6 @@ export function createMissivRegistration(params: {
 		signature: `0x${string}`, // TODO is that 0x
 		options?: {
 			name?: string;
-			domainUsername?: string;
-			domainDescription?: string;
 			description?: string;
 		}
 	) {
@@ -196,9 +196,7 @@ export function createMissivRegistration(params: {
 					address,
 					domain: params.domain,
 					signature,
-					domainUsername: options?.domainUsername,
 					name: options?.name,
-					domainDescription: options?.domainDescription,
 					description: options?.description
 				},
 				{
@@ -249,12 +247,7 @@ export function createMissivRegistration(params: {
 		}
 	}
 
-	async function edit(options: {
-		name?: string;
-		domainUsername?: string;
-		domainDescription?: string;
-		description?: string;
-	}) {
+	async function edit(options: { name?: string; description?: string }) {
 		const address = _account?.address;
 		const signer = _account?.signer;
 		if (!(address && signer)) {
@@ -277,9 +270,7 @@ export function createMissivRegistration(params: {
 			{
 				type: 'editUser',
 				domain: params.domain,
-				domainUsername: options?.domainUsername,
 				name: options?.name,
-				domainDescription: options?.domainDescription,
 				description: options?.description
 			},
 			{

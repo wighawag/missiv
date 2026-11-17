@@ -1,8 +1,8 @@
 import {MiddlewareHandler} from 'hono/types';
-import {AddressSchema, PublicKeySchema, ServerOptions} from './types.js';
+import {ServerOptions} from './types.js';
 import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
-import {Address, PublicKey} from 'missiv-common';
+import {Address, DomainUser, PublicKey} from 'missiv-common';
 import {Context} from 'hono';
 import {recoverPublicKey} from './utils/signature.js';
 import {MissivError} from './errors.js';
@@ -19,14 +19,38 @@ export type Config = {
 declare module 'hono' {
 	interface ContextVariableMap {
 		config: Config;
-		account?: Address;
+		/** the key that signed the request, when one did */
 		publicKey?: PublicKey;
+		/** the wallet and domain that key is registered for, when it is */
+		domainUser?: DomainUser;
 	}
 }
 
-export const getAuth = (c: Context) => {
-	return {account: c.get('account'), publicKey: c.get('publicKey')};
-};
+/** The key that signed the request; 401 when none did. */
+export function requireSigner(c: Context): PublicKey {
+	const publicKey = c.get('publicKey');
+	if (!publicKey) {
+		throw new MissivError('unauthenticated', 'the request is not signed');
+	}
+	return publicKey;
+}
+
+/**
+ * The account of the key that signed the request, which must be registered for
+ * `domain`: 401 when the key is registered nowhere, 403 when it is registered
+ * for another domain (a key a wallet authorized for one site acts in no other).
+ */
+export function requireAccount(c: Context, domain: string): {account: Address; publicKey: PublicKey} {
+	const publicKey = requireSigner(c);
+	const domainUser = c.get('domainUser');
+	if (!domainUser) {
+		throw new MissivError('unauthenticated', 'the key that signed this request is not registered');
+	}
+	if (domainUser.domain !== domain) {
+		throw new MissivError('forbidden', `the key that signed this request is registered for another domain`);
+	}
+	return {account: domainUser.user, publicKey};
+}
 
 export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): MiddlewareHandler {
 	const {services, getEnv} = options.serverOptions;
@@ -34,66 +58,22 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 
 	return async (c, next) => {
 		const env = getEnv(c);
-
-		const db = getDB(env);
-		const storage = new RemoteSQLStorage(db);
-
-		const rawContent = await c.req.text();
-		let publicKey: PublicKey | undefined;
-		let account: Address | undefined;
+		const storage = new RemoteSQLStorage(getDB(env));
+		c.set('config', {storage, env});
 
 		const authentication = c.req.header('SIGNATURE');
 		if (authentication) {
-			if (authentication.startsWith('FAKE:')) {
-				if (!env.DEV) {
-					throw new MissivError('unauthenticated', 'FAKE authentication only allowed in dev mode');
-				}
-				const splitted = authentication.split(':');
-
-				publicKey = PublicKeySchema.parse(splitted[1].toLowerCase());
-
-				if (!publicKey) {
-					throw new MissivError('unauthenticated', 'no publicKey provided in FAKE mode');
-				}
-			} else {
-				try {
-					publicKey = recoverPublicKey(authentication, rawContent);
-				} catch {
-					throw new MissivError('unauthenticated', 'malformed request signature');
-				}
+			let publicKey: PublicKey;
+			try {
+				publicKey = recoverPublicKey(authentication, await c.req.text());
+			} catch {
+				throw new MissivError('unauthenticated', 'malformed request signature');
 			}
-
-			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);
-
-			// TODO
-			// if (domainUser) {
-			// 	if ('domain' in action) {
-			// 		if (domainUser.domain != action.domain) {
-			// 			throw new Error(`the publicKey belongs to domain "${domainUser.domain}" and not "${action.domain}"`);
-			// 		}
-			// 	}
-
-			if (domainUser) {
-				account = AddressSchema.parse(domainUser.user);
-			}
-		}
-
-		if (account) {
-			c.set('account', account);
-		}
-
-		if (publicKey) {
 			c.set('publicKey', publicKey);
-		}
-
-		c.set('config', {
-			storage,
-			env,
-		});
-
-		// auto setup
-		if (c.req.query('_initDB') == 'true') {
-			await storage.setup();
+			const {domainUser} = await storage.getDomainUserByPublicKey(publicKey);
+			if (domainUser) {
+				c.set('domainUser', domainUser);
+			}
 		}
 
 		return next();

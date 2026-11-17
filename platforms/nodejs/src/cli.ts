@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'named-logs-context';
-import {createServer, type Env} from 'missiv-server';
+import {createServer, migrate, type Env} from 'missiv-server';
 import {serve} from '@hono/node-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -42,7 +42,6 @@ async function main() {
 	const env = process.env as NodeJSEnv;
 
 	const db = env.DB;
-	const TOKEN_ADMIN = (env as any).TOKEN_ADMIN;
 
 	const client = createClient({
 		url: db,
@@ -65,16 +64,8 @@ async function main() {
 		},
 	});
 
-	if (db === ':memory:') {
-		console.log(`executing setup...`);
-		await app.fetch(
-			new Request('http://localhost/admin/setup', {
-				headers: {
-					Authorization: `Basic ${btoa(`admin:${TOKEN_ADMIN}`)}`,
-				},
-			}),
-		);
-	}
+	// the schema: the migrations this database has not had
+	await migrate(remoteSQL);
 
 	serve({
 		fetch: app.fetch,

@@ -26,6 +26,7 @@ export type {
 export type {Storage} from './storage/index.js';
 export {Room} from './Room.js';
 export {RateLimiter} from './RateLimiter.js';
+export {migrate, resetDatabase} from './schema/migrate.js';
 
 const corsSetup = cors({
 	origin: '*',
@@ -66,7 +67,7 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 					error: {
 						code: 'internal',
 						message: err.message,
-						...(env.DEV ? {details: {cause: err.cause, stack: err.stack}} : {}),
+						...(env.EXPOSE_ERRORS === 'true' ? {details: {cause: err.cause, stack: err.stack}} : {}),
 					},
 				} satisfies ErrorResponse,
 				500,

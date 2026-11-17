@@ -46,15 +46,23 @@ export type ErrorResponse = {error: {code: ErrorCode; message: string; details?:
 // users
 // ------------------------------------------------------------------------------------------------
 
+const ProfileFields = {
+	name: z.string().max(64).optional(),
+	description: z.string().max(512).optional(),
+};
+
+/**
+ * Publish a delegate key for a domain: `signature` is the wallet's EIP-191
+ * signature over the publication message of the key that signs this request,
+ * for the domain's origin. The profile is the domain's: a domain shows only
+ * what was registered in it.
+ */
 export const ActionRegisterDomainUserSchema = z.object({
 	type: z.literal('register'),
 	domain: DomainSchema,
 	signature: String0xSchema,
 	address: AddressSchema,
-	name: z.string().max(64).optional(),
-	domainUsername: z.string().max(64).optional(),
-	description: z.string().max(512).optional(),
-	domainDescription: z.string().max(512).optional(),
+	...ProfileFields,
 });
 export type ActionRegisterDomainUser = z.infer<typeof ActionRegisterDomainUserSchema>;
 export type ResponseRegisterDomainUser = {ok: true; message: string};
@@ -62,44 +70,31 @@ export type ResponseRegisterDomainUser = {ok: true; message: string};
 export const ActionEditDomainUserSchema = z.object({
 	type: z.literal('editUser'),
 	domain: DomainSchema,
-	name: z.string().max(64).optional(),
-	domainUsername: z.string().max(64).optional(),
-	description: z.string().max(512).optional(),
-	domainDescription: z.string().max(512).optional(),
+	...ProfileFields,
 });
 export type ActionEditDomainUser = z.infer<typeof ActionEditDomainUserSchema>;
 export type ResponseEditDomainUser = {ok: true; message: string};
 
-export type MissivUser = {
-	address: Address;
-	name: string;
-	created: number;
-};
-export const ActionGetMissivUserSchema = z.object({
-	type: z.literal('getUser'),
-	address: AddressSchema,
-});
-export type ActionGetMissivUser = z.infer<typeof ActionGetMissivUserSchema>;
-export type ResponseGetMissivUser = {user: MissivUser | undefined};
-
+/** A wallet in a domain: its delegate key with the ownership proof, and its profile there. */
 export type DomainUser = {
 	user: Address;
 	domain: string;
-	domainUsername: string;
 	publicKey: PublicKey;
+	/** the wallet's signature over the publication message of `publicKey` for the domain's origin */
 	signature: String0x;
-	lastPresence: number;
+	name: string | null;
+	description: string | null;
 	added: number;
+	lastPresence: number;
 };
-export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
 
-export const ActionGetCompleteUserSchema = z.object({
-	type: z.literal('getCompleteUser').optional(),
+export const ActionGetDomainUserSchema = z.object({
+	type: z.literal('getDomainUser'),
 	domain: DomainSchema,
 	address: AddressSchema,
 });
-export type ActionGetCompleteUser = z.infer<typeof ActionGetCompleteUserSchema>;
-export type ResponseGetCompleteUser = {completeUser: (DomainUser & MissivUser) | undefined};
+export type ActionGetDomainUser = z.infer<typeof ActionGetDomainUserSchema>;
+export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
 
 // ------------------------------------------------------------------------------------------------
 // conversations
@@ -200,7 +195,8 @@ export type ConversationMessage = {
 	domain: string;
 	namespace: string;
 	conversationID: string;
-	id: number;
+	/** time-ordered (a ULID), shared by the rows of one message */
+	id: string;
 	recipient: Address;
 	sender: Address;
 	senderPublicKey: PublicKey;

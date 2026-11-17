@@ -8,6 +8,7 @@ import {
 	ServerObjectStorage,
 	Services,
 	createServer,
+	migrate,
 	type Env,
 } from 'missiv-server';
 import {createBunWebSocket} from 'hono/bun';
@@ -385,21 +386,8 @@ async function main() {
 
 	const app = createServer<BunEnv>({services, getEnv, upgradeWebSocket});
 
-	if (dbURL === ':memory:') {
-		console.log(`executing setup...`);
-		await app.fetch(
-			new Request('http://localhost/api/user/getUser?_initDB=true', {
-				method: 'POST',
-				body: JSON.stringify({
-					type: 'getUser',
-					address: '0xffffffffffffffffffffffffffffffffffffffff',
-				}),
-				headers: {
-					'content-type': 'application/json',
-				},
-			}),
-		);
-	}
+	// the schema: the migrations this database has not had
+	await migrate(db);
 
 	Bun.serve({
 		port,

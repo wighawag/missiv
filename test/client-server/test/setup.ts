@@ -7,7 +7,7 @@ import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
 import {keccak_256} from '@noble/hashes/sha3';
 import {getConversationID, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
-import {createServer} from 'missiv-server';
+import {createServer, migrate} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
 import {API} from 'missiv-client';
@@ -93,14 +93,8 @@ export function createHarness(env: Record<string, string | undefined> = {}) {
 
 	let ready: Promise<unknown> | undefined;
 	function setupDatabase() {
-		if (!ready) {
-			// the schema, through the same entry a platform uses at start
-			ready = app.request(`${SERVER_URL}/api/user/getUser?_initDB=true`, {
-				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({type: 'getUser', address: '0x0000000000000000000000000000000000000000'}),
-			});
-		}
+		// the schema, as a platform creates it at start
+		ready ??= migrate(db);
 		return ready;
 	}
 

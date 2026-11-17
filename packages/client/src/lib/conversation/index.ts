@@ -142,17 +142,18 @@ export function openOneConversation(params: {
 			return;
 		}
 		if (!$conversation.otherUser.publicKey) {
-			const { completeUser } = await api.getCompleteUser({
+			const { domainUser } = await api.getDomainUser({
+				type: 'getDomainUser',
 				address: $conversation.otherUser.address,
 				domain: params.domain
 			});
-			if (completeUser?.publicKey) {
+			if (domainUser?.publicKey) {
 				set({
 					...$conversation,
 					otherUser: {
 						...$conversation.otherUser,
-						publicKey: completeUser.publicKey,
-						name: completeUser.name
+						publicKey: domainUser.publicKey,
+						name: domainUser.name ?? undefined
 					}
 				});
 			}

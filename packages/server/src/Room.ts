@@ -263,19 +263,21 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 					publicKey: `0x${string}`;
 				};
 				{
-					const user = await this.dbStorage.getCompleteUser(session.domain, data.address);
-					if (!user || !user.completeUser) {
+					const {domainUser} = await this.dbStorage.getDomainUser(session.domain, data.address);
+					if (!domainUser) {
 						this.send(ws, {error: `User not found on domain: ${session.domain}`});
 						return;
 					}
-					const publicKey = user.completeUser.publicKey;
-					const recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
-					if (recoveredPublicKey !== publicKey) {
+					let recoveredPublicKey: string | undefined;
+					try {
+						recoveredPublicKey = recoverPublicKey(data.signature, session.challenge);
+					} catch {}
+					if (recoveredPublicKey !== domainUser.publicKey) {
 						this.send(ws, {error: 'Invalid signature'});
 						return;
 					}
 
-					newUser = {address: user.completeUser.address, publicKey: user.completeUser.publicKey};
+					newUser = {address: domainUser.user, publicKey: domainUser.publicKey};
 				}
 
 				if (!session.address) {

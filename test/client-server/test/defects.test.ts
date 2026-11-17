@@ -57,7 +57,7 @@ describe('production configuration (no DEV)', () => {
 		expect(response.ok).toBe(false);
 	});
 
-	it.fails('runs db-reset with the admin token', async () => {
+	it('runs db-reset with the admin token', async () => {
 		const withToken = createHarness({ADMIN_TOKEN: 'secret'});
 		await withToken.setupDatabase();
 		const response = await withToken.app.request('http://localhost/api/admin/db-reset', {
@@ -70,11 +70,11 @@ describe('production configuration (no DEV)', () => {
 });
 
 describe('a key acts only in its domain (request-key-acts-in-any-domain)', () => {
-	it.fails('refuses a send naming another domain', async () => {
+	it('refuses a send naming another domain', async () => {
 		await expect(h.send({from: A, to: B, content: 'cross', domain: 'other.com'})).rejects.toThrow();
 	});
 
-	it.fails('refuses a read naming another domain', async () => {
+	it('refuses a read naming another domain', async () => {
 		await expect(h.messages(A, conversationIDOf([A.address, B.address]), 'other.com')).rejects.toThrow();
 	});
 });

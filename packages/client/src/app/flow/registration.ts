@@ -113,8 +113,6 @@ export function createRegistrationFlow(
 
 	async function completeRegistration(options?: {
 		name?: string;
-		domainUsername?: string;
-		domainDescription?: string;
 		description?: string;
 		closeOnComplete?: boolean;
 	}) {

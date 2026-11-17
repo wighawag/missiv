@@ -4,27 +4,27 @@ import type {
 	ActionAcceptConversation,
 	ActionEditDomainUser,
 	ActionGetAcceptedConversations,
-	ActionGetCompleteUser,
 	ActionGetConversations,
+	ActionGetDomainUser,
 	ActionGetMessages,
-	ActionGetMissivUser,
 	ActionGetUnacceptedConversations,
+	ActionMarkAsRead,
 	ActionRegisterDomainUser,
 	ActionRejectConversation,
 	ActionSendMessage,
-	ResponseRejectConversation,
+	ErrorCode,
+	ErrorResponse,
 	ResponseAcceptConversation,
 	ResponseEditDomainUser,
 	ResponseGetAcceptedConversations,
-	ResponseGetCompleteUser,
 	ResponseGetConversations,
+	ResponseGetDomainUser,
 	ResponseGetMessages,
-	ResponseGetMissivUser,
 	ResponseGetUnacceptedConversations,
+	ResponseMarkAsRead,
 	ResponseRegisterDomainUser,
-	ResponseSendMessage,
-	ErrorCode,
-	ErrorResponse
+	ResponseRejectConversation,
+	ResponseSendMessage
 } from 'missiv-common';
 
 export type FetchFunction = typeof fetch;
@@ -42,10 +42,8 @@ export class MissivAPIError extends Error {
 	}
 }
 
-export type APIOptions =
-	| { signature: string }
-	| { publicKey: string }
-	| { privateKey: Uint8Array | string };
+/** The delegate key that signs a request. */
+export type APIOptions = { privateKey: Uint8Array | string };
 
 export { getPublicKey } from '@noble/secp256k1';
 
@@ -62,28 +60,26 @@ export class API {
 			options?.fetch || (typeof window !== 'undefined' ? window.fetch.bind(window) : fetch);
 	}
 
-	async call<T>(path: string, action: any, options?: APIOptions): Promise<T> {
+	async call<T>(
+		path: string,
+		action: unknown,
+		options?: APIOptions,
+		extraHeaders?: Record<string, string>
+	): Promise<T> {
 		const headers: { [header: string]: string } = {
-			'content-type': 'application/json'
+			'content-type': 'application/json',
+			...extraHeaders
 		};
 		const body = JSON.stringify(action);
 		if (options) {
-			if ('privateKey' in options) {
-				const privateKey =
-					typeof options.privateKey == 'string' && options.privateKey.startsWith('0x')
-						? options.privateKey.slice(2)
-						: options.privateKey;
-
-				const signature = await signAsync(keccak_256(body), privateKey); // Sync methods below
-				headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
-			} else {
-				headers.SIGNATURE =
-					'signature' in options ? options.signature : `FAKE:${options.publicKey}`;
-			}
+			const privateKey =
+				typeof options.privateKey == 'string' && options.privateKey.startsWith('0x')
+					? options.privateKey.slice(2)
+					: options.privateKey;
+			const signature = await signAsync(keccak_256(body), privateKey);
+			headers.SIGNATURE = `${signature.toCompactHex()}:${signature.recovery}`;
 		}
-		const url = this.endpoint + '/api' + path;
-		// console.log({ url });
-		const resp = await this.fetchFunction(url, {
+		const resp = await this.fetchFunction(this.endpoint + '/api' + path, {
 			method: 'POST',
 			body,
 			headers
@@ -112,6 +108,10 @@ export class API {
 		return this.call<ResponseEditDomainUser>('/user/editUser', action, options);
 	}
 
+	async getDomainUser(action: ActionGetDomainUser) {
+		return this.call<ResponseGetDomainUser>('/user/getDomainUser', action);
+	}
+
 	async sendMessage(action: ActionSendMessage, options: APIOptions) {
 		return this.call<ResponseSendMessage>('/private/sendMessage', action, options);
 	}
@@ -135,35 +135,27 @@ export class API {
 			options
 		);
 	}
-	async acceptConversation(conversation: ActionAcceptConversation, options: APIOptions) {
-		return this.call<ResponseAcceptConversation>(
-			'/private/acceptConversation',
-			conversation,
-			options
-		);
+
+	async acceptConversation(action: ActionAcceptConversation, options: APIOptions) {
+		return this.call<ResponseAcceptConversation>('/private/acceptConversation', action, options);
 	}
 
-	async rejectConversation(conversation: ActionRejectConversation, options: APIOptions) {
-		return this.call<ResponseRejectConversation>(
-			'/private/rejectConversation',
-			conversation,
-			options
-		);
+	async rejectConversation(action: ActionRejectConversation, options: APIOptions) {
+		return this.call<ResponseRejectConversation>('/private/rejectConversation', action, options);
 	}
 
-	async getMessages(chat: ActionGetMessages, options: APIOptions) {
-		return this.call<ResponseGetMessages>('/private/getMessages', chat, options);
+	async markAsRead(action: ActionMarkAsRead, options: APIOptions) {
+		return this.call<ResponseMarkAsRead>('/private/markAsRead', action, options);
 	}
 
-	async getUser(action: ActionGetMissivUser) {
-		return this.call<ResponseGetMissivUser>('/user/getUser', action);
+	async getMessages(action: ActionGetMessages, options: APIOptions) {
+		return this.call<ResponseGetMessages>('/private/getMessages', action, options);
 	}
 
-	async getCompleteUser(action: ActionGetCompleteUser) {
-		return this.call<ResponseGetCompleteUser>('/user/getCompleteUser', action);
-	}
-
-	async clear() {
-		return this.call<{ success: boolean }>('/admin/db-reset', { reset: true });
+	/** Drop every table and migrate again; needs the server's ADMIN_TOKEN. */
+	async adminReset(adminToken: string) {
+		return this.call<{ success: boolean }>('/admin/db-reset', { reset: true }, undefined, {
+			Authorization: `Bearer ${adminToken}`
+		});
 	}
 }
