@@ -11,7 +11,7 @@ A pnpm workspace (`pnpm-workspace.yaml`) with three groups:
   - **`missiv-server`** — the server core: request handling, the `Room` server-object base class, storage over `remote-sql`, a rate limiter, signature recovery, and SQL-schema-to-TS generation (`sql2ts`). Platform-agnostic; concrete DB / server-object / rate-limiter are injected by a platform adapter.
   - **`missiv-client`** — the client (SvelteKit app + library).
 - `platforms/*` — per-runtime hosts that instantiate the server against a concrete runtime: **`bun`**, **`cf-worker`** (Cloudflare Workers, uses Durable-Object-style hibernation), **`nodejs`**.
-- `test/*` — cross-cutting tests: `client-server` and `end-to-end`.
+- `test/*`: cross-cutting tests, `client-server` (the server in process, driven through the client's API with real keys, no port).
 
 ## Two messaging surfaces
 

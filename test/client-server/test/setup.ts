@@ -1,10 +1,21 @@
+// The client-server harness: a missiv server in process (Hono's app.request on
+// in-memory libSQL, no port), driven through missiv-client's API with REAL keys:
+// each user is a wallet that signs the ownership proof of a delegate key, and the
+// delegate key signs every request. The server runs with no DEV flag, as in
+// production; a test that needs another configuration passes its own env.
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
-import {originPublicKeyPublicationMessage} from 'missiv-common';
-import {App, createServer} from 'missiv-server';
+import {keccak_256} from '@noble/hashes/sha3';
+import {getConversationID, originPublicKeyPublicationMessage, type ConversationMessage} from 'missiv-common';
+import {createServer} from 'missiv-server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
 import {API} from 'missiv-client';
+
+export const DOMAIN = 'test.com';
+export const APP_ORIGIN = 'https://test.com';
+export const NAMESPACE = 'test';
+export const SERVER_URL = 'http://localhost';
 
 function toHex(arr: Uint8Array): `0x${string}` {
 	let str = `0x`;
@@ -15,268 +26,206 @@ function toHex(arr: Uint8Array): `0x${string}` {
 }
 
 export type TestUser = {
-	delegatePublicKey: `0x${string}`;
 	address: `0x${string}`;
-	signatureForDelegation: `0x${string}`;
 	delegatePrivateKey: Uint8Array;
+	delegatePublicKey: `0x${string}`;
+	/** the wallet's signature over the publication message of the delegate key, for APP_ORIGIN */
+	ownershipSignature: `0x${string}`;
+	/** sign the publication message of another delegate key (a second device), for an origin */
+	signPublication(publicKey: `0x${string}`, origin?: string): Promise<`0x${string}`>;
 };
 
 export async function createUser(): Promise<TestUser> {
-	const privateKey = generatePrivateKey();
-	const account = privateKeyToAccount(privateKey);
+	const wallet = privateKeyToAccount(generatePrivateKey());
 	const delegatePrivateKey = secpUtils.randomPrivateKey();
 	const delegatePublicKey = toHex(getPublicKey(delegatePrivateKey));
-	const message = originPublicKeyPublicationMessage(`https://test.com`, delegatePublicKey);
-	const user = {
-		delegatePublicKey: delegatePublicKey.toLowerCase() as `0x${string}`,
-		address: account.address.toLowerCase() as `0x${string}`,
-		signatureForDelegation: (await account.signMessage({message: message})).toLowerCase() as `0x${string}`,
-		delegatePrivateKey: delegatePrivateKey,
-	} as const;
-
-	return user;
+	const signPublication = async (publicKey: `0x${string}`, origin: string = APP_ORIGIN) =>
+		(
+			await wallet.signMessage({message: originPublicKeyPublicationMessage(origin, publicKey)})
+		).toLowerCase() as `0x${string}`;
+	return {
+		address: wallet.address.toLowerCase() as `0x${string}`,
+		delegatePrivateKey,
+		delegatePublicKey,
+		ownershipSignature: await signPublication(delegatePublicKey),
+		signPublication,
+	};
 }
 
-export const USER_A = await createUser();
-export const USER_B = await createUser();
-export const USER_C = await createUser();
+export function newDelegateKey() {
+	const privateKey = secpUtils.randomPrivateKey();
+	return {privateKey, publicKey: toHex(getPublicKey(privateKey))};
+}
 
-const dbCLient = createClient({url: ':memory:'});
-const remoteSQL = new RemoteLibSQL(dbCLient);
-const app = createServer({
-	services: {
-		getDB() {
-			return remoteSQL;
+/** The conversation ID of a member set: the pair's for two, else keccak256 of the sorted addresses. */
+export function conversationIDOf(members: `0x${string}`[]): string {
+	const sorted = [...new Set(members.map((v) => v.toLowerCase()))].sort();
+	if (sorted.length === 2) {
+		return getConversationID(sorted[0] as `0x${string}`, sorted[1] as `0x${string}`);
+	}
+	return toHex(keccak_256(sorted.join(':')));
+}
+
+export type Harness = ReturnType<typeof createHarness>;
+
+export function createHarness(env: Record<string, string | undefined> = {}) {
+	const db = new RemoteLibSQL(createClient({url: ':memory:'}));
+	const app = createServer({
+		services: {
+			getDB() {
+				return db;
+			},
+			getRoom() {
+				throw new Error(`no getRoom implemented in test`);
+			},
+			getRateLimiter() {
+				throw new Error(`no getRateLimiter implemented in test`);
+			},
 		},
-		getRoom() {
-			throw new Error(`no getRoom implemented in test`);
+		getEnv() {
+			return env as any;
 		},
-		getRateLimiter() {
-			throw new Error(`no getRateLimiter implemented in test`);
+		upgradeWebSocket() {
+			return (() => {}) as any;
 		},
-	},
-	getEnv() {
-		return {
-			DEV: 'true',
-		};
-	},
-	upgradeWebSocket() {
-		// throw new Error(`no websocket implemented in test`);
-		return (() => {}) as any;
-	},
-});
+	});
+	const api = new API(SERVER_URL, {fetch: app.request as any});
 
-export const api = new API('http://localhost', {fetch: app.request as any}); // TODO type instead of any
+	let ready: Promise<unknown> | undefined;
+	function setupDatabase() {
+		if (!ready) {
+			// the schema, through the same entry a platform uses at start
+			ready = app.request(`${SERVER_URL}/api/user/getUser?_initDB=true`, {
+				method: 'POST',
+				headers: {'content-type': 'application/json'},
+				body: JSON.stringify({type: 'getUser', address: '0x0000000000000000000000000000000000000000'}),
+			});
+		}
+		return ready;
+	}
 
-export const FAKE_SIG = '0x0000000000000000000000000000000000000000000000000000000000000000';
-
-// Test utility functions
-
-/**
- * Registers multiple test users with the API
- */
-export async function setupTestUsers(users: TestUser[] = [USER_A, USER_B]) {
-	await api.clear();
-
-	for (const user of users) {
-		await api.register(
+	async function register(user: TestUser, options?: {domain?: string; name?: string}) {
+		await setupDatabase();
+		return api.register(
 			{
 				type: 'register',
 				address: user.address,
-				signature: user.signatureForDelegation,
-				domain: 'test.com',
+				signature: user.ownershipSignature,
+				domain: options?.domain || DOMAIN,
+				name: options?.name,
 			},
 			{privateKey: user.delegatePrivateKey},
 		);
 	}
-}
 
-/**
- * Sends a test message between users
- * The sender is automatically included in the recipients list
- */
-export async function sendMessage({
-	from,
-	to,
-	content = 'Test message',
-	conversationID = '1',
-	messageType = 'clear',
-	timestamp = Date.now(),
-}: {
-	from: TestUser;
-	to: TestUser | TestUser[];
-	content?: string;
-	conversationID?: string;
-	messageType?: 'clear' | 'encrypted';
-	timestamp?: number;
-}) {
-	// Convert single recipient to array
-	const recipients = Array.isArray(to) ? to : [to];
+	async function registerAll(users: TestUser[]) {
+		for (const user of users) {
+			await register(user);
+		}
+	}
 
-	// Ensure sender is included in recipients if not already
-	const allRecipients = recipients.some((r) => r.address === from.address) ? recipients : [from, ...recipients];
-
-	const messages = allRecipients.map((recipient) => ({
-		content,
-		to: recipient.address,
-		toPublicKey: '0xff',
-	}));
-
-	return api.sendMessage(
-		{
-			type: 'sendMessage',
-			domain: 'test.com',
-			namespace: 'test',
-			messages,
-			messageType,
-			conversationID,
-			lastMessageReadTimestampMS: timestamp,
-			signature: FAKE_SIG,
-		},
-		{publicKey: from.delegatePublicKey},
-	);
-}
-
-export async function rejectConversation({from, conversationID}: {from: TestUser; conversationID: string}) {
-	await api.rejectConversation(
-		{
-			type: 'rejectConversation',
-			domain: 'test.com',
-			namespace: 'test',
-			conversationID,
-		},
-		{publicKey: from.delegatePublicKey},
-	);
-}
-
-/**
- * Creates and returns a conversation between two users
- */
-export async function createConversation({
-	from,
-	to,
-	content = 'Initial message',
-	conversationID = '1', // TODO need to be computed
-}: {
-	from: TestUser;
-	to: TestUser;
-	content?: string;
-	conversationID?: string;
-}) {
-	await sendMessage({
+	async function send({
 		from,
 		to,
-		content,
+		content = 'Test message',
 		conversationID,
-	});
+		messageType = 'clear',
+		timestamp = Date.now(),
+		domain = DOMAIN,
+	}: {
+		from: TestUser;
+		to: TestUser | TestUser[];
+		content?: string;
+		conversationID?: string;
+		messageType?: 'clear' | 'encrypted';
+		timestamp?: number;
+		domain?: string;
+	}) {
+		const recipients = Array.isArray(to) ? to : [to];
+		const all = recipients.some((r) => r.address === from.address) ? recipients : [from, ...recipients];
+		return api.sendMessage(
+			{
+				type: 'sendMessage',
+				domain,
+				namespace: NAMESPACE,
+				messages: all.map((recipient) => ({
+					content,
+					to: recipient.address,
+					toPublicKey: recipient.delegatePublicKey,
+				})),
+				messageType,
+				conversationID: conversationID || conversationIDOf(all.map((v) => v.address)),
+				lastMessageReadTimestampMS: timestamp,
+				signature: '0x00',
+			},
+			{privateKey: from.delegatePrivateKey},
+		);
+	}
 
-	const {unacceptedConversations} = await api.getUnacceptedConversations(
-		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: to.delegatePublicKey},
-	);
+	async function accept(user: TestUser, conversationID: string, timestamp = Date.now()) {
+		await api.acceptConversation(
+			{
+				type: 'acceptConversation',
+				domain: DOMAIN,
+				namespace: NAMESPACE,
+				conversationID,
+				lastMessageReadTimestampMS: timestamp,
+			},
+			{privateKey: user.delegatePrivateKey},
+		);
+	}
 
-	return unacceptedConversations[0].conversationID as string; // TODO why need to specify type
-}
+	async function reject(user: TestUser, conversationID: string) {
+		await api.rejectConversation(
+			{type: 'rejectConversation', domain: DOMAIN, namespace: NAMESPACE, conversationID},
+			{privateKey: user.delegatePrivateKey},
+		);
+	}
 
-// /**
-//  * Creates a conversation and automatically accepts it
-//  */
-// export async function createAndAcceptConversation({
-// 	from,
-// 	to,
-// 	content = 'Initial message',
-// 	conversationID = '1',
-// 	timestamp = Date.now(),
-// }: {
-// 	from: TestUser;
-// 	to: TestUser;
-// 	content?: string;
-// 	conversationID?: string;
-// 	timestamp?: number;
-// }) {
-// 	const convId = await createConversation({from, to, content, conversationID});
+	async function messages(user: TestUser, conversationID: string, domain = DOMAIN): Promise<ConversationMessage[]> {
+		const result = await api.getMessages(
+			{type: 'getMessages', domain, namespace: NAMESPACE, conversationID},
+			{privateKey: user.delegatePrivateKey},
+		);
+		return result.messages;
+	}
 
-// 	await api.acceptConversation(
-// 		{
-// 			type: 'acceptConversation',
-// 			domain: 'test.com',
-// 			namespace: 'test',
-// 			conversationID: convId,
-// 			lastMessageReadTimestampMS: timestamp,
-// 		},
-// 		{publicKey: to.delegatePublicKey},
-// 	);
+	async function contents(user: TestUser, conversationID: string) {
+		return (await messages(user, conversationID)).map((m) => m.content);
+	}
 
-// 	return convId;
-// }
+	async function accepted(user: TestUser) {
+		return (
+			await api.getAcceptedConversations(
+				{type: 'getAcceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
+				{privateKey: user.delegatePrivateKey},
+			)
+		).acceptedConversations;
+	}
 
-export async function acceptConversation({
-	user,
-	conversationID,
-	timestamp = Date.now(),
-}: {
-	user: TestUser;
-	conversationID: string;
-	timestamp?: number;
-}) {
-	await api.acceptConversation(
-		{
-			type: 'acceptConversation',
-			domain: 'test.com',
-			namespace: 'test',
-			conversationID,
-			lastMessageReadTimestampMS: timestamp,
-		},
-		{publicKey: user.delegatePublicKey},
-	);
-}
+	async function unaccepted(user: TestUser) {
+		return (
+			await api.getUnacceptedConversations(
+				{type: 'getUnacceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
+				{privateKey: user.delegatePrivateKey},
+			)
+		).unacceptedConversations;
+	}
 
-/**
- * Gets messages in a conversation
- */
-export async function getMessages(user: TestUser, conversationID: string) {
-	const {messages} = await api.getMessages(
-		{
-			type: 'getMessages',
-			domain: 'test.com',
-			namespace: 'test',
-			conversationID,
-		},
-		{publicKey: user.delegatePublicKey},
-	);
-
-	return messages;
-}
-
-/**
- * Returns parsed message contents from a conversation
- */
-export async function getMessageContents(user: TestUser, conversationID: string) {
-	const messages = await getMessages(user, conversationID);
-	console.log({messages});
-	return messages.map((m) => m.content);
-}
-
-/**
- * Gets accepted conversations for a user
- */
-export async function getAcceptedConversations(user: TestUser) {
-	const {acceptedConversations} = await api.getAcceptedConversations(
-		{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey},
-	);
-
-	return acceptedConversations;
-}
-
-/**
- * Gets unaccepted conversations for a user
- */
-export async function getUnacceptedConversations(user: TestUser) {
-	const {unacceptedConversations} = await api.getUnacceptedConversations(
-		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey},
-	);
-
-	return unacceptedConversations;
+	return {
+		app,
+		api,
+		db,
+		env,
+		setupDatabase,
+		register,
+		registerAll,
+		send,
+		accept,
+		reject,
+		messages,
+		contents,
+		accepted,
+		unaccepted,
+	};
 }
