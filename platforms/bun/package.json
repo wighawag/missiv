@@ -35,6 +35,8 @@
     "prepare": "set-defaults .env.default",
     "build": "tsc",
     "build:watch": "as-soon -w src tsc",
-    "dev": "bun run --hot src/cli.ts"
+    "dev": "bun run --hot src/cli.ts",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write ."
   }
 }

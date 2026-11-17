@@ -62,7 +62,7 @@ export const logflareReport: ({
 								event.messages.length > 1
 									? event.messages.slice(1).map((v) => ({
 											value: v,
-									  }))
+										}))
 									: undefined,
 						})),
 						request: requestMetadata,
@@ -78,7 +78,7 @@ export const logflareReport: ({
 						event.messages.length > 1
 							? event.messages.slice(1).map((v) => ({
 									value: v,
-							  }))
+								}))
 							: undefined,
 					request: requestMetadata,
 				},

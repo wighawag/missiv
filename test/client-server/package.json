@@ -11,11 +11,14 @@
     "missiv-client": "workspace:*",
     "missiv-common": "workspace:*",
     "missiv-server": "workspace:*",
+    "prettier": "^3.5.3",
     "remote-sql-libsql": "^0.0.6",
     "viem": "^2.23.13",
     "vitest": "^3.0.9"
   },
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write ."
   }
 }

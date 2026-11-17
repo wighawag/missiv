@@ -62,6 +62,8 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"test:unit": "vitest",
-		"test": "npm run test:unit -- --run"
+		"test": "npm run test:unit -- --run",
+		"format:check": "prettier --check .",
+		"format:write": "prettier --write ."
 	}
 }

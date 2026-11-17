@@ -18,3 +18,7 @@ dist
 *.md
 dist-tmp
 *.json
+# every workspace package checks its own files (its format:check)
+packages/
+platforms/
+test/

@@ -86,7 +86,7 @@ export async function setupTestUsers(users: TestUser[] = [USER_A, USER_B]) {
 				signature: user.signatureForDelegation,
 				domain: 'test.com',
 			},
-			{privateKey: user.delegatePrivateKey}
+			{privateKey: user.delegatePrivateKey},
 		);
 	}
 }
@@ -133,7 +133,7 @@ export async function sendMessage({
 			lastMessageReadTimestampMS: timestamp,
 			signature: FAKE_SIG,
 		},
-		{publicKey: from.delegatePublicKey}
+		{publicKey: from.delegatePublicKey},
 	);
 }
 
@@ -145,7 +145,7 @@ export async function rejectConversation({from, conversationID}: {from: TestUser
 			namespace: 'test',
 			conversationID,
 		},
-		{publicKey: from.delegatePublicKey}
+		{publicKey: from.delegatePublicKey},
 	);
 }
 
@@ -172,7 +172,7 @@ export async function createConversation({
 
 	const {unacceptedConversations} = await api.getUnacceptedConversations(
 		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: to.delegatePublicKey}
+		{publicKey: to.delegatePublicKey},
 	);
 
 	return unacceptedConversations[0].conversationID as string; // TODO why need to specify type
@@ -227,7 +227,7 @@ export async function acceptConversation({
 			conversationID,
 			lastMessageReadTimestampMS: timestamp,
 		},
-		{publicKey: user.delegatePublicKey}
+		{publicKey: user.delegatePublicKey},
 	);
 }
 
@@ -242,7 +242,7 @@ export async function getMessages(user: TestUser, conversationID: string) {
 			namespace: 'test',
 			conversationID,
 		},
-		{publicKey: user.delegatePublicKey}
+		{publicKey: user.delegatePublicKey},
 	);
 
 	return messages;
@@ -263,7 +263,7 @@ export async function getMessageContents(user: TestUser, conversationID: string)
 export async function getAcceptedConversations(user: TestUser) {
 	const {acceptedConversations} = await api.getAcceptedConversations(
 		{type: 'getAcceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey}
+		{publicKey: user.delegatePublicKey},
 	);
 
 	return acceptedConversations;
@@ -275,7 +275,7 @@ export async function getAcceptedConversations(user: TestUser) {
 export async function getUnacceptedConversations(user: TestUser) {
 	const {unacceptedConversations} = await api.getUnacceptedConversations(
 		{type: 'getUnacceptedConversations', domain: 'test.com', namespace: 'test'},
-		{publicKey: user.delegatePublicKey}
+		{publicKey: user.delegatePublicKey},
 	);
 
 	return unacceptedConversations;

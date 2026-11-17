@@ -16,12 +16,15 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250319.0",
+    "prettier": "^3.5.3",
     "remote-sql": "^0.0.6",
     "wrangler": "^4.2.0"
   },
   "scripts": {
     "init:db": "wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/01_users.sql && wrangler d1 execute missiv-db --local --file=node_modules/missiv-server/src/schema/sql/02_conversations.sql",
     "dev": "wrangler dev --port 34003",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write ."
   }
 }

@@ -2,3 +2,18 @@ packages:
   - 'platforms/*'
   - 'packages/*'
   - 'test/*'
+
+# pnpm settings live in this file, not in package.json's "pnpm" field: pnpm 11
+# reads only this file (it ignores the field and warns about it). Both keys are
+# kept: pnpm 10 reads `onlyBuiltDependencies`, pnpm 11 `allowBuilds`, and a
+# build not allowed is an install error on pnpm 11.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+allowBuilds:
+  esbuild: true
+  workerd: true
+  '@parcel/watcher': false
+  sharp: false
+minimumReleaseAgeExclude:
+  - delegated-identity@0.1.0

@@ -56,7 +56,7 @@ describe('full conversation flow', () => {
 				conversationID,
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_A.delegatePublicKey}
+			{publicKey: USER_A.delegatePublicKey},
 		);
 
 		const unacceptedAfter = await getUnacceptedConversations(USER_A);
@@ -115,7 +115,7 @@ describe('full conversation flow', () => {
 				conversationID: unacceptedConversations[0].conversationID,
 				lastMessageReadTimestampMS: acceptingTimeA,
 			},
-			{publicKey: USER_A.delegatePublicKey}
+			{publicKey: USER_A.delegatePublicKey},
 		);
 
 		const readingTimeB = Date.now();
@@ -176,7 +176,7 @@ describe('full conversation flow', () => {
 				conversationID: 'group1',
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_B.delegatePublicKey}
+			{publicKey: USER_B.delegatePublicKey},
 		);
 
 		// B should now have the conversation in accepted
@@ -223,7 +223,7 @@ describe('full conversation flow', () => {
 				conversationID,
 				lastMessageReadTimestampMS: Date.now(),
 			},
-			{publicKey: USER_B.delegatePublicKey}
+			{publicKey: USER_B.delegatePublicKey},
 		);
 
 		// Send an "encrypted" message (just simulated with different message type)
