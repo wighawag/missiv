@@ -1,6 +1,12 @@
 {
-  "name": "missiv-server-nodejs",
+  "name": "missiv",
   "version": "0.4.0",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wighawag/missiv.git",
+    "directory": "platforms/nodejs"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -12,7 +18,7 @@
     }
   },
   "bin": {
-    "missiv-server-nodejs": "./dist/cli.js"
+    "missiv": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -26,7 +32,7 @@
     "commander": "^13.1.0",
     "hono": "^4.7.5",
     "ldenv": "^0.3.12",
-    "missiv-server": "workspace:^",
+    "@missiv/server": "workspace:^",
     "named-logs-context": "^0.1.1",
     "remote-sql-libsql": "^0.0.6"
   },
@@ -34,8 +40,8 @@
     "@types/node": "^22.13.10",
     "as-soon": "^0.0.11",
     "delegated-identity": "^0.1.1",
-    "missiv-client": "workspace:*",
-    "missiv-common": "workspace:*",
+    "@missiv/client": "workspace:*",
+    "@missiv/common": "workspace:*",
     "prettier": "^3.5.3",
     "set-defaults": "^0.0.5",
     "tsx": "^4.19.3",

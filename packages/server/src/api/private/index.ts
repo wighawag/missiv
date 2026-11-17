@@ -13,7 +13,7 @@ import {
 } from '../../types.js';
 import {refuseReplay, requireAccount, setup} from '../../setup.js';
 import {MissivError, validateJSON} from '../../errors.js';
-import {conversationIDOf} from 'missiv-common';
+import {conversationIDOf} from '@missiv/common';
 import {pushNotifierFromEnv} from '../../push.js';
 import {Env} from '../../env.js';
 

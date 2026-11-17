@@ -1,6 +1,8 @@
-# missiv
+# @missiv/common
 
 ## 0.4.0
+
+Published as `@missiv/common` from 0.4.0 (formerly `missiv-common`, which stops at 0.3.x and is deprecated).
 
 ### Minor Changes
 

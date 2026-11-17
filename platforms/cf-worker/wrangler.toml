@@ -11,7 +11,7 @@ enabled = true
 binding = "DB" # i.e. available in your Worker on env.DB
 database_name = "missiv-db"
 database_id = "1c8f2d0f-7cef-47a0-bc2e-cdb63d5a266b"
-# the schema: missiv-server's migration files, applied by `wrangler d1 migrations apply missiv-db`
+# the schema: @missiv/server's migration files, applied by `wrangler d1 migrations apply missiv-db`
 migrations_dir = "../../packages/server/src/schema/migrations"
 
 [durable_objects]

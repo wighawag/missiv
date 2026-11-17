@@ -1,4 +1,4 @@
-import {ERROR_STATUS, type ErrorCode, type ErrorResponse} from 'missiv-common';
+import {ERROR_STATUS, type ErrorCode, type ErrorResponse} from '@missiv/common';
 import {zValidator} from '@hono/zod-validator';
 import type {ZodSchema} from 'zod';
 
@@ -20,7 +20,7 @@ export class MissivError extends Error {
 	}
 }
 
-/** The JSON body validated by a missiv-common schema; an invalid body is a 400 `invalid_request`. */
+/** The JSON body validated by a @missiv/common schema; an invalid body is a 400 `invalid_request`. */
 export function validateJSON<S extends ZodSchema>(schema: S) {
 	return zValidator('json', schema, (result) => {
 		if (!result.success) {

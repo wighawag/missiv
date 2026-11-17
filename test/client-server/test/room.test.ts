@@ -1,7 +1,7 @@
 // The Room driven directly on fake sockets, against the harness's database: no
 // platform, no port.
 import {describe, it, expect, beforeEach} from 'vitest';
-import {Room, createInProcessRooms} from 'missiv-server';
+import {Room, createInProcessRooms} from '@missiv/server';
 import {signRequest} from 'delegated-identity';
 import {createHarness, createUser, DOMAIN, type Harness, type TestUser} from './setup.js';
 

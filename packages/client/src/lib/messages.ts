@@ -20,7 +20,7 @@ import {
 	type ConversationMessage,
 	type DomainUser,
 	type PublicKey
-} from 'missiv-common';
+} from '@missiv/common';
 
 /** The delegate key of the account using the client. */
 export type DelegateKey = { privateKey: string | Uint8Array };

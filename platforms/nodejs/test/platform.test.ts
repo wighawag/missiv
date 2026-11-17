@@ -4,8 +4,8 @@
 import {describe, it, expect} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {delegatePublicKey, originPublicKeyPublicationMessage} from 'delegated-identity';
-import {API, clearCopies} from 'missiv-client';
-import {conversationIDOf} from 'missiv-common';
+import {API, clearCopies} from '@missiv/client';
+import {conversationIDOf} from '@missiv/common';
 import {createNodeServer} from '../src/index.js';
 
 const DOMAIN = 'test.com';

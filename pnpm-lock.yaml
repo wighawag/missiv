@@ -32,6 +32,9 @@ importers:
 
   packages/client:
     dependencies:
+      '@missiv/common':
+        specifier: workspace:^
+        version: link:../common
       '@noble/ciphers':
         specifier: ^1.2.1
         version: 1.2.1
@@ -47,9 +50,6 @@ importers:
       delegated-identity:
         specifier: ^0.1.1
         version: 0.1.1
-      missiv-common:
-        specifier: workspace:^
-        version: link:../common
     devDependencies:
       '@etherplay/connect':
         specifier: ^0.0.8
@@ -133,6 +133,9 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.4.3
         version: 0.4.3(hono@4.7.5)(zod@3.24.2)
+      '@missiv/common':
+        specifier: workspace:^
+        version: link:../common
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
@@ -148,9 +151,6 @@ importers:
       hono:
         specifier: ^4.7.5
         version: 4.7.5
-      missiv-common:
-        specifier: workspace:^
-        version: link:../common
       named-logs:
         specifier: ^0.3.2
         version: 0.3.2
@@ -191,6 +191,12 @@ importers:
 
   platforms/bun:
     dependencies:
+      '@missiv/common':
+        specifier: workspace:^
+        version: link:../../packages/common
+      '@missiv/server':
+        specifier: workspace:^
+        version: link:../../packages/server
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -200,12 +206,6 @@ importers:
       ldenv:
         specifier: ^0.3.12
         version: 0.3.12
-      missiv-common:
-        specifier: workspace:^
-        version: link:../../packages/common
-      missiv-server:
-        specifier: workspace:^
-        version: link:../../packages/server
       named-logs-context:
         specifier: ^0.1.1
         version: 0.1.1
@@ -237,15 +237,15 @@ importers:
 
   platforms/cf-worker:
     dependencies:
+      '@missiv/common':
+        specifier: workspace:^
+        version: link:../../packages/common
+      '@missiv/server':
+        specifier: workspace:^
+        version: link:../../packages/server
       hono:
         specifier: ^4.7.5
         version: 4.7.5
-      missiv-common:
-        specifier: workspace:^
-        version: link:../../packages/common
-      missiv-server:
-        specifier: workspace:^
-        version: link:../../packages/server
       named-logs:
         specifier: ^0.3.2
         version: 0.3.2
@@ -283,6 +283,9 @@ importers:
       '@libsql/client':
         specifier: ^0.15.0
         version: 0.15.0
+      '@missiv/server':
+        specifier: workspace:^
+        version: link:../../packages/server
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -292,9 +295,6 @@ importers:
       ldenv:
         specifier: ^0.3.12
         version: 0.3.12
-      missiv-server:
-        specifier: workspace:^
-        version: link:../../packages/server
       named-logs-context:
         specifier: ^0.1.1
         version: 0.1.1
@@ -302,6 +302,12 @@ importers:
         specifier: ^0.0.6
         version: 0.0.6(@libsql/core@0.14.0)
     devDependencies:
+      '@missiv/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@missiv/common':
+        specifier: workspace:*
+        version: link:../../packages/common
       '@types/node':
         specifier: ^22.13.10
         version: 22.13.10
@@ -311,12 +317,6 @@ importers:
       delegated-identity:
         specifier: ^0.1.1
         version: 0.1.1
-      missiv-client:
-        specifier: workspace:*
-        version: link:../../packages/client
-      missiv-common:
-        specifier: workspace:*
-        version: link:../../packages/common
       prettier:
         specifier: ^3.5.3
         version: 3.5.3
@@ -341,6 +341,15 @@ importers:
       '@libsql/client':
         specifier: ^0.15.0
         version: 0.15.0
+      '@missiv/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@missiv/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@missiv/server':
+        specifier: workspace:*
+        version: link:../../packages/server
       '@noble/ciphers':
         specifier: ^1.2.1
         version: 1.2.1
@@ -353,15 +362,6 @@ importers:
       delegated-identity:
         specifier: ^0.1.1
         version: 0.1.1
-      missiv-client:
-        specifier: workspace:*
-        version: link:../../packages/client
-      missiv-common:
-        specifier: workspace:*
-        version: link:../../packages/common
-      missiv-server:
-        specifier: workspace:*
-        version: link:../../packages/server
       prettier:
         specifier: ^3.5.3
         version: 3.5.3

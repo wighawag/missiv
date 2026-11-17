@@ -8,7 +8,7 @@ import {getAdminAPI} from './api/admin/index.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
-import type {ErrorResponse} from 'missiv-common';
+import type {ErrorResponse} from '@missiv/common';
 
 export {MissivError};
 

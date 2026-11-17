@@ -18,10 +18,10 @@ async function main() {
 	const program = new Command();
 
 	program
-		.name('missiv-server-nodejs')
+		.name('missiv')
 		.version(pkg.version)
-		.usage(`missiv-server-nodejs [--port 2000]  (env: DB, a libSQL URL, :memory: by default)`)
-		.description('run missiv-server-nodejs as a node process')
+		.usage(`missiv [--port 2000]  (env: DB, a libSQL URL, :memory: by default)`)
+		.description('run missiv as a node process')
 		.option('-p, --port <port>');
 
 	program.parse(process.argv);

@@ -1,7 +1,7 @@
-// missiv-server on Node.js: the app over a libSQL database, with rooms held in
+// @missiv/server on Node.js: the app over a libSQL database, with rooms held in
 // process (WebSockets through @hono/node-ws). `createNodeServer` builds it without
 // opening a port, so it can be served (`serve`) or exercised (`app.request`).
-import {createInProcessRooms, createServer, migrate, type Env} from 'missiv-server';
+import {createInProcessRooms, createServer, migrate, type Env} from '@missiv/server';
 import {createNodeWebSocket} from '@hono/node-ws';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient, type Client} from '@libsql/client';

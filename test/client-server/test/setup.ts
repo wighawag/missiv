@@ -1,5 +1,5 @@
 // The client-server harness: a missiv server in process (Hono's app.request on
-// in-memory libSQL, no port), driven through missiv-client's API with REAL keys:
+// in-memory libSQL, no port), driven through @missiv/client's API with REAL keys:
 // each user is a wallet that signs the ownership proof of a delegate key, and the
 // delegate key signs every request. The server runs with no DEV flag, as in
 // production; a test that needs another configuration passes its own env.
@@ -10,11 +10,11 @@ import {
 	originPublicKeyPublicationMessage,
 	signMessageCopy,
 	type ConversationMessage,
-} from 'missiv-common';
-import {createServer, migrate, type PushNotifier} from 'missiv-server';
+} from '@missiv/common';
+import {createServer, migrate, type PushNotifier} from '@missiv/server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
-import {API} from 'missiv-client';
+import {API} from '@missiv/client';
 
 export const DOMAIN = 'test.com';
 export const APP_ORIGIN = 'https://test.com';
@@ -58,7 +58,7 @@ export async function createUser(): Promise<TestUser> {
 	};
 }
 
-/** A missiv-client account of a test user: its wallet address and its delegate key as the signer. */
+/** A @missiv/client account of a test user: its wallet address and its delegate key as the signer. */
 export function accountOf(user: TestUser) {
 	return {
 		address: user.address,
@@ -184,7 +184,7 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 				content,
 				to: recipient.address,
 				toPublicKey: recipient.delegatePublicKey,
-				// each copy signed by the sender, as missiv-client signs it
+				// each copy signed by the sender, as @missiv/client signs it
 				signature: await signMessageCopy(
 					{
 						domain,

@@ -1,6 +1,8 @@
-# missiv-client
+# @missiv/client
 
 ## 0.4.0
+
+Published as `@missiv/client` from 0.4.0 (formerly `missiv-client`, which stops at 0.3.x and is deprecated).
 
 ### Minor Changes
 

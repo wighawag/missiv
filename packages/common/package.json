@@ -1,14 +1,19 @@
 {
-  "name": "missiv-common",
+  "name": "@missiv/common",
   "version": "0.4.0",
   "description": "A messaging system for ethereum addresses",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wighawag/missiv.git",
+    "directory": "packages/common"
+  },
   "keywords": [
     "ethereum",
     "message",
     "inbox"
   ],
   "author": "Ronan Sandford",
-  "license": "AGPL-3.0-only",
   "publishConfig": {
     "access": "public"
   },

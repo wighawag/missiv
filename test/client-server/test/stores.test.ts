@@ -1,4 +1,4 @@
-// missiv-client's stores (S3-14), each driven against the in-process server: the
+// @missiv/client's stores (S3-14), each driven against the in-process server: the
 // HTTP stores through app.request, the room through fake sockets wired to an
 // in-process room. No port. What is checked is the lifecycle (work only while
 // subscribed, for the current account), the counts, and that every server error
@@ -12,8 +12,8 @@ import {
 	openRoom,
 	type Account,
 	type RoomSocket,
-} from 'missiv-client';
-import {createInProcessRooms} from 'missiv-server';
+} from '@missiv/client';
+import {createInProcessRooms} from '@missiv/server';
 import {
 	accountOf,
 	conversationIDOf,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import {createInProcessRooms, createServer, migrate} from 'missiv-server';
+import {createInProcessRooms, createServer, migrate} from '@missiv/server';
 import {createBunWebSocket} from 'hono/bun';
 import {Database} from 'bun:sqlite';
 import {RemoteBunSQL} from './remote-sql-bun/index.js';
@@ -21,10 +21,10 @@ async function main() {
 	const program = new Command();
 
 	program
-		.name('missiv-server-bun')
+		.name('missiv-bun')
 		.version(pkg.version)
-		.usage(`missiv-server-bun [--port 2000]  (env: DB, a sqlite path, :memory: by default)`)
-		.description('run missiv-server-bun as a bun process')
+		.usage(`missiv-bun [--port 2000]  (env: DB, a sqlite path, :memory: by default)`)
+		.description('run missiv on bun')
 		.option('-p, --port <port>');
 
 	program.parse(process.argv);

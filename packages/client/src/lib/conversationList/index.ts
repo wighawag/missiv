@@ -1,7 +1,7 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, type FetchFunction } from '$lib/API.js';
 import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
-import type { Conversation } from 'missiv-common';
+import type { Conversation } from '@missiv/common';
 
 export type ConversationList = { error?: StoreError } & (
 	| // no registered account

@@ -1,6 +1,6 @@
-# missiv-server
+# @missiv/server
 
-The platform-agnostic core of missiv: `createServer(options)` returns a Hono app serving missiv's HTTP API and room upgrades; a platform (`missiv-server-nodejs`, `missiv-server-bun`, `missiv-server-cf-worker`) supplies the database, the rooms and the rate limiters.
+The platform-agnostic core of missiv: `createServer(options)` returns a Hono app serving missiv's HTTP API and room upgrades; a platform (`missiv`, `@missiv/bun`, `@missiv/cf-worker`) supplies the database, the rooms and the rate limiters.
 
 - `migrate(db)` applies the numbered migrations (`src/schema/migrations/*.sql`) a database has not had; every platform calls it at start, except cf-worker, whose D1 database gets the same files through `wrangler d1 migrations apply`. 0.4's first migration starts from an empty database (a database of 0.3 or earlier is not migrated).
 - `createInProcessRooms({getDB})` holds rooms and rate limiters in the process, for a long-lived server (nodejs, bun, a test).

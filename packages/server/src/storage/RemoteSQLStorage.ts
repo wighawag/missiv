@@ -22,7 +22,7 @@ import {
 	ResponseGetUnacceptedConversations,
 	ResponseSendMessage,
 	String0x,
-} from 'missiv-common';
+} from '@missiv/common';
 import {migrate, resetDatabase} from '../schema/migrate.js';
 import {newULID} from './ids.js';
 import {MissivError} from '../errors.js';

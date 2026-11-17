@@ -26,7 +26,7 @@ import type {
 	ResponseRejectConversation,
 	ResponseSendMessage,
 	ResponseUnblock
-} from 'missiv-common';
+} from '@missiv/common';
 
 export type FetchFunction = typeof fetch;
 

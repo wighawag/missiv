@@ -1,5 +1,5 @@
 import { API, type FetchFunction } from '$lib/API.js';
-import type { DomainUser } from 'missiv-common';
+import type { DomainUser } from '@missiv/common';
 import type { Readable } from 'svelte/store';
 import { publicKeyOf, verifyDomainUser } from '$lib/messages.js';
 import {

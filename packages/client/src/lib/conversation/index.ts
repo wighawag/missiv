@@ -1,5 +1,5 @@
 import type { Readable } from 'svelte/store';
-import { getConversationID, type Address, type PublicKey } from 'missiv-common';
+import { getConversationID, type Address, type PublicKey } from '@missiv/common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, type FetchFunction } from '$lib/API.js';
 import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';

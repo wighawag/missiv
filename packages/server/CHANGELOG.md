@@ -1,6 +1,8 @@
-# missiv-server
+# @missiv/server
 
 ## 0.4.0
+
+Published as `@missiv/server` from 0.4.0 (formerly `missiv-server`, which stops at 0.3.x and is deprecated).
 
 ### Minor Changes
 

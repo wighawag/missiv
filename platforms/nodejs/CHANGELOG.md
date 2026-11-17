@@ -1,6 +1,8 @@
-# missiv-server-nodejs
+# missiv
 
 ## 0.4.0
+
+Published as `missiv` from 0.4.0 (formerly `missiv-server-nodejs`, which stops at 0.3.x and is deprecated). Its command is `missiv` (formerly `missiv-server-nodejs`).
 
 ### Minor Changes
 

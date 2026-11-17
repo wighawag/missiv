@@ -1,7 +1,7 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { activeStore, type StoreError } from '$lib/utils/lifecycle.js';
 import { signRequest } from 'delegated-identity';
-import { serverOriginOf, type ClientMessageType, type ServerMessageType } from 'missiv-common';
+import { serverOriginOf, type ClientMessageType, type ServerMessageType } from '@missiv/common';
 import { toPrivateKey } from '$lib/API.js';
 
 /**

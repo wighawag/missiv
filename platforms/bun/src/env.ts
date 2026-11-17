@@ -1,4 +1,4 @@
-import {Env} from 'missiv-server';
+import {Env} from '@missiv/server';
 
 export type BunEnv = Env & {
 	DB: string;

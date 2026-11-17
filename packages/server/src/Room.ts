@@ -1,7 +1,7 @@
 import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './types.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
-import {ClientMessageType, ServerMessageType} from 'missiv-common';
+import {ClientMessageType, ServerMessageType} from '@missiv/common';
 import {recoverRequestSigner} from 'delegated-identity';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';

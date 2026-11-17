@@ -2,7 +2,7 @@
 // message as stored (the ciphertext for an encrypted copy, the text for a clear
 // one), so a reader attributes it to its sender without decrypting it and
 // without trusting the server. The server stores it and never checks it; the
-// reading client does (missiv-client's `openMessage`).
+// reading client does (@missiv/client's `openMessage`).
 import {keccak_256} from '@noble/hashes/sha3';
 import {bytesToHex, hexToBytes} from '@noble/hashes/utils';
 import {Signature, signAsync} from '@noble/secp256k1';

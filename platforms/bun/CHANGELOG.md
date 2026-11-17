@@ -1,6 +1,8 @@
-# missiv-server-bun
+# @missiv/bun
 
 ## 0.4.0
+
+Published as `@missiv/bun` from 0.4.0 (formerly `missiv-server-bun`, which stops at 0.3.x and is deprecated). Its command is `missiv-bun`.
 
 ### Minor Changes
 

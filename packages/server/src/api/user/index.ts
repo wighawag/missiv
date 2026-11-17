@@ -6,7 +6,7 @@ import {
 	ServerOptions,
 } from '../../types.js';
 import {recoverAccount} from 'delegated-identity';
-import {isOriginOfDomain} from 'missiv-common';
+import {isOriginOfDomain} from '@missiv/common';
 import {refuseReplay, requireAccount, requireSigner, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {MissivError, validateJSON} from '../../errors.js';

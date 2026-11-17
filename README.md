@@ -14,8 +14,8 @@ Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts 
 - **Registration**: a wallet publishes a delegate key per domain, with its ownership proof (delegated-identity).
 - **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, and a push to the recipient through push-notification-server.
 - **Rooms**: real-time public chat over WebSocket, optionally gated by a contract call.
-- **Platforms**: Node.js, Bun and Cloudflare Workers, from one platform-agnostic server (`missiv-server`) and one schema with numbered migrations.
-- **Client**: Svelte stores (`missiv-client`).
+- **Platforms**: Node.js, Bun and Cloudflare Workers, from one platform-agnostic server (`@missiv/server`) and one schema with numbered migrations.
+- **Client**: Svelte stores (`@missiv/client`).
 
 
 ## Getting Started
@@ -47,3 +47,7 @@ pnpm format:check && pnpm build && pnpm test
 ```
 
 The verify (`dorfl.json`): no test opens a port; the client-server tests run the server in process.
+
+### Publishing
+
+`@missiv/common`, `@missiv/server`, `@missiv/client`, `@missiv/bun` and `missiv` (the Node.js server and CLI) are published by the release workflow through npm Trusted Publishing: see `PUBLISHING.md`.

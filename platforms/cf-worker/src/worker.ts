@@ -5,7 +5,7 @@ import 'named-logs-context';
 import {enable as enableWorkersLogger} from 'workers-logger';
 import {logs} from 'named-logs';
 // ------------------------------------------------------------------------------------------------
-import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter, Env, ServerObject} from 'missiv-server';
+import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter, Env, ServerObject} from '@missiv/server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';

@@ -1,6 +1,8 @@
-# missiv-server-cf-worker
+# @missiv/cf-worker
 
 ## 0.4.0
+
+Renamed `@missiv/cf-worker` from 0.4.0 (formerly `missiv-server-cf-worker`) and made private: a deployment, no longer published.
 
 ### Minor Changes
 

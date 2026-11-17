@@ -3,7 +3,7 @@
 // then the tests of what S3b built around them.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {signRequest} from 'delegated-identity';
-import {pushKey, pushMessage, type NewMessageNotification} from 'missiv-server';
+import {pushKey, pushMessage, type NewMessageNotification} from '@missiv/server';
 import {
 	createHarness,
 	createUser,

@@ -1,6 +1,6 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import type { CompleteUser, MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { originPublicKeyPublicationMessage } from 'missiv-common';
+import { originPublicKeyPublicationMessage } from '@missiv/common';
 
 export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
 	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';

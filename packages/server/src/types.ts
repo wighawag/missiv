@@ -107,7 +107,7 @@ export type ServerObject = {
 	fetch(input: RequestInfo, init?: RequestInit): Promise<Response>;
 };
 
-// The request schemas are missiv-common's (one source for the server and the client).
+// The request schemas are @missiv/common's (one source for the server and the client).
 export {
 	ActionAcceptConversationSchema,
 	ActionEditDomainUserSchema,
@@ -124,4 +124,4 @@ export {
 	ActionUnblockSchema,
 	AddressSchema,
 	PublicKeySchema,
-} from 'missiv-common';
+} from '@missiv/common';

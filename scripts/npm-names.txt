@@ -1,0 +1,8 @@
+# Every name missiv publishes. Used to reserve the new ones and register their
+# trusted publisher in one go (see PUBLISHING.md):
+#   node ~/dev/tools/reserve-npm-name.mjs --names-file scripts/npm-names.txt --repo https://github.com/wighawag/missiv --trust-github wighawag/missiv --workflow release.yml --publish
+@missiv/common
+@missiv/server
+@missiv/client
+@missiv/bun
+missiv

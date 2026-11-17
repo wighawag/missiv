@@ -2,7 +2,7 @@
 // (@push-notification/server): one POST /api/push per recipient, keyed so a retry
 // never notifies twice, naming who wrote and nothing of what (a message's content
 // is end-to-end encrypted, and the push service is not to see even a clear one).
-import type {Address} from 'missiv-common';
+import type {Address} from '@missiv/common';
 import type {Env} from './env.js';
 
 /** A new message for `recipient`, from `sender`, in a conversation of `domain`. */

@@ -12,8 +12,8 @@ import {
 	openOneConversation,
 	verifyDomainUser,
 	type Account,
-} from 'missiv-client';
-import {signMessageCopy, type ConversationMessage} from 'missiv-common';
+} from '@missiv/client';
+import {signMessageCopy, type ConversationMessage} from '@missiv/common';
 import {
 	accountOf,
 	conversationIDOf,

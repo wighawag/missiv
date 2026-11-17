@@ -2,7 +2,7 @@ import {MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from './types.js';
 import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
-import {Address, DomainUser, PublicKey} from 'missiv-common';
+import {Address, DomainUser, PublicKey} from '@missiv/common';
 import {Context} from 'hono';
 import {DEFAULT_MAX_REQUEST_AGE_MS, recoverRequestSigner, REQUEST_SIGNATURE_HEADER} from 'delegated-identity';
 import {MissivError} from './errors.js';

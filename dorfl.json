@@ -1,6 +1,6 @@
 {
 	"prepare": "pnpm install",
-	"verify": "pnpm format:check && pnpm build && pnpm test",
+	"verify": "pnpm check:packaging && pnpm format:check && pnpm build && pnpm test",
 	"harness": "pi",
 	"autoBuild": false,
 	"autoTask": false,

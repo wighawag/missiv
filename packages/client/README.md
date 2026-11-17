@@ -1,4 +1,4 @@
-# missiv-client
+# @missiv/client
 
 The client of missiv, a messaging system for Ethereum accounts: Svelte stores (`svelte/store`) over missiv's HTTP API and rooms. The server is an untrusted relay: this library checks every key against the wallet's ownership proof and every message against its sender's signature, and decrypts each message on its own (`docs/adr/0003-the-client-verifies-the-server-relays.md` in the repo).
 
@@ -12,7 +12,7 @@ import {
 	openConversationList,
 	openOneConversation,
 	openRoom
-} from 'missiv-client';
+} from '@missiv/client';
 
 const registration = createMissivRegistration({
 	endpoint: 'https://missiv.example',
