@@ -179,6 +179,8 @@ export function openInboxChannel(params: {
 	let version = 0;
 	/** a poll answered the inbox unchanged at version 0: empty, so every row it lists later is new */
 	let knownEmpty = false;
+	/** a first look at the inbox (a drain from version 0) began and has not reached its last page */
+	let looking = false;
 	/** per conversation (`inboxConversationKey`), the highest seq known to be held: synced, passed on, or its row's */
 	const held = new Map<string, number>();
 
@@ -386,42 +388,39 @@ export function openInboxChannel(params: {
 
 	/** poll until the inbox is unchanged: each changed row passed on, and the messages it has that are not held */
 	async function drain(current: number) {
-		// the first look at the inbox learns its rows, reading no message (see the decisions): decided once
-		// for the whole drain, since its later pages start above version 0, and redone from 0 when it does not
-		// finish (an error, or the channel stopped), so no page of it is ever read as a change
-		const firstLook = version === 0 && !knownEmpty;
-		let finished = false;
-		try {
-			for (;;) {
-				const answer = await params.api.inboxChanges(
-					{ type: 'inboxChanges', domain: params.domain, since: version },
-					as
-				);
-				if (!running || current !== run) return;
-				if ('unchanged' in answer) {
-					version = answer.version;
-					if (version === 0) knownEmpty = true;
-					finished = true;
-					return;
-				}
-				for (const conversation of answer.conversations) {
-					const name = inboxConversationKey(conversation);
-					const known = held.get(name);
-					row(conversation);
-					if (!firstLook && conversation.lastSeq > (known ?? 0)) {
-						await readAfter(name, known ?? 0, current);
-						if (!running || current !== run) return;
-					}
-					hold(name, conversation.lastSeq);
-				}
+		// the first look at the inbox learns its rows, reading no message (see the decisions): it spans every
+		// page (the later ones start above version 0), and one cut short (an error, the channel stopped) is
+		// resumed as a first look by the next drain, of this run or a later one, so no page of it is read as a
+		// change; a drain of a stopped run writes no state
+		const firstLook = looking || (version === 0 && !knownEmpty);
+		if (firstLook) looking = true;
+		for (;;) {
+			const answer = await params.api.inboxChanges(
+				{ type: 'inboxChanges', domain: params.domain, since: version },
+				as
+			);
+			if (!running || current !== run) return;
+			if ('unchanged' in answer) {
 				version = answer.version;
-				if (!answer.hasMore) {
-					finished = true;
-					return;
-				}
+				if (version === 0) knownEmpty = true;
+				looking = false;
+				return;
 			}
-		} finally {
-			if (firstLook && !finished) version = 0;
+			for (const conversation of answer.conversations) {
+				const name = inboxConversationKey(conversation);
+				const known = held.get(name);
+				row(conversation);
+				if (!firstLook && conversation.lastSeq > (known ?? 0)) {
+					await readAfter(name, known ?? 0, current);
+					if (!running || current !== run) return;
+				}
+				hold(name, conversation.lastSeq);
+			}
+			version = answer.version;
+			if (!answer.hasMore) {
+				looking = false;
+				return;
+			}
 		}
 	}
 

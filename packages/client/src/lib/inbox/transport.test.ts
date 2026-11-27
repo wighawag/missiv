@@ -141,7 +141,7 @@ describe("the live inbox channel's transports", () => {
 		vi.useRealTimers();
 	});
 
-	it('poll: a first look over several pages reads no message, and one cut short is redone from version 0', async () => {
+	it('poll: a first look over several pages reads no message, and one cut short resumes as a first look', async () => {
 		const { domain, server, seen, unsubscribe } = setup({ transport: 'poll' });
 		const OTHER = `0x${'bb'.repeat(20)}`;
 		const sinces: number[] = [];
@@ -168,14 +168,57 @@ describe("the live inbox channel's transports", () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(sinces).toEqual([0, 1]);
 		expect(seen.errors).toBe(1);
-		// the retry starts the first look again from 0, not from the page it had reached
+		// the retry resumes from the page it had reached, still a first look
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(sinces).toEqual([0, 1, 0, 1]);
-		expect(seen.rows).toEqual([4, 4, 6]);
+		expect(sinces).toEqual([0, 1, 1]);
+		expect(seen.rows).toEqual([4, 6]);
 		// no page of the first look was read as a change
 		expect(server.state.reads).toEqual([]);
 		expect(seen.messages).toEqual([]);
 		unsubscribe();
+	});
+
+	it('poll: a first look cut short by a stop resumes as one when the channel starts again', async () => {
+		const { domain, server, channel, seen, unsubscribe } = setup({ transport: 'poll' });
+		const OTHER = `0x${'bb'.repeat(20)}`;
+		const sinces: number[] = [];
+		let releaseStale: (() => void) | undefined;
+		server.api.inboxChanges = (async (action: { since: number }): Promise<ResponseInboxChanges> => {
+			sinces.push(action.since);
+			if (action.since === 0) {
+				return { version: 1, conversations: [rowOf(domain, 4, 1)], hasMore: true };
+			}
+			if (action.since === 1) {
+				// the first run's page 2 waits until after the restart
+				if (!releaseStale) await new Promise<void>((resolve) => (releaseStale = resolve));
+				return {
+					version: 2,
+					conversations: [{ ...rowOf(domain, 6, 2), conversationID: OTHER }],
+					hasMore: false
+				};
+			}
+			return { version: 2, unchanged: true };
+		}) as API['inboxChanges'];
+
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sinces).toEqual([0, 1]);
+		unsubscribe();
+		const again = channel.subscribe({
+			onMessage: (message) => seen.messages.push(message.seq),
+			onConversation: (conversation) => seen.rows.push(conversation.lastSeq)
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sinces).toEqual([0, 1, 1]);
+		// the stale run's answer comes last and changes nothing
+		releaseStale?.();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(server.state.reads).toEqual([]);
+		expect(seen.messages).toEqual([]);
+		expect(seen.rows).toEqual([4, 6]);
+		// polling goes on from version 2
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(sinces.at(-1)).toBe(2);
+		again();
 	});
 
 	it('poll: learns the inbox first, then passes on each change and its messages within one interval', async () => {
