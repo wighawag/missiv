@@ -113,8 +113,7 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 	const adminAPI = getAdminAPI(options);
 	const sessionAPI = getSessionAPI(options);
 
-	// the polling transport, on the stores alone (ADR-0006 "Amendment: the inbox version and polling")
-	app.route('/api/inbox', getInboxChangesAPI(options));
+	// the socket upgrades are mounted ahead of the CORS middleware, which a 101 answer has no use for
 	if (options.liveInbox) {
 		// the live channel, where this process holds the sockets (ADR-0006 "Live channel")
 		app.route('/api/inbox', getInboxAPI(options, options.liveInbox));
@@ -123,39 +122,44 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 		app.route('/api/inbox', getRoutedInboxAPI(options, options.getLiveInboxRouter));
 	}
 
-	return app
-		.use('/*', corsSetup)
-		.route('/api/public', publicChatAPI)
-		.route('/api/session', sessionAPI)
-		.route('/api/user', userAPI)
-		.route('/api/private', privateChatAPI)
-		.route('/api/messages', messagesAPI)
-		.route('/api/admin', adminAPI)
-		.onError((err, c) => {
-			const config = c.get('config');
-			const env = config?.env || {};
-			if (err instanceof MissivError) {
-				if (err.code === 'rate_limited') {
-					const {retryAfterMs} = err.details as RateLimitedDetails;
-					c.header('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+	return (
+		app
+			.use('/*', corsSetup)
+			// the polling transport, on the stores alone (ADR-0006 "Amendment: the inbox version and polling"),
+			// behind CORS like every other request a browser on another origin reads the answer of
+			.route('/api/inbox', getInboxChangesAPI(options))
+			.route('/api/public', publicChatAPI)
+			.route('/api/session', sessionAPI)
+			.route('/api/user', userAPI)
+			.route('/api/private', privateChatAPI)
+			.route('/api/messages', messagesAPI)
+			.route('/api/admin', adminAPI)
+			.onError((err, c) => {
+				const config = c.get('config');
+				const env = config?.env || {};
+				if (err instanceof MissivError) {
+					if (err.code === 'rate_limited') {
+						const {retryAfterMs} = err.details as RateLimitedDetails;
+						c.header('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+					}
+					return c.json(err.toResponseBody(), err.status);
 				}
-				return c.json(err.toResponseBody(), err.status);
-			}
-			if (err instanceof HTTPException) {
-				return err.getResponse();
-			}
-			console.error(err);
-			return c.json(
-				{
-					error: {
-						code: 'internal',
-						message: err.message,
-						...(env.EXPOSE_ERRORS === 'true' ? {details: {cause: err.cause, stack: err.stack}} : {}),
-					},
-				} satisfies ErrorResponse,
-				500,
-			);
-		});
+				if (err instanceof HTTPException) {
+					return err.getResponse();
+				}
+				console.error(err);
+				return c.json(
+					{
+						error: {
+							code: 'internal',
+							message: err.message,
+							...(env.EXPOSE_ERRORS === 'true' ? {details: {cause: err.cause, stack: err.stack}} : {}),
+						},
+					} satisfies ErrorResponse,
+					500,
+				);
+			})
+	);
 }
 
 export type App = ReturnType<typeof createServer<{}>>;

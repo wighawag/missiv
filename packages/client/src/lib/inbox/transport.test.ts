@@ -141,6 +141,43 @@ describe("the live inbox channel's transports", () => {
 		vi.useRealTimers();
 	});
 
+	it('poll: a first look over several pages reads no message, and one cut short is redone from version 0', async () => {
+		const { domain, server, seen, unsubscribe } = setup({ transport: 'poll' });
+		const OTHER = `0x${'bb'.repeat(20)}`;
+		const sinces: number[] = [];
+		let failSecondPage = true;
+		server.api.inboxChanges = (async (action: { since: number }): Promise<ResponseInboxChanges> => {
+			sinces.push(action.since);
+			if (action.since === 0) {
+				return { version: 1, conversations: [rowOf(domain, 4, 1)], hasMore: true };
+			}
+			if (action.since === 1) {
+				if (failSecondPage) {
+					failSecondPage = false;
+					throw new MissivAPIError(500, 'internal_error', 'try again');
+				}
+				return {
+					version: 2,
+					conversations: [{ ...rowOf(domain, 6, 2), conversationID: OTHER }],
+					hasMore: false
+				};
+			}
+			return { version: 2, unchanged: true };
+		}) as API['inboxChanges'];
+
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sinces).toEqual([0, 1]);
+		expect(seen.errors).toBe(1);
+		// the retry starts the first look again from 0, not from the page it had reached
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(sinces).toEqual([0, 1, 0, 1]);
+		expect(seen.rows).toEqual([4, 4, 6]);
+		// no page of the first look was read as a change
+		expect(server.state.reads).toEqual([]);
+		expect(seen.messages).toEqual([]);
+		unsubscribe();
+	});
+
 	it('poll: learns the inbox first, then passes on each change and its messages within one interval', async () => {
 		const { server, sockets, channel, seen, unsubscribe } = setup({ transport: 'poll' });
 		server.send();

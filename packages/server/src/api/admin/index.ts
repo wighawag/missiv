@@ -1,5 +1,5 @@
 import {Hono} from 'hono';
-import {ActionResetSchema, ServerOptions} from '../../types.js';
+import {ActionResetSchema, ServerOptions, type RouteOptions} from '../../types.js';
 import {setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {MissivError, validateJSON} from '../../errors.js';
@@ -26,6 +26,8 @@ export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 			const action = c.req.valid('json');
 			if (action.reset) {
 				await resetDatabase(options.services.getDB(c.get('config').env as CustomEnv));
+				// the versions this process remembers describe the rows just dropped
+				(options as Partial<RouteOptions<CustomEnv>>).inboxVersionCache?.clear();
 				return c.json({success: true});
 			}
 			return c.json({success: false});

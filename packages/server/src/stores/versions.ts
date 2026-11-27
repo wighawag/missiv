@@ -32,6 +32,8 @@ export type InboxVersionCache = {
 	 * (asked at each poll; it still learns and forgets when false)
 	 */
 	wrap(stores: Stores, options: {answer: () => boolean}): Stores;
+	/** forget every version (the database was reset under it); a read in flight is not kept */
+	clear(): void;
 	/** how many inboxes it remembers, for tests and metrics */
 	readonly size: number;
 };
@@ -78,6 +80,9 @@ export function createInboxVersionCache(options: {maxEntries?: number} = {}): In
 	return {
 		get size() {
 			return entries.size;
+		},
+		clear() {
+			entries.clear();
 		},
 		wrap(stores, {answer}) {
 			const {conversations, inbox} = stores;

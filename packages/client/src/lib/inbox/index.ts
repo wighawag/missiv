@@ -386,31 +386,42 @@ export function openInboxChannel(params: {
 
 	/** poll until the inbox is unchanged: each changed row passed on, and the messages it has that are not held */
 	async function drain(current: number) {
-		for (;;) {
-			const answer = await params.api.inboxChanges(
-				{ type: 'inboxChanges', domain: params.domain, since: version },
-				as
-			);
-			if (!running || current !== run) return;
-			if ('unchanged' in answer) {
-				version = answer.version;
-				if (version === 0) knownEmpty = true;
-				return;
-			}
-			// the first look at the inbox learns its rows, reading no message (see the decisions)
-			const firstLook = version === 0 && !knownEmpty;
-			for (const conversation of answer.conversations) {
-				const name = inboxConversationKey(conversation);
-				const known = held.get(name);
-				row(conversation);
-				if (!firstLook && conversation.lastSeq > (known ?? 0)) {
-					await readAfter(name, known ?? 0, current);
-					if (!running || current !== run) return;
+		// the first look at the inbox learns its rows, reading no message (see the decisions): decided once
+		// for the whole drain, since its later pages start above version 0, and redone from 0 when it does not
+		// finish (an error, or the channel stopped), so no page of it is ever read as a change
+		const firstLook = version === 0 && !knownEmpty;
+		let finished = false;
+		try {
+			for (;;) {
+				const answer = await params.api.inboxChanges(
+					{ type: 'inboxChanges', domain: params.domain, since: version },
+					as
+				);
+				if (!running || current !== run) return;
+				if ('unchanged' in answer) {
+					version = answer.version;
+					if (version === 0) knownEmpty = true;
+					finished = true;
+					return;
 				}
-				hold(name, conversation.lastSeq);
+				for (const conversation of answer.conversations) {
+					const name = inboxConversationKey(conversation);
+					const known = held.get(name);
+					row(conversation);
+					if (!firstLook && conversation.lastSeq > (known ?? 0)) {
+						await readAfter(name, known ?? 0, current);
+						if (!running || current !== run) return;
+					}
+					hold(name, conversation.lastSeq);
+				}
+				version = answer.version;
+				if (!answer.hasMore) {
+					finished = true;
+					return;
+				}
 			}
-			version = answer.version;
-			if (!answer.hasMore) return;
+		} finally {
+			if (firstLook && !finished) version = 0;
 		}
 	}
 

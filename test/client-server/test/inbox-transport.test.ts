@@ -109,6 +109,25 @@ describe('POST /api/inbox/changes', () => {
 		expect('unchanged' in marked || marked.conversations.map((c) => c.lastReadSeq)).toEqual([1]);
 	});
 
+	it('forgets the versions it remembers when the database is reset, so a poll from before reads again', async () => {
+		const {h, A, B} = await world({ADMIN_TOKEN: 'secret'});
+		await h.send({from: A, to: B, content: 'one'});
+		const changed = await poll(h.api, B, 0);
+		expect('unchanged' in changed).toBe(false);
+		expect(await poll(h.api, B, changed.version)).toEqual({version: changed.version, unchanged: true});
+
+		const reset = await h.app.request('http://localhost/api/admin/db-reset', {
+			method: 'POST',
+			headers: {'content-type': 'application/json', Authorization: 'Bearer secret'},
+			body: JSON.stringify({reset: true}),
+		});
+		expect(reset.ok).toBe(true);
+		const before = h.queries.length;
+		// the reset inbox is read again: its version 0 (a since above it answered as 0), not the remembered one
+		expect(await poll(h.api, B, changed.version)).toEqual({version: 0, conversations: [], hasMore: false});
+		expect(h.queries.length).toBeGreaterThan(before);
+	});
+
 	it('with polling alone (several instances, INBOX_TRANSPORTS=poll), reads its version from the database on every poll', async () => {
 		const {h, A, B} = await world({INBOX_TRANSPORTS: 'poll'});
 		await h.send({from: A, to: B});
@@ -132,10 +151,12 @@ describe('POST /api/inbox/changes', () => {
 		const on = await world();
 		const unauthenticated = await on.h.app.request('http://localhost/api/inbox/changes', {
 			method: 'POST',
-			headers: {'content-type': 'application/json'},
+			headers: {'content-type': 'application/json', origin: 'https://app.example'},
 			body: JSON.stringify({type: 'inboxChanges', domain: DOMAIN, since: 0}),
 		});
 		expect(unauthenticated.status).toBe(401);
+		// behind CORS: a browser on another origin reads a poll's answer
+		expect(unauthenticated.headers.get('Access-Control-Allow-Origin')).toBe('*');
 		await on.h.close();
 
 		const typo = await world({INBOX_TRANSPORTS: 'sockets'});
