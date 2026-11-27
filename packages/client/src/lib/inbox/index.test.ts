@@ -93,6 +93,10 @@ describe("the live inbox channel's heartbeat", () => {
 		sockets[1].emit('open');
 		expect(channel.connected).toBe(true);
 		expect(onOpen).toHaveBeenCalledTimes(2);
+		// a sync after the reconnection goes out on the new socket, not the given-up one
+		void channel.sync({ conversation: 7 });
+		expect(sockets[1].sent).toEqual([JSON.stringify({ type: 'sync', since: { conversation: 7 } })]);
+		expect(sockets[0].sent).toEqual([HEARTBEAT_PING]);
 		// the close the given-up socket reports later changes nothing
 		sockets[0].emit('close', { code: 1006 });
 		expect(channel.connected).toBe(true);

@@ -13,6 +13,7 @@ import type {RemoteSQL} from 'remote-sql';
 import {inboxSocketEvents} from './api/inbox/index.js';
 import {createInProcessLiveInbox} from './live.js';
 import {createInProcessRooms} from './memory.js';
+import {RateLimiterClient} from './RateLimiter.js';
 
 const IDLE_MS = HEARTBEAT_INTERVAL_MS * HEARTBEAT_IDLE_INTERVALS;
 const USER = `0x${'ab'.repeat(20)}` as const;
@@ -121,10 +122,16 @@ describe('the rooms held in process', () => {
 
 	it('answers a ping with pong, without charging the rate limiter', async () => {
 		const {room, ws} = await open();
-		for (let i = 0; i < 5; i++) {
-			await room.webSocketMessage(ws, HEARTBEAT_PING);
+		const checkLimit = vi.spyOn(RateLimiterClient.prototype, 'checkLimit');
+		try {
+			for (let i = 0; i < 5; i++) {
+				await room.webSocketMessage(ws, HEARTBEAT_PING);
+			}
+			expect(ws.sent).toEqual([HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG]);
+			expect(checkLimit).not.toHaveBeenCalled();
+		} finally {
+			checkLimit.mockRestore();
 		}
-		expect(ws.sent).toEqual([HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG, HEARTBEAT_PONG]);
 	});
 
 	it('closes a socket that sent nothing for three intervals', async () => {
