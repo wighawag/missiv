@@ -49,15 +49,22 @@ A "Push notifications" section in the root README (or `packages/server/README.md
 
 ## Acceptance criteria
 
-- [ ] `MissivPushData`, `MissivPushHandoff`, `withPushHandoff`, `splitPushHandoff`, `consumePushHandoff`, `readMissivPushData` and `readMissivPushHandoff` are exported from `@missiv/common`; `pushMessage` builds `data.missiv` and the fragment through them.
-- [ ] `push.test.ts` pins the whole message: `web_push`, `title`, `body` (sender abbreviated, no content), `navigate` exactly the root plus `#push-handoff=` and the expected encoding of `{missiv: {type, namespace, conversationID}}`, `tag`, `data.missiv` field by field.
-- [ ] The hand-off helpers' tests live in `packages/server/src/push-handoff.test.ts`, importing from `@missiv/common` (common has no test runner, and the root `pnpm test` runs only packages with a `test` script; do not add one to common for this).
-- [ ] `splitPushHandoff` round-trips `withPushHandoff` (a fixed test vector, so another implementation can check itself against it), for a URL without a fragment and with one (`#/conversations?x=1` comes back byte for byte); the readers return `undefined` for a missing, malformed or wrong-type value, and accept a value with an extra unknown field.
-- [ ] `consumePushHandoff` (tested on a fake location and history) removes the segment with `replaceState`, keeps path, query, state and the rest of the fragment, returns the hand-off once, and does nothing (no `replaceState`) when there is none.
-- [ ] A test asserts the serialized message (its UTF-8 bytes) stays under 3500 bytes, both with ASCII `domain`, `namespace`, `conversationID` and `appOrigin` at their schema maximums and with a 64-character namespace that JSON escapes as `\uXXXX` (3993 bytes of plaintext, minus a margin).
-- [ ] The README section exists, with the browser behaviour, its sources, and the no-opt-in trade-off.
-- [ ] A changeset for `@missiv/common` and `@missiv/server` (minor: new exports; `navigate` gains a fragment, its path unchanged).
-- [ ] `pnpm -r format:check && pnpm build && pnpm test` is green.
+- [x] `MissivPushData`, `MissivPushHandoff`, `withPushHandoff`, `splitPushHandoff`, `consumePushHandoff`, `readMissivPushData` and `readMissivPushHandoff` are exported from `@missiv/common`; `pushMessage` builds `data.missiv` and the fragment through them.
+- [x] `push.test.ts` pins the whole message: `web_push`, `title`, `body` (sender abbreviated, no content), `navigate` exactly the root plus `#push-handoff=` and the expected encoding of `{missiv: {type, namespace, conversationID}}`, `tag`, `data.missiv` field by field.
+- [x] The hand-off helpers' tests live in `packages/server/src/push-handoff.test.ts`, importing from `@missiv/common` (common has no test runner, and the root `pnpm test` runs only packages with a `test` script; do not add one to common for this).
+- [x] `splitPushHandoff` round-trips `withPushHandoff` (a fixed test vector, so another implementation can check itself against it), for a URL without a fragment and with one (`#/conversations?x=1` comes back byte for byte); the readers return `undefined` for a missing, malformed or wrong-type value, and accept a value with an extra unknown field.
+- [x] `consumePushHandoff` (tested on a fake location and history) removes the segment with `replaceState`, keeps path, query, state and the rest of the fragment, returns the hand-off once, and does nothing (no `replaceState`) when there is none.
+- [x] A test asserts the serialized message (its UTF-8 bytes) stays under 3500 bytes, both with ASCII `domain`, `namespace`, `conversationID` and `appOrigin` at their schema maximums and with a 64-character namespace that JSON escapes as `\uXXXX` (3993 bytes of plaintext, minus a margin).
+- [x] The README section exists, with the browser behaviour, its sources, and the no-opt-in trade-off.
+- [x] A changeset for `@missiv/common` and `@missiv/server` (minor: new exports; `navigate` gains a fragment, its path unchanged).
+- [x] `pnpm -r format:check && pnpm build && pnpm test` is green.
+
+## Decisions
+
+- The hand-off also carries `recipient`, by the human's decision after the task was written (2026-11-27), and so does `data.missiv`: a device can be registered for several accounts, so the app checks the push's account against the one it is connected as and tells the user when they differ. It costs no privacy: a two-member `conversationID` is already both addresses concatenated (`getConversationID`), so the URL held them anyway. `sender` stays out, as routing does not need it.
+- `consumePushHandoff` also removes a malformed hand-off from the URL (returning `undefined`), rather than leaving garbage in the address bar.
+- `MissivPushData.sender` and `recipient` are typed `string`, not `Address`: the readers check strings only, so a stricter type would claim what they do not verify.
+- Measured: 2,082 bytes for a push with every field at its schema maximum, 2,829 with a JSON-escaped namespace (the test asserts under 3,500).
 
 ## Prompt
 

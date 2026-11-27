@@ -35,6 +35,58 @@ function notifier(statuses: number[], tokens = 'test.com=secret') {
 	return {n, calls, logs};
 }
 
+describe('the message of a push', () => {
+	it('is pinned: the sender and never the content, the root plus the hand-off, the conversation tag, data.missiv', () => {
+		expect(pushMessage(notification)).toStrictEqual({
+			web_push: 8030,
+			notification: {
+				title: 'New message',
+				body: 'From 0xaaaa...aaaa',
+				// {"missiv":{"type":"message","namespace":"","conversationID":"0xconv","recipient":"0xbbbb...bbbb"}}
+				navigate:
+					'https://test.com/#push-handoff=eyJtaXNzaXYiOnsidHlwZSI6Im1lc3NhZ2UiLCJuYW1lc3BhY2UiOiIiLCJjb252ZXJzYXRpb25JRCI6IjB4Y29udiIsInJlY2lwaWVudCI6IjB4YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiJ9fQ',
+				tag: 'missiv:0xconv',
+				data: {
+					missiv: {
+						type: 'message',
+						domain: 'test.com',
+						namespace: '',
+						conversationID: '0xconv',
+						messageID: '01JABCDEF',
+						sender: notification.sender,
+						recipient: notification.recipient,
+					},
+				},
+			},
+		});
+	});
+
+	it('leads to the domain when the recipient has no app origin', () => {
+		const {appOrigin, ...withoutOrigin} = notification;
+		expect(pushMessage(withoutOrigin).notification.navigate).toMatch(/^https:\/\/test\.com\/#push-handoff=/);
+	});
+
+	// Web Push carries 4096 bytes of record (RFC 8030/8291), about 3993 of plaintext:
+	// the schema limits in @missiv/common keep the message well under it.
+	const size = (n: NewMessageNotification) => new TextEncoder().encode(JSON.stringify(pushMessage(n))).length;
+	const longest: NewMessageNotification = {
+		...notification,
+		domain: 'd'.repeat(253),
+		namespace: 'n'.repeat(64),
+		conversationID: 'c'.repeat(256),
+		messageID: '01JABCDEFGHJKMNPQRSTVWXYZ0',
+		appOrigin: 'o'.repeat(300),
+	};
+
+	it('stays under 3500 bytes with every field at its schema maximum', () => {
+		expect(size(longest)).toBeLessThan(3500);
+	});
+
+	it('stays under 3500 bytes with a namespace JSON escapes as \\uXXXX', () => {
+		expect(size({...longest, namespace: '\u0001'.repeat(64)})).toBeLessThan(3500);
+	});
+});
+
 describe('the push of a new message', () => {
 	it('is one POST /api/push with the domain token, the idempotency key and no content', async () => {
 		const {n, calls} = notifier([200]);
@@ -77,6 +129,13 @@ describe('the push of a new message', () => {
 		await n.notify(notification);
 		await n.notify({...notification, messageID: 'another'});
 		expect(calls.length).toBe(0);
+		expect(logs.length).toBe(1);
+	});
+
+	it('never retries a refused request (400)', async () => {
+		const {n, calls, logs} = notifier([400]);
+		await n.notify(notification);
+		expect(calls.length).toBe(1);
 		expect(logs.length).toBe(1);
 	});
 

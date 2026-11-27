@@ -2,7 +2,7 @@
 // (@push-notification/server): one POST /api/push per recipient, keyed so a retry
 // never notifies twice, naming who wrote and nothing of what (a message's content
 // is end-to-end encrypted, and the push service is not to see even a clear one).
-import type {Address} from '@missiv/common';
+import {withPushHandoff, type Address, type MissivPushData, type MissivPushHandoff} from '@missiv/common';
 import type {Env} from './env.js';
 
 /** A new message for `recipient`, from `sender`, in a conversation of `domain`. */
@@ -38,27 +38,39 @@ export function parsePushTokens(value: string | undefined): Map<string, string> 
 	return tokens;
 }
 
-/** The Declarative Web Push message push-notification-server sends: the sender, never the content. */
+/**
+ * The Declarative Web Push message push-notification-server sends: the sender, never
+ * the content. `navigate` is the app's root (never an app route) with the hand-off
+ * as its fragment, for browsers where the app's service worker never runs (Safari
+ * 18.4+); `data.missiv` is for the service worker where it does.
+ */
 export function pushMessage(notification: NewMessageNotification) {
 	const sender = `${notification.sender.slice(0, 6)}...${notification.sender.slice(-4)}`;
+	// key order fixed: the hand-off's encoding is pinned by a test vector
+	const handoff: MissivPushHandoff = {
+		type: 'message',
+		namespace: notification.namespace,
+		conversationID: notification.conversationID,
+		recipient: notification.recipient,
+	};
+	const data: MissivPushData = {
+		type: 'message',
+		domain: notification.domain,
+		namespace: notification.namespace,
+		conversationID: notification.conversationID,
+		messageID: notification.messageID,
+		sender: notification.sender,
+		recipient: notification.recipient,
+	};
 	return {
 		web_push: 8030 as const,
 		notification: {
 			title: 'New message',
 			body: `From ${sender}`,
-			navigate: `${notification.appOrigin || `https://${notification.domain}`}/`,
+			navigate: withPushHandoff(`${notification.appOrigin || `https://${notification.domain}`}/`, {missiv: handoff}),
 			// one notification per conversation: a newer message replaces the older one
 			tag: `missiv:${notification.conversationID}`,
-			data: {
-				missiv: {
-					type: 'message',
-					domain: notification.domain,
-					namespace: notification.namespace,
-					conversationID: notification.conversationID,
-					messageID: notification.messageID,
-					sender: notification.sender,
-				},
-			},
+			data: {missiv: data},
 		},
 	};
 }
