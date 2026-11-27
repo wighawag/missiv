@@ -11,6 +11,7 @@ import {
 	createWorld,
 	fillHistory,
 	runList,
+	runLive,
 	runRead,
 	runRoom,
 	runSend,
@@ -32,7 +33,7 @@ const USAGE = `usage: pnpm load <${[...SCENARIOS, 'all'].join('|')}> [options]
   --url <origin>          the server for --target url, e.g. http://127.0.0.1:34003
   --bun <path>            the bun executable (default: bun on PATH)
   --api <version>         the API adapter (default 0.6; available: ${Object.keys(ADAPTERS).join(', ')})
-  --clients <n>           simulated users in send/read/list, one concurrent client each (default 20)
+  --clients <n>           simulated users in send/read/list/live, one concurrent client each (default 20)
   --conversations <n>     conversations among them (default 20)
   --duration <s>          seconds each scenario runs (default 10)
   --history <n>           messages per conversation before read (default 100)
@@ -157,13 +158,17 @@ async function main() {
 					await fillHistory(adapter, world, parameters, log);
 				}
 				log(`running ${name} for ${parameters.duration} s`);
-				await measured(async () => [
-					name === 'send'
-						? await runSend(adapter, world, parameters)
-						: name === 'read'
-							? await runRead(adapter, world, parameters)
-							: await runList(adapter, world, parameters),
-				]);
+				await measured(async () =>
+					name === 'live'
+						? await runLive(adapter, world, parameters, log)
+						: [
+								name === 'send'
+									? await runSend(adapter, world, parameters)
+									: name === 'read'
+										? await runRead(adapter, world, parameters)
+										: await runList(adapter, world, parameters),
+							],
+				);
 			}
 		}
 		if (scenarios.includes('room')) {

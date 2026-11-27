@@ -1,4 +1,4 @@
-// The one lifecycle every missiv store has: it works (polls, holds a socket)
+// The one lifecycle every missiv store has: it works (holds a socket, fetches)
 // only while someone is subscribed, and only for the current account. A run
 // starts on the first subscription for the source's current key, is stopped and
 // replaced when the key changes (another account, a sign-out), and is stopped
@@ -70,31 +70,40 @@ export function activeStore<S, T>(params: {
 	return { subscribe: store.subscribe, get: () => getValue(store) };
 }
 
+/** The first retry delay of `retryUntilDone`, doubled after each failure up to `MAX_RETRY_DELAY_MS`. */
+export const FIRST_RETRY_DELAY_MS = 1000;
+export const MAX_RETRY_DELAY_MS = 30_000;
+
 /**
- * Call `task` now and again `intervalMs` after each call settles, until the run
- * stops (or the returned function is called). A failing call is reported to
- * `onError` and polling goes on.
+ * Call `task` now and, while it fails, again after a delay that doubles from
+ * `firstDelayMs` up to `MAX_RETRY_DELAY_MS`, until it succeeds or the run stops
+ * (or the returned function is called). Each failure is reported to `onError`.
+ * Not a polling loop: once `task` succeeds it is not called again.
  */
-export function poll(
+export function retryUntilDone(
 	ctx: { readonly active: boolean },
-	intervalMs: number,
 	task: () => Promise<void>,
-	onError: (err: unknown) => void
+	onError: (err: unknown) => void,
+	firstDelayMs: number = FIRST_RETRY_DELAY_MS
 ): () => void {
 	let timeout: ReturnType<typeof setTimeout> | undefined;
 	let stopped = false;
-	async function tick() {
+	let delay = firstDelayMs;
+	async function attempt() {
 		timeout = undefined;
 		try {
 			await task();
+			return;
 		} catch (err) {
-			if (ctx.active && !stopped) onError(err);
+			if (!ctx.active || stopped) return;
+			onError(err);
 		}
 		if (ctx.active && !stopped) {
-			timeout = setTimeout(tick, intervalMs);
+			timeout = setTimeout(attempt, delay);
+			delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
 		}
 	}
-	tick();
+	attempt();
 	return () => {
 		stopped = true;
 		if (timeout) clearTimeout(timeout);

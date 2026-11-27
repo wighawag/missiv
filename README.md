@@ -12,7 +12,7 @@ Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts 
 ## Features
 
 - **Registration**: a wallet publishes its key set per domain (an Ed25519 signing key and an X25519 encryption key, derived by delegated-identity from `@etherplay/connect`'s origin key, so every device of the account has the same), with its ownership proof.
-- **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, and a push to the recipient through push-notification-server.
+- **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, delivered live on one WebSocket per client (the live inbox channel, Node.js and Bun), and a push to the recipient through push-notification-server.
 - **Rooms**: real-time public chat over WebSocket, optionally gated by a contract call.
 - **Platforms**: Node.js, Bun and Cloudflare Workers, from one platform-agnostic server (`@missiv/server`) and one schema with numbered migrations.
 - **Client**: Svelte stores (`@missiv/client`).
@@ -20,7 +20,7 @@ Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts 
 
 ## Push notifications
 
-When a direct message arrives, the server asks push-notification-server (`PUSH_SERVER_URL`, with each domain's token in `PUSH_TOKENS`) to notify each recipient, except the sender and anyone who blocked them. The push is a Declarative Web Push message (`pushMessage` in `packages/server/src/push.ts`). It names the sender, abbreviated, and never anything of the message: its content is end-to-end encrypted, and the push service is not to see even a clear one.
+When a direct message arrives, the server asks push-notification-server (`PUSH_SERVER_URL`, with each domain's token in `PUSH_TOKENS`) to notify each recipient, except the sender and anyone who blocked them (and, with `PUSH_SKIP_WHEN_ONLINE=true`, anyone who has the live inbox channel open in the domain: the message reached them on it already). The push is a Declarative Web Push message (`pushMessage` in `packages/server/src/push.ts`). It names the sender, abbreviated, and never anything of the message: its content is end-to-end encrypted, and the push service is not to see even a clear one.
 
 - `title`: `New message`; `body`: `From 0xaaaa...aaaa`.
 - `tag`: `missiv:<conversationID>`, so a newer message of a conversation replaces the older notification.

@@ -158,6 +158,28 @@ export class API {
 		return opening;
 	}
 
+	/**
+	 * The session of `options`' key in `domain`, opened (or renewed, when it
+	 * expires within `SESSION_RENEWAL_MARGIN_MS`) as a call would; `renew` opens a
+	 * new one whatever the current one's expiry (the live channel does, when the
+	 * server closed its socket as `session-expired` or refused its token).
+	 */
+	async getSession(
+		domain: string,
+		options: APIOptions,
+		params?: { renew?: boolean }
+	): Promise<ResponseOpenSession> {
+		const opening = this.session(domain, options);
+		if (params?.renew) {
+			return this.session(domain, options, opening);
+		}
+		const session = await opening;
+		if (session.expiresAt - SESSION_RENEWAL_MARGIN_MS <= Date.now()) {
+			return this.session(domain, options, opening);
+		}
+		return session;
+	}
+
 	/** A call authenticated by the session of `options`' key in `domain` (by default `action.domain`). */
 	async authenticatedCall<T>(
 		path: string,

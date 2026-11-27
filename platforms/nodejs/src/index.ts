@@ -1,7 +1,7 @@
 // @missiv/server on Node.js: the app over a libSQL database, with rooms held in
-// process (WebSockets through @hono/node-ws). `createNodeServer` builds it without
+// process (WebSockets through @hono/node-ws), and the live inbox's sockets too. `createNodeServer` builds it without
 // opening a port, so it can be served (`serve`) or exercised (`app.request`).
-import {createInProcessRooms, createServer, migrate, type Env} from '@missiv/server';
+import {createInProcessLiveInbox, createInProcessRooms, createServer, migrate, type Env} from '@missiv/server';
 import {createNodeWebSocket} from '@hono/node-ws';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient, type Client} from '@libsql/client';
@@ -16,7 +16,8 @@ export type NodeServer = Awaited<ReturnType<typeof createNodeServer>>;
 
 /**
  * The app, its database migrated, and `injectWebSocket` to call on the HTTP
- * server once it is listening (rooms need it; the HTTP API does not).
+ * server once it is listening (rooms and the live inbox need it; the HTTP API
+ * does not).
  */
 export async function createNodeServer(options: {db: string | Client; env: NodeJSEnv}) {
 	const client = typeof options.db === 'string' ? createClient({url: options.db}) : options.db;
@@ -25,6 +26,7 @@ export async function createNodeServer(options: {db: string | Client; env: NodeJ
 
 	const env = options.env;
 	const rooms = createInProcessRooms<NodeJSEnv>({getDB: () => db});
+	const liveInbox = createInProcessLiveInbox();
 	// node-ws routes an upgrade request through the app, which is built below
 	let app: ReturnType<typeof createServer<NodeJSEnv>>;
 	const {upgradeWebSocket, injectWebSocket} = createNodeWebSocket({
@@ -40,9 +42,10 @@ export async function createNodeServer(options: {db: string | Client; env: NodeJ
 		inProcessRooms: {getRoom: rooms.getRoom},
 		// the socket's address: behind a proxy, every client is the proxy's (one IP budget)
 		getIP: (c) => (c.env as {incoming?: IncomingMessage} | undefined)?.incoming?.socket?.remoteAddress,
+		liveInbox,
 		getEnv: () => env,
 		upgradeWebSocket: upgradeWebSocket as any,
 	});
 
-	return {app, db, injectWebSocket};
+	return {app, db, injectWebSocket, liveInbox};
 }

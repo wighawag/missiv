@@ -3,7 +3,7 @@ import {Bindings, MiddlewareHandler} from 'hono/types';
 import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
 import type {PushNotifier} from './push.js';
-import type {Stores} from './stores/ports.js';
+import type {LiveInboxHost, Stores} from './stores/ports.js';
 import type {ServerTokenBuckets} from './rate-limit.js';
 
 export type ServerObjectStorage = {
@@ -88,6 +88,14 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 	 * configured by the RATE_LIMIT_* env. Resolved once per `createServer`.
 	 */
 	getTokenBuckets?: (env: Env) => ServerTokenBuckets;
+	/**
+	 * The Inbox's live side held in this process (nodejs, bun:
+	 * `createInProcessLiveInbox`): with it the server serves `GET
+	 * /api/inbox/ws` and pushes every new message and conversation update to the
+	 * members' open sockets. Without it (cf-worker, until its Inbox Durable
+	 * Object) the route is absent.
+	 */
+	liveInbox?: LiveInboxHost;
 	getEnv: (c: Context<{Bindings: Env}>) => Env;
 	/**
 	 * The notifier of new direct messages; by default the one PUSH_SERVER_URL and

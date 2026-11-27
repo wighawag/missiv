@@ -20,7 +20,9 @@ import {
 	type MessageToSend,
 	type ResponseSendMessage,
 } from '@missiv/common';
-import {createServer, migrate, type PushNotifier} from '@missiv/server';
+import {createInProcessLiveInbox, createServer, migrate, type PushNotifier} from '@missiv/server';
+import {serve} from '@hono/node-server';
+import {createNodeWebSocket} from '@hono/node-ws';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
 import {API, composeIntroduction, composeMessage} from '@missiv/client';
@@ -141,6 +143,10 @@ export function mintSessionToken(secret: string, claims: SessionClaims): string 
  * long history from one account is not rate limited; a test of the limits passes
  * its own. `getIP` is the caller's IP as a platform finds it (none by default,
  * and an unknown IP is not limited per IP).
+ * Its live inbox is held in process as on Node.js (`liveInbox`); `listen()` serves
+ * the same app on a loopback port (with `@hono/node-ws`, as the Node.js platform
+ * does) for the tests that need a real WebSocket, the live channel's, and
+ * answers its URL.
  */
 export function createHarness(
 	env: Record<string, string | undefined> = {},
@@ -162,7 +168,13 @@ export function createHarness(
 			return typeof value === 'function' ? value.bind(target) : value;
 		},
 	});
-	const app = createServer({
+	const liveInbox = createInProcessLiveInbox();
+	// node-ws routes an upgrade request through the app, which is built below
+	let app: ReturnType<typeof createServer>;
+	const nodeWebSocket = createNodeWebSocket({
+		app: {request: (...args: Parameters<typeof app.request>) => app.request(...args)} as any,
+	});
+	app = createServer({
 		services: {
 			getDB() {
 				return recorded;
@@ -179,9 +191,8 @@ export function createHarness(
 		},
 		getPushNotifier: options?.notifier ? () => options.notifier : undefined,
 		getIP: options?.getIP,
-		upgradeWebSocket() {
-			return (() => {}) as any;
-		},
+		liveInbox,
+		upgradeWebSocket: nodeWebSocket.upgradeWebSocket as any,
 	});
 	const api = new API(SERVER_URL, {fetch: app.request as any});
 
@@ -192,7 +203,53 @@ export function createHarness(
 		return ready;
 	}
 
-	return {app, api, db, env, queries, setupDatabase, ...createActions(api, {before: setupDatabase})};
+	let server: ReturnType<typeof serve> | undefined;
+	let listening: Promise<string> | undefined;
+	/** serve the app on a loopback port (once); its URL */
+	function listen(): Promise<string> {
+		listening ??= setupDatabase().then(
+			() =>
+				new Promise<string>((resolve) => {
+					server = serve({fetch: app.fetch, port: 0, hostname: '127.0.0.1'}, (info) =>
+						resolve(`http://127.0.0.1:${info.port}`),
+					);
+					nodeWebSocket.injectWebSocket(server);
+				}),
+		);
+		return listening;
+	}
+	/** cut every open WebSocket, as a lost network would (no close frame); the server goes on */
+	function dropSockets() {
+		for (const client of nodeWebSocket.wss.clients) {
+			client.terminate();
+		}
+	}
+	/** stop serving: every socket closed, the port released */
+	async function close() {
+		if (!server) {
+			return;
+		}
+		for (const client of nodeWebSocket.wss.clients) {
+			client.terminate();
+		}
+		await new Promise((resolve) => server!.close(resolve));
+		server = undefined;
+		listening = undefined;
+	}
+
+	return {
+		app,
+		api,
+		db,
+		env,
+		queries,
+		liveInbox,
+		listen,
+		dropSockets,
+		close,
+		setupDatabase,
+		...createActions(api, {before: setupDatabase}),
+	};
 }
 
 export type Actions = ReturnType<typeof createActions>;

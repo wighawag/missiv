@@ -13,6 +13,8 @@ import {validateJSON} from '../../errors.js';
 import {MAX_PAGE_SIZE, type ResponseListConversations, type ResponseListMessages} from '@missiv/common';
 import {Env} from '../../env.js';
 import {otherMemberOf} from '../conversation.js';
+import {deliverConversation} from '../../delivery.js';
+import type {Context} from 'hono';
 
 /**
  * The reads and the status changes of direct messaging (ADR-0006 "API"), every
@@ -21,6 +23,18 @@ import {otherMemberOf} from '../conversation.js';
  * `/api/messages/send`.
  */
 export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	/** the changed inbox row to the user's own sockets, after the response */
+	function changed(c: Context, user: `0x${string}`, key: {domain: string; namespace: string; conversationID: string}) {
+		const delivered = deliverConversation(options, c.get('config').stores, user, {
+			domain: key.domain,
+			namespace: key.namespace,
+			conversationID: key.conversationID,
+		});
+		if (options.waitUntil) {
+			options.waitUntil(c, delivered);
+		}
+	}
+
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
 		.post('/listMessages', validateJSON(ActionListMessagesSchema), async (c) => {
@@ -49,6 +63,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const {account} = requireAccount(c, action.domain);
 			otherMemberOf(action.conversationID, account);
 			await c.get('config').stores.inbox.accept(account, action);
+			changed(c, account, action);
 			return c.json({success: true} as const);
 		})
 		.post('/reject', validateJSON(ActionRejectSchema), async (c) => {
@@ -56,6 +71,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const {account} = requireAccount(c, action.domain);
 			const other = otherMemberOf(action.conversationID, account);
 			await c.get('config').stores.inbox.reject(account, action, other, Date.now());
+			changed(c, account, action);
 			return c.json({success: true} as const);
 		})
 		.post('/unblock', validateJSON(ActionUnblockSchema), async (c) => {
@@ -69,6 +85,7 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 			const {account} = requireAccount(c, action.domain);
 			otherMemberOf(action.conversationID, account);
 			await c.get('config').stores.inbox.markRead(account, action, action.seq);
+			changed(c, account, action);
 			return c.json({success: true} as const);
 		});
 

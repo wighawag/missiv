@@ -452,3 +452,17 @@ export {
 } from './message.js';
 
 export {newULID, ulidAt, ulidTime} from './ids.js';
+
+export {
+	INBOX_WS_PATH,
+	INBOX_WS_PROTOCOL,
+	INBOX_CLOSE_SESSION_EXPIRED,
+	INBOX_SESSION_EXPIRED_REASON,
+	MAX_SYNC_CONVERSATIONS,
+	InboxSyncSchema,
+	inboxConversationKey,
+	parseInboxConversationKey,
+	type InboxSync,
+	type InboxClientFrame,
+	type InboxServerFrame,
+} from './inbox.js';

@@ -273,6 +273,14 @@ export class SQLInbox implements Inbox {
 			.all();
 	}
 
+	async getConversation(user: Address, key: ConversationKey): Promise<Conversation | undefined> {
+		const {results} = await this.db
+			.prepare(`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`)
+			.bind(user, key.domain, key.namespace, key.conversationID)
+			.all<InboxRow>();
+		return results[0] ? formatConversation(results[0]) : undefined;
+	}
+
 	async listConversations(
 		user: Address,
 		scope: {domain: string; namespace: string},

@@ -13,10 +13,11 @@
 // content, as the 0.5 adapter sent a placeholder: the server's work is the
 // same for either scheme (the schema, the content's SHA-256 and the Ed25519
 // verification, one row), and the client's encryption stays out of the numbers.
-import {conversationIDOf} from '@missiv/common';
+import {conversationIDOf, INBOX_WS_PATH, INBOX_WS_PROTOCOL, type InboxServerFrame} from '@missiv/common';
+import WebSocket from 'ws';
 import {createRemoteActions, createUser, DOMAIN, type TestUser} from '../../../client-server/test/setup.js';
 import {joinRoom} from './rooms.js';
-import type {Adapter, AdapterFactory, LoadUser} from './types.js';
+import type {Adapter, AdapterFactory, InboxConnection, LoadUser, Target} from './types.js';
 
 type User = LoadUser & TestUser;
 
@@ -62,10 +63,49 @@ export function v0_6(options: {readNewestPage?: boolean} = {}): AdapterFactory {
 			async listConversations(user) {
 				return (await actions.conversations(asUser(user))).length;
 			},
+			async openInbox(user) {
+				const {token} = await actions.api.getSession(DOMAIN, {privateKey: asUser(user).keySet.signing.privateKey});
+				return openInbox(target, token);
+			},
 			joinRoom(user, room, joinOptions) {
 				return joinRoom(target, asUser(user), room, joinOptions);
 			},
 		};
 		return adapter;
+	};
+}
+
+/**
+ * A socket on the live inbox channel with a session token (presented at the
+ * upgrade, as `@missiv/client` presents it), resolved once open.
+ */
+async function openInbox(target: Target, token: string): Promise<InboxConnection> {
+	const ws = new WebSocket(`${target.url.replace(/^http/, 'ws')}${INBOX_WS_PATH}`, [INBOX_WS_PROTOCOL, token]);
+	const listeners: ((content: string, at: number) => void)[] = [];
+	ws.on('message', (raw) => {
+		const receivedAt = performance.now();
+		const frame = JSON.parse(raw.toString()) as InboxServerFrame;
+		if (frame.type === 'message') {
+			listeners.forEach((l) => l(frame.message.content, receivedAt));
+		}
+	});
+	await new Promise<void>((resolve, reject) => {
+		ws.once('open', () => resolve());
+		ws.once('error', reject);
+	});
+	return {
+		onMessage(listener) {
+			listeners.push(listener);
+		},
+		close() {
+			return new Promise((resolve) => {
+				if (ws.readyState === WebSocket.CLOSED) {
+					resolve();
+					return;
+				}
+				ws.once('close', () => resolve());
+				ws.close();
+			});
+		},
 	};
 }

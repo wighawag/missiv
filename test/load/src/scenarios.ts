@@ -7,10 +7,10 @@
 // out at a fixed rate whatever the answers, and each is timed until its last
 // delivery.
 import {performance} from 'node:perf_hooks';
-import type {Adapter, LoadConversation, LoadUser, RoomConnection} from './adapters/types.js';
+import type {Adapter, InboxConnection, LoadConversation, LoadUser, RoomConnection} from './adapters/types.js';
 import {summarize, type Summary} from './stats.js';
 
-export const SCENARIOS = ['send', 'read', 'list', 'room'] as const;
+export const SCENARIOS = ['send', 'read', 'list', 'live', 'room'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export type Parameters = {
@@ -175,6 +175,78 @@ export async function runList(adapter: Adapter, world: World, p: Parameters): Pr
 		conversationsPerList: r.latencies.length ? listed / r.latencies.length : 0,
 		...codes(r.errors),
 	});
+}
+
+/**
+ * Live fan-out: every user of the world holds its live inbox socket, then the
+ * `send` loop runs (each client sending in its conversations, one after
+ * another) and every message is timed from the start of its send to its
+ * arrival on the sockets it is pushed to: the recipient's and the sender's own
+ * (its other devices). `live` is the time to the recipient's socket,
+ * `live-own` to the sender's, `live-send` the send itself (the HTTP answer,
+ * with the sockets open); a message not pushed to both within 5 s of the last
+ * delivery is `incomplete`. Each message is named by its content.
+ */
+export async function runLive(
+	adapter: Adapter,
+	world: World,
+	p: Parameters,
+	log: (s: string) => void,
+): Promise<Summary[]> {
+	if (!adapter.openInbox) {
+		throw new Error(`the ${adapter.name} adapter has no live inbox channel`);
+	}
+	const t = performance.now();
+	const sockets: InboxConnection[] = await mapLimit(world.users, 16, (u) => adapter.openInbox!(u));
+	log(`setup: ${sockets.length} live inbox sockets opened in ${ms(t)}`);
+	try {
+		const run = Math.random().toString(36).slice(2, 8);
+		const pattern = new RegExp(`^live-${run}-(\\d+)-(\\d+):`);
+		/** per message (`client-round`): when its send started, who sent it, to whom */
+		const sent = new Map<string, {at: number; from: number; to: number}>();
+		const toRecipient: number[] = [];
+		const toSender: number[] = [];
+		const index = new Map(world.users.map((u, i) => [u, i]));
+		sockets.forEach((socket, i) => {
+			socket.onMessage((text, receivedAt) => {
+				const match = pattern.exec(text);
+				const entry = match && sent.get(`${match[1]}-${match[2]}`);
+				if (!entry) {
+					return;
+				}
+				if (i === entry.to) {
+					toRecipient.push(receivedAt - entry.at);
+				} else if (i === entry.from) {
+					toSender.push(receivedAt - entry.at);
+				}
+			});
+		});
+		const r = await closedLoop(world.users.length, p.duration * 1000, (client, round) => {
+			const mine = world.byUser[client];
+			const conversation = mine[round % mine.length];
+			const other = conversation.members[0] === world.users[client] ? conversation.members[1] : conversation.members[0];
+			sent.set(`${client}-${round}`, {at: performance.now(), from: client, to: index.get(other)!});
+			return adapter.send(world.users[client], conversation, content(p.size, `live-${run}-${client}-${round}`));
+		});
+		// the deliveries still in flight: until every sent message reached both sockets, or 5 s without one
+		const expected = r.latencies.length;
+		let idleSince = performance.now();
+		let seen = toRecipient.length + toSender.length;
+		while ((toRecipient.length < expected || toSender.length < expected) && performance.now() - idleSince < 5000) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			if (toRecipient.length + toSender.length !== seen) {
+				seen = toRecipient.length + toSender.length;
+				idleSince = performance.now();
+			}
+		}
+		return [
+			summarize('live-send', r.latencies, r.elapsed, r.errorCount, {sockets: sockets.length, ...codes(r.errors)}),
+			summarize('live', toRecipient, r.elapsed, 0, {incomplete: expected - toRecipient.length}),
+			summarize('live-own', toSender, r.elapsed, 0, {incomplete: expected - toSender.length}),
+		];
+	} finally {
+		await Promise.all(sockets.map((s) => s.close()));
+	}
 }
 
 function codes(errors: Record<string, number>) {

@@ -16,8 +16,7 @@
 		otherUser,
 		endpoint: PUBLIC_MISSIV_HTTP_ENDPOINT,
 		namespace: 'default',
-		markAsAcceptedAndRead: false,
-		pollingInterval: 2
+		markAsAcceptedAndRead: false
 	});
 
 	let message = $state('');

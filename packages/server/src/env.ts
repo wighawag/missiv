@@ -37,6 +37,12 @@ export type Env = {
 	 */
 	RATE_LIMIT_IP_BURST?: string;
 	RATE_LIMIT_IP_REFILL_PER_SECOND?: string;
+	/**
+	 * `true` to send no Web Push to a recipient who has the live channel open
+	 * (`/api/inbox/ws`) in the message's domain, where the message is pushed on
+	 * the socket already; unset, every recipient is pushed, online or not
+	 */
+	PUSH_SKIP_WHEN_ONLINE?: string;
 	/** the JSON-RPC endpoint of a chain, for contract-gated rooms */
 	[chainId: `CHAIN_${string}`]: string | undefined;
 };

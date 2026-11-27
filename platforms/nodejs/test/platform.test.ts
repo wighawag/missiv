@@ -1,11 +1,13 @@
 // The nodejs platform's app, built as the CLI builds it and exercised through
-// app.request: no port is opened. Rooms need a real socket, so here only their
-// route's refusals are checked; the Room itself is tested in test/client-server.
+// app.request, and once served on a loopback port for the live inbox channel's
+// real WebSocket. Rooms need a real socket, so here only their route's refusals
+// are checked; the Room itself is tested in test/client-server.
 import {describe, it, expect} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {deriveKeySet, originPublicKeyPublicationMessage} from 'delegated-identity';
 import {API, composeMessage} from '@missiv/client';
-import {conversationIDOf} from '@missiv/common';
+import {conversationIDOf, INBOX_WS_PATH, INBOX_WS_PROTOCOL, type InboxServerFrame} from '@missiv/common';
+import {serve} from '@hono/node-server';
 import {createNodeServer} from '../src/index.js';
 
 const DOMAIN = 'test.com';
@@ -62,6 +64,59 @@ describe('nodejs platform', () => {
 		);
 		expect(conversations.map((c) => c.lastSeq)).toEqual([1]);
 		expect(messages.map((m) => [m.seq, m.content])).toEqual([[1, message.content]]);
+	});
+
+	it("serves the live inbox channel: a message sent by one member reaches the other's open socket", async () => {
+		const {app, injectWebSocket} = await createNodeServer({
+			db: ':memory:',
+			env: {SESSION_SECRET: 'test-session-secret'},
+		});
+		const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
+			const s = serve({fetch: app.fetch, port: 0, hostname: '127.0.0.1'}, () => resolve(s));
+		});
+		injectWebSocket(server);
+		try {
+			const url = `http://127.0.0.1:${(server.address() as {port: number}).port}`;
+			const api = new API(url);
+			const [a, b] = await Promise.all([createUser(), createUser()]);
+			for (const user of [a, b]) {
+				await api.register(
+					{
+						type: 'register',
+						domain: DOMAIN,
+						appOrigin: APP_ORIGIN,
+						address: user.address,
+						keySet: {
+							signing: {publicKey: user.keySet.signing.publicKey},
+							encryption: {publicKey: user.keySet.encryption.publicKey},
+						},
+						ownershipSignature: user.ownershipSignature,
+					},
+					{privateKey: user.keySet.signing.privateKey},
+				);
+			}
+			const {token} = await api.getSession(DOMAIN, {privateKey: b.keySet.signing.privateKey});
+			const ws = new WebSocket(url.replace(/^http/, 'ws') + INBOX_WS_PATH, [INBOX_WS_PROTOCOL, token]);
+			const received = new Promise<InboxServerFrame>((resolve) =>
+				ws.addEventListener('message', (event) => resolve(JSON.parse(String(event.data)))),
+			);
+			await new Promise((resolve, reject) => {
+				ws.addEventListener('open', resolve);
+				ws.addEventListener('error', reject);
+			});
+			const message = await composeMessage({
+				destination: {domain: DOMAIN, namespace: ''},
+				sender: {address: a.address, keySet: a.keySet},
+				recipient: {address: b.address, keySet: b.keySet},
+				text: 'live',
+			});
+			await api.sendMessage({type: 'sendMessage', message}, {privateKey: a.keySet.signing.privateKey});
+			const frame = await received;
+			expect(frame.type === 'message' && [frame.message.seq, frame.message.content]).toEqual([1, message.content]);
+			ws.close();
+		} finally {
+			await new Promise((resolve) => server.close(resolve));
+		}
 	});
 
 	it('refuses a room name that does not start with @', async () => {
