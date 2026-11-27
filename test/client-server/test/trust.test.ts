@@ -185,6 +185,45 @@ describe("each message's signature is verified on read", () => {
 		}
 	});
 
+	it('refuses a clear message from a conversation the reader is not in, though its sender signed it', async () => {
+		await h.send({from: A, to: C, content: 'for C only', scheme: 'clear'});
+		const [toC] = await h.messages(C, conversationIDOf([A.address, C.address]));
+		expect(await openMessage(toC, reader(C), h.api)).toMatchObject({content: 'for C only'});
+		expect((await openMessage(toC, reader(B), h.api)).error?.code).toBe('unverified');
+	});
+
+	it('shows a message the server serves from another namespace or conversation as unverified in the thread', async () => {
+		const conversationID = conversationIDOf([A.address, B.address]);
+		await sentByA('in the thread');
+		await h.send({from: A, to: B, content: 'elsewhere', scheme: 'pairwise-v1', namespace: 'other'});
+		const [elsewhere] = await h.messages(B, conversationID, {namespace: 'other'});
+		await h.send({from: A, to: C, content: 'for C only', scheme: 'clear'});
+		const [toC] = await h.messages(C, conversationIDOf([A.address, C.address]));
+		// the server answers B's thread with both foreign messages added, under new seqs
+		const relabelling = (async (input: any, init?: any) => {
+			const response: Response = await h.app.request(input, init);
+			if (String(input).endsWith('/api/private/listMessages') && response.ok) {
+				const body = await response.json();
+				const top = Math.max(0, ...body.messages.map((m: Message & {seq: number}) => m.seq));
+				if (body.messages.length > 0) {
+					body.messages.push({...elsewhere, seq: top + 1}, {...toC, seq: top + 2});
+				}
+				return new Response(JSON.stringify(body), {status: 200, headers: {'content-type': 'application/json'}});
+			}
+			return response;
+		}) as typeof fetch;
+
+		const conversation = conversationOf(B, A, relabelling);
+		const state = await until(conversation, (s) => s.step === 'Fetched' && s.messages.length === 3);
+		if (state.step !== 'Fetched') throw new Error('unreachable');
+		expect(state.messages.map((m) => m.content ?? m.error?.code)).toEqual([
+			'in the thread',
+			'unverified',
+			'unverified',
+		]);
+		expect(conversationID).toBe(state.conversationID);
+	});
+
 	it('shows an undecryptable message as such and the rest of the thread as text', async () => {
 		await sentByA('readable');
 		// a message A signed, whose content is not a ciphertext B can open: the

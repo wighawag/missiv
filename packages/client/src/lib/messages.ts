@@ -378,6 +378,12 @@ export async function openMessage(
 			return unverified();
 		}
 		if (valid.scheme === 'clear') {
+			// a clear message is shown only to a member of its conversation: one the
+			// server moved in from a conversation the reader is not in is refused, as
+			// 0.5's recipient check did (an encrypted one is undecryptable there anyway)
+			if (pair && !members?.includes(reader.address.toLowerCase() as Address)) {
+				return unverified();
+			}
 			return { ...rest, content: valid.content };
 		}
 		const keyRefs = keyRefsOfPairwiseKeyID(valid.keyID);

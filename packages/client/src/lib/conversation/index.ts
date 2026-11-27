@@ -4,6 +4,7 @@ import {
 	ulidAt,
 	type Address,
 	type KeySet,
+	type Message,
 	type PublicKeySet
 } from '@missiv/common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
@@ -16,6 +17,15 @@ import {
 	verifyDomainUser,
 	type OpenedMessage
 } from '$lib/messages.js';
+
+/** A message the server returned for another scope than the thread asked for: never opened. */
+function notThisConversation(message: Message): OpenedMessage {
+	const { content: _, ...rest } = message;
+	return {
+		...rest,
+		error: { code: 'unverified', message: 'this message is not from this conversation' }
+	};
+}
 
 export type OtherUser = {
 	address: Address;
@@ -144,8 +154,16 @@ export function openOneConversation(params: {
 						{ privateKey }
 					);
 					// a key set fetch that fails throws here: the cursor stays, the next poll retries
+					// a message the server returns for another scope (domain, namespace or
+					// conversation) is not this thread's: shown as unverified, never opened
 					const fresh = await Promise.all(
-						page.messages.map((message) => openMessage(message, reader, api))
+						page.messages.map((message) =>
+							message.domain === domain &&
+							message.namespace === namespace &&
+							message.conversationID === conversationID
+								? openMessage(message, reader, api)
+								: Promise.resolve(notThisConversation(message))
+						)
 					);
 					if (!ctx.active) {
 						return;
