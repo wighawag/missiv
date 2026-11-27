@@ -2,6 +2,8 @@
 status: accepted
 ---
 
+> Amended by ADR-0004 (proposed): the keys become an Ed25519 signing key and an X25519 encryption key named in the wallet's publication, a message is one ciphertext with one signature the server also checks, and the cipher and hashes change (AES-256-GCM, SHA-256). The trust model below is unchanged; the format details of 0.4 and 0.5 described below are superseded once 0.6 lands.
+
 # The client verifies every key and message; the server only relays
 
 missiv's server is an untrusted relay for content and authorship: the client trusts no key it has not checked against the wallet's own ownership proof, and no message it has not checked against its sender's signature. This was chosen over the server as the key directory of record (where a compromised server hands out its own key and reads every direct message, and turns any message into clear text by denying a registration), because the proofs were already there to check: a wallet authorizes a delegate key for an app origin once (delegated-identity's publication message, byte-identical to `@etherplay/connect-core`'s), and that key signs everything else.

@@ -1,0 +1,42 @@
+---
+status: proposed
+---
+
+# Ed25519/X25519 keys in the wallet's publication, one ciphertext per message, and message signatures the server also checks
+
+Amends ADR-0003 (the client still verifies every key and message; the server still only relays). Decided with the human on 2026-11-27 while redesigning missiv for throughput (spec `scalable-direct-messaging`).
+
+**1. The wallet's publication names an Ed25519 signing key and an X25519 encryption key.** The publication message (owned by `delegated-identity`, signed by the wallet at sign-in through `@etherplay/connect`) stops naming the secp256k1 origin key and names, algorithm-tagged, an Ed25519 key that signs (requests, sessions, messages) and an X25519 key others encrypt to. `delegated-identity` derives both deterministically from the origin private key (HKDF-SHA256, a separate label per key, never one converted into the other), so every device of a wallet derives the same pair and ADR-0003's one-key-per-wallet-and-domain model holds. The secp256k1 origin key stays, for on-chain delegations only.
+
+This is a breaking change across `delegated-identity`, `@etherplay/connect` (its wallet-host popup included), missiv, push-notification-server and etherfold's trigger service, made as an edit rather than a versioned message because no production app depends on them (the human, 2026-11-27). A hosted (popup) account can only sign at sign-in, so connect treats a stored account as signed out unless its saved publication signature verifies for the new message (the presence of keys proves nothing, an app can derive them): every previously connected account signs the new message once, hosted ones by signing in again, wallets by one prompt. The services that verify the shared identity are listed in `work/notes/findings/shared-identity-across-services.md`.
+
+Why these keys. Measured on Node 24 (2026-11-27): Ed25519 verify 0.068 ms and sign 0.026 ms through WebCrypto (0.86 ms in pure JS with `@noble/curves`), X25519 agreement 0.031 ms (0.56 ms in JS), against today's secp256k1 recovery 1.35 ms and secp256k1 agreement 1.66 ms. Both are native in WebCrypto on every target, per MDN's compatibility data, Cloudflare's Web Crypto docs and Bun's release notes: Chrome 137 / 133, Firefox 129 / 130, Safari 17, Node 16.17, Workers, Bun (X25519 `deriveBits` from 1.3.13). Older browsers fall back to `@noble/curves`, still faster than today. Ed25519/X25519 is MLS's mandatory cipher suite, which the sender-key future wants. Implementations disagree on Ed25519 edge cases and WebCrypto's rule cannot be configured (OpenSSL, BoringSSL and Safari each apply their own), so `delegated-identity` runs cheap JS pre-checks before the native verify (a canonical `S < L`, small-order `A` and `R` rejected): every verifier then accepts the same set of signatures. WebCrypto cannot import a raw Ed25519 / X25519 private seed, so the derivation runs in JS (`@noble`) once at sign-in and WebCrypto serves the hot path. On a plain-http origin (no secure context, so no `crypto.subtle`) everything falls back to `@noble`.
+
+**2. The pairwise cipher suite: X25519, HKDF-SHA256, AES-256-GCM, SHA-256.** In 1:1 (`pairwise-v1`) the content key of each message is HKDF-SHA256 of the two members' X25519 shared secret, the message's scope (domain, namespace, conversation, messageID, keyID) as info, so every message has its own key and AES-GCM's random 96-bit nonce bound never applies. AES-256-GCM replaces XChaCha20-Poly1305: no WebCrypto implements ChaCha, so today's cipher always runs in JS, while AES-GCM is native and hardware-accelerated everywhere (16 KB: 0.015 ms against 0.067 ms). SHA-256 replaces keccak for content hashes and derivations (native; waxdb made the same call, its DECISIONS.md #17); keccak remains only in the wallet's EIP-191 signature, where Ethereum requires it.
+
+**3. One ciphertext per message.** A message is stored once per conversation, not once per recipient. It carries `scheme` and `keyID`: in 1:1 `scheme` is `pairwise-v1`, both members decrypt the same ciphertext (the sender's own copy disappears), and `keyID` names the pair of key sets. A later `sender-key-v1` / `mls-v1` scheme reuses the same row: `keyID` then names a sender-key chain or an MLS epoch whose keys reach members through a separate key-envelope table. Clear introductions use the same row with `scheme: clear`.
+
+**4. The server checks the message signature, which also authorizes the send.** A message signature (Ed25519 over `missiv message` with domain, namespace, conversation, a client-chosen messageID (a ULID, so it carries its time), sender, scheme, keyID and the content's SHA-256) is verified by the server against the sender's registered key before storing, so a forged or corrupted message is refused instead of stored as `unverified` forever. Because it names a unique messageID, it replaces the request signature on sends: a replay is a duplicate messageID in the conversation, answered as the retry it may be (same signature: success with the stored sequence number) and refused otherwise; the server also refuses a messageID whose time is outside a window of its own clock. The replay table is no longer written on sends; it stays, for the 60 s window, only for session opening and registration (ADR-0006). The client still verifies every message itself (ADR-0003 unchanged): the server's check is defence in depth and a write filter, never a reason to trust it.
+
+**5. Sessions.** The client opens a session with one `delegated-identity` signed request (Ed25519, remembered for its window so it cannot be replayed into a second token) and the server returns a short-lived token (HMAC-SHA256 over account, domain, key set and expiry with a server secret) that every later request and socket presents: no per-request signature check and no per-request directory lookup (0.008 ms per check, measured).
+
+**Post-quantum, deferred.** A quantum computer breaks secp256k1, Ed25519 and X25519 alike, so this is no regression; the exposure that matters is encryption (ciphertext recorded now, decrypted later), not signatures. The expected path is a hybrid X25519 + ML-KEM-768 key exchange (as TLS's X25519MLKEM768, Signal's PQXDH, Apple's PQ3) inside a session or ratchet scheme, which suits sender keys or MLS rather than the static pairwise key. Not built now: the publication's keys are algorithm-tagged and every message names its `scheme`, so adding a post-quantum key is a new publication (one more sign-in) and a new scheme, not a format change.
+
+## Considered options
+
+- **Keep the publication naming the secp256k1 origin key and bind the new keys under it** (an origin-key signature over the Ed25519/X25519 keys): rejected once breaking was allowed; it adds a signature to every proof and makes the wallet's authorization of the messaging keys transitive, only to spare one re-sign.
+- **Keep secp256k1 for everything**: rejected on cost (above).
+- **P-256 (ECDSA/ECDH)**: native for longer and as fast, but randomized signatures and no gain over the 25519 pair, which MLS and Signal already use.
+- **Keep XChaCha20-Poly1305**: its 192-bit random nonce is its edge, made moot by per-message keys; it costs a JS implementation everywhere.
+- **Publish a deterministically derived ML-KEM-768 key (or its hash) now** to spare a future re-sign: deferred; nothing would use it yet and it commits to a derivation before the scheme that needs it is designed.
+- **Keep per-recipient copies**: rejected; it multiplies writes and storage by the member count and is the shape sender keys exist to remove.
+- **Keep request signatures on sends as well**: rejected; two signatures over the same act, plus two writes per send for the replay table.
+
+## Consequences
+
+- The wire and store details (conversation identity, signing payload, idempotent sends, blocks, live channel, API) are in ADR-0006.
+- missiv 0.6 starts from an empty database, as 0.4 did; messages stored by 0.5 are not migrated.
+- Order of work: `delegated-identity` (the message, the derivation, the request envelope), then `@etherplay/connect` and its popup, then missiv, push-notification-server and the trigger service, then the apps.
+- The Bun platform requires Bun 1.3.13 or later.
+- Messages encrypted to a replaced key set stay readable only by its keys; `keyID` makes that explicit per message.
+- ADR-0003's limits otherwise stand (no forward secrecy in `pairwise-v1`, metadata visible to the server); `sender-key-v1` is where forward secrecy would come from.
