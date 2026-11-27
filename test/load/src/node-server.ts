@@ -11,9 +11,15 @@ import {createNodeServer} from 'missiv';
 // The rate limits raised out of reach (every client registers from 127.0.0.1 and
 // sends in a closed loop): the run measures the server, not its token buckets
 const LOAD_RATE_LIMITS = {RATE_LIMIT_SEND_BURST: '1000000000', RATE_LIMIT_IP_BURST: '1000000000'};
+// INBOX_TRANSPORTS from the harness's env (`INBOX_TRANSPORTS=poll pnpm load poll`:
+// every poll reads its version from SQL, as several instances would)
 const {app, injectWebSocket} = await createNodeServer({
 	db: ':memory:',
-	env: {SESSION_SECRET: 'load-harness-session-secret', ...LOAD_RATE_LIMITS},
+	env: {
+		SESSION_SECRET: 'load-harness-session-secret',
+		...LOAD_RATE_LIMITS,
+		...(process.env.INBOX_TRANSPORTS ? {INBOX_TRANSPORTS: process.env.INBOX_TRANSPORTS} : {}),
+	},
 });
 const server = serve({fetch: app.fetch, port: 0, hostname: '127.0.0.1'}, (info) => {
 	parentPort?.postMessage({port: info.port});

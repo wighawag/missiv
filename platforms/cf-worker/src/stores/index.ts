@@ -108,6 +108,9 @@ export function createCloudflareStores(env: CloudflareWorkerEnv, cache: KeyDirec
 			async unblock(user, domain, blocked) {
 				await inbox(domain, user).unblock(owner(domain, user), blocked);
 			},
+			async changes(user, domain, page) {
+				return inbox(domain, user).changes(owner(domain, user), page);
+			},
 			async markRead(user, key, seq) {
 				await inbox(key.domain, user).markRead(owner(key.domain, user), conversationKeyOf(key), seq);
 			},

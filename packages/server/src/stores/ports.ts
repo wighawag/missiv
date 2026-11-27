@@ -13,6 +13,7 @@ import type {
 	Conversation,
 	ConversationStatus,
 	InboxServerFrame,
+	ResponseInboxChanges,
 	Message,
 	MessageToSend,
 	PublicKey,
@@ -61,6 +62,9 @@ export type InboxUpdate = ConversationKey & {
 	 */
 	own: boolean;
 };
+
+/** What `Inbox.changes` answers: the wire's `ResponseInboxChanges`. */
+export type InboxChanges = ResponseInboxChanges;
 
 /** A recipient a new message is pushed to: registered in the domain, not the sender, not one who blocked them. */
 export type PushRecipient = {address: Address; appOrigin: string};
@@ -115,10 +119,22 @@ export interface ConversationStore {
  * Inbox: per user, their conversation list (ordered by last message, filtered
  * by status, with unread state from `lastReadSeq`) and their domain-level
  * blocks. Its live side (pushed frames) is `LiveInbox`.
+ *
+ * Every change of a row gives it the user's next inbox version in the domain
+ * (`Conversation.version`, `@missiv/common`'s inbox.ts): a write that changes
+ * nothing (an update at or below `lastSeq`, an accept of an accepted row, a
+ * markRead that reads nothing new) takes none, and `unblock` changes no row.
  */
 export interface Inbox {
 	/** apply an update if its seq is above the row's `lastSeq`; a no-op otherwise */
 	update(update: InboxUpdate): Promise<void>;
+	/**
+	 * the user's rows in `domain` (every namespace) changed after the version
+	 * `since`, oldest change first, at most `limit` (the polling transport,
+	 * `POST /api/inbox/changes`): `unchanged` when none did; every row when
+	 * `since` is above the inbox's version
+	 */
+	changes(user: Address, domain: string, page: {since: number; limit: number}): Promise<InboxChanges>;
 	/** one row of the user's inbox (what a `conversation` frame carries), if the user has it */
 	getConversation(user: Address, key: ConversationKey): Promise<Conversation | undefined>;
 	listConversations(

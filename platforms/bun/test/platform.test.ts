@@ -4,6 +4,7 @@
 // platform once went unrun for a release (observation
 // `bun-and-cf-worker-platforms-not-run-since-0-4`): this runs it.
 import {afterAll, beforeAll, describe, expect, it} from 'bun:test';
+import {Database} from 'bun:sqlite';
 import {createBunServer} from '../src/server.js';
 import {INBOX_WS_PATH, INBOX_WS_PROTOCOL, type InboxServerFrame} from '@missiv/common';
 import {
@@ -80,6 +81,41 @@ describe('bun platform', () => {
 		expect(frames.map((frame) => frame.type)).toEqual(['message', 'conversation']);
 		expect(frames[0].type === 'message' && frames[0].message.content).toBe('live on bun');
 		ws.close();
+	});
+
+	it('answers an unchanged inbox poll from memory, with no bun:sqlite statement, and a changed one from the database', async () => {
+		// a server of its own, on a database that records every statement it is asked to prepare
+		const database = new Database(':memory:', {strict: true});
+		const queries: string[] = [];
+		const query = database.query.bind(database);
+		database.query = ((sql: string) => {
+			queries.push(sql);
+			return query(sql);
+		}) as typeof database.query;
+		const own = await createBunServer({db: database, env: {DB: ':memory:', SESSION_SECRET: 'test-secret'}});
+		const ownServer = Bun.serve({port: 0, fetch: own.app.fetch, websocket: own.websocket});
+		try {
+			const remote = createRemoteActions(`http://127.0.0.1:${ownServer.port}`);
+			const [a, b]: TestUser[] = await Promise.all([createUser(), createUser()]);
+			await remote.registerAll([a, b]);
+			const as = {privateKey: b.keySet.signing.privateKey};
+			const poll = (since: number) => remote.api.inboxChanges({type: 'inboxChanges', domain: 'test.com', since}, as);
+
+			await remote.send({from: a, to: b, content: 'polled on bun'});
+			const read = queries.length;
+			const changed = await poll(0);
+			expect(queries.length).toBeGreaterThan(read);
+			if ('unchanged' in changed) throw new Error('expected a change');
+			expect(changed.conversations.map((c) => c.lastSeq)).toEqual([1]);
+
+			const before = queries.length;
+			for (let i = 0; i < 5; i++) {
+				expect(await poll(changed.version)).toEqual({version: changed.version, unchanged: true});
+			}
+			expect(queries.length).toBe(before);
+		} finally {
+			ownServer.stop(true);
+		}
 	});
 
 	it('answers its root', async () => {

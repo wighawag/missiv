@@ -17,7 +17,11 @@ import {
 	toStoreError,
 	type StoreError
 } from '$lib/utils/lifecycle.js';
-import { openInboxChannel, type CreateInboxSocket } from '$lib/inbox/index.js';
+import {
+	openInboxChannel,
+	type CreateInboxSocket,
+	type InboxTransportOption
+} from '$lib/inbox/index.js';
 import {
 	composeIntroduction,
 	composeMessage,
@@ -65,11 +69,12 @@ export type CurrentConversation = Readable<ConversationState> & {
 
 /**
  * One conversation of two, while subscribed: the newest page over HTTP once,
- * then the live inbox channel (`openInboxChannel`, one socket shared with the
- * account's other stores): every new message is pushed and opened once
- * (`openMessage`, each seq once), and after every (re)connection a `sync` asks
- * for what came after the last seq it has. No polling. A message this store
- * sends is shown from the send's answer, its echo on the socket ignored.
+ * then the live inbox channel (`openInboxChannel`, one channel shared with the
+ * account's other stores, on its socket or polling): every new message is
+ * passed on and opened once (`openMessage`, each seq once), and after every
+ * (re)connection a `sync` asks for what came after the last seq it has. The
+ * store itself polls nothing. A message this store sends is shown from the
+ * send's answer, its echo on the channel ignored.
  */
 export function openOneConversation(params: {
 	registration: MissivRegistrationStore;
@@ -89,6 +94,10 @@ export function openOneConversation(params: {
 	heartbeatIntervalMs?: number;
 	/** how long it waits for an answer before it gives the socket up and reconnects (default 10 s) */
 	heartbeatTimeoutMs?: number;
+	/** how the live channel reaches the server: `socket`, `poll`, or `auto` (default: the socket, polling when it keeps failing) */
+	transport?: InboxTransportOption;
+	/** the live channel's polling interval (default 5 s) */
+	pollIntervalMs?: number;
 }): CurrentConversation {
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 	const { domain, namespace } = params;
@@ -330,7 +339,9 @@ export function openOneConversation(params: {
 				createWebSocket: params.createWebSocket,
 				reconnectDelayMs: params.retryDelayMs,
 				heartbeatIntervalMs: params.heartbeatIntervalMs,
-				heartbeatTimeoutMs: params.heartbeatTimeoutMs
+				heartbeatTimeoutMs: params.heartbeatTimeoutMs,
+				transport: params.transport,
+				pollIntervalMs: params.pollIntervalMs
 			});
 			const unsubscribe = channel.subscribe({
 				onOpen() {

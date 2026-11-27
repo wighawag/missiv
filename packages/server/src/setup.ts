@@ -1,5 +1,6 @@
 import {MiddlewareHandler} from 'hono/types';
-import {ServerOptions} from './types.js';
+import type {RouteOptions, ServerOptions} from './types.js';
+import {inboxTransportsFromEnv} from './transports.js';
 import {Env} from './env.js';
 import {createSQLStores} from './stores/sql/index.js';
 import type {Stores} from './stores/ports.js';
@@ -144,7 +145,13 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 
 	return async (c, next) => {
 		const env = getEnv(c);
-		const stores = getStores ? getStores(env) : createSQLStores(getDB(env));
+		let stores = getStores ? getStores(env) : createSQLStores(getDB(env));
+		// one process's memory of the inbox versions (`stores/versions.ts`), answering
+		// from it only while the socket is offered (one instance)
+		const versions = (options.serverOptions as Partial<RouteOptions<CustomEnv>>).inboxVersionCache;
+		if (versions) {
+			stores = versions.wrap(stores, {answer: () => inboxTransportsFromEnv(env).socket});
+		}
 		c.set('config', {stores, env});
 
 		// a session token: an HMAC and a comparison, nothing read. A route that needs

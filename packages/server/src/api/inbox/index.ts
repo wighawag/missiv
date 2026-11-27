@@ -8,8 +8,10 @@ import {
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_SESSION_EXPIRED_REASON,
 	INBOX_WS_PROTOCOL,
+	ActionInboxChangesSchema,
 	InboxSyncSchema,
 	MAX_PAGE_SIZE,
+	type ResponseInboxChanges,
 	membersOfConversationID,
 	parseInboxConversationKey,
 	type InboxServerFrame,
@@ -18,8 +20,9 @@ import {
 } from '@missiv/common';
 import type {ServerOptions} from '../../types.js';
 import type {Env} from '../../env.js';
-import {sessionSecrets, setup} from '../../setup.js';
-import {MissivError} from '../../errors.js';
+import {requireAccount, sessionSecrets, setup} from '../../setup.js';
+import {MissivError, validateJSON} from '../../errors.js';
+import {requireInboxTransport} from '../../transports.js';
 import {verifySessionToken, type SessionClaims} from '../../session.js';
 import {watchIdle, type IdleWatch} from '../../heartbeat.js';
 import type {ConversationStore, Inbox, LiveConnection, LiveInboxHost, LiveInboxRouter} from '../../stores/ports.js';
@@ -146,6 +149,7 @@ export function getRoutedInboxAPI<CustomEnv extends Env>(
 ) {
 	return new Hono<{Bindings: CustomEnv}>().get('/ws', setup({serverOptions: options}), async (c) => {
 		const env = c.get('config').env as CustomEnv;
+		requireInboxTransport(env, 'socket');
 		const claims = checkInboxUpgrade(c.req.header('Sec-WebSocket-Protocol'), sessionSecrets(env), Date.now());
 		const response = await getRouter(env).accept(c.req.raw, claims);
 		return new Response(response.body, {
@@ -174,6 +178,7 @@ export function getInboxAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 		'/ws',
 		setup({serverOptions: options}),
 		async (c, next) => {
+			requireInboxTransport(c.get('config').env, 'socket');
 			const secrets = sessionSecrets(c.get('config').env);
 			c.set('session', checkInboxUpgrade(c.req.header('Sec-WebSocket-Protocol'), secrets, Date.now()));
 			return next();
@@ -181,6 +186,34 @@ export function getInboxAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 		upgradeWebSocket((c) => inboxSocketEvents(c.get('config').stores, c.get('session') as SessionClaims, live)),
 	);
 	return app;
+}
+
+/**
+ * `POST /api/inbox/changes` (the polling transport, `@missiv/common`'s
+ * inbox.ts): on a session token, the account's inbox rows in the token's
+ * domain changed after the version `since`, or `unchanged`. 404 where
+ * `INBOX_TRANSPORTS` leaves `poll` out. Served on every platform, from the
+ * stores alone (`Inbox.changes`).
+ */
+export function getInboxChangesAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+	return new Hono<{Bindings: CustomEnv}>().post(
+		'/changes',
+		setup({serverOptions: options}),
+		async (c, next) => {
+			requireInboxTransport(c.get('config').env, 'poll');
+			return next();
+		},
+		validateJSON(ActionInboxChangesSchema),
+		async (c) => {
+			const action = c.req.valid('json');
+			const {account} = requireAccount(c, action.domain);
+			const answer = await c.get('config').stores.inbox.changes(account, action.domain, {
+				since: action.since,
+				limit: action.limit ?? MAX_PAGE_SIZE,
+			});
+			return c.json(answer satisfies ResponseInboxChanges);
+		},
+	);
 }
 
 /**

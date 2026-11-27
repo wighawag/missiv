@@ -206,6 +206,12 @@ export type Conversation = {
 	lastReadSeq: number;
 	/** the server time of the newest message this member can see (ms) */
 	lastMessageAt: number;
+	/**
+	 * the member's inbox version at which this row last changed (`inbox.ts`'s
+	 * inbox version): above every earlier change of the member's rows in the
+	 * domain, below every later one
+	 */
+	version: number;
 };
 
 /** Whether a conversation has a message newer than the member's last read one. */
@@ -269,6 +275,28 @@ export type ResponseUnblock = {success: true};
 export const ActionMarkReadSchema = z.object({type: z.literal('markRead'), ...conversationFields, seq: SeqSchema});
 export type ActionMarkRead = z.infer<typeof ActionMarkReadSchema>;
 export type ResponseMarkRead = {success: true};
+
+/**
+ * The account's inbox rows in a domain (every namespace) that changed after
+ * the inbox version `since` (`inbox.ts`'s inbox version and polling; 0 for
+ * every row), oldest change first: the polling transport of the live inbox.
+ */
+export const ActionInboxChangesSchema = z.object({
+	type: z.literal('inboxChanges'),
+	domain: DomainSchema,
+	since: z.number().int().nonnegative(),
+	limit: LimitSchema,
+});
+export type ActionInboxChanges = z.infer<typeof ActionInboxChangesSchema>;
+/**
+ * `unchanged`: no row changed after `since`. Otherwise the rows that did,
+ * oldest change first, and the version to poll from next: the inbox's own
+ * when `hasMore` is false, the last row's when more rows changed than one page
+ * holds (poll again at once from it).
+ */
+export type ResponseInboxChanges =
+	| {version: number; unchanged: true}
+	| {version: number; conversations: Conversation[]; hasMore: boolean};
 
 // ------------------------------------------------------------------------------------------------
 // messages (0.6, ADR-0006 "Sending"; the format is `message.ts`)
@@ -455,7 +483,10 @@ export {newULID, ulidAt, ulidTime} from './ids.js';
 
 export {
 	INBOX_WS_PATH,
+	INBOX_CHANGES_PATH,
 	INBOX_WS_PROTOCOL,
+	INBOX_TRANSPORTS,
+	type InboxTransport,
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_SESSION_EXPIRED_REASON,
 	MAX_SYNC_CONVERSATIONS,

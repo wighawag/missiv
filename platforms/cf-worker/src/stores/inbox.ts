@@ -30,6 +30,13 @@
 //   by the runtime (`setWebSocketAutoResponse`), so it neither wakes this
 //   object nor bills its duration. An idle socket is not closed here, as it is
 //   on Node/Bun: a hibernated socket costs nothing.
+// - The inbox version (`@missiv/common`'s inbox.ts) is this object's rows' own:
+//   each change of a row gives it the highest row's version plus one, in the
+//   statement that changes it, so `changes` (the polling transport) reads only
+//   this object's storage and an unchanged poll is one indexed read. Polling
+//   still costs a Worker and a Durable Object request each time, which a
+//   hibernated socket does not: the socket stays the cheaper transport here.
+//   An object made before the version numbers its rows by rowid (`migrate`).
 import {DurableObject} from 'cloudflare:workers';
 import {
 	conversationIDOf,
@@ -46,7 +53,14 @@ import {
 	type InboxServerFrame,
 	type Message,
 } from '@missiv/common';
-import {answerSync, type ConversationKey, type InboxUpdate, type SessionClaims} from '@missiv/server';
+import {
+	answerSync,
+	inboxChangesOf,
+	type ConversationKey,
+	type InboxChanges,
+	type InboxUpdate,
+	type SessionClaims,
+} from '@missiv/server';
 import type {CloudflareWorkerEnv} from '../env.js';
 import type {InboxApplyAnswer} from './conversation.js';
 import {conversationObject, conversationKeyOf, retryDelayMs, type InboxOwner} from './names.js';
@@ -62,6 +76,7 @@ CREATE TABLE IF NOT EXISTS inbox (
 	lastSeq INTEGER NOT NULL,
 	lastReadSeq INTEGER NOT NULL,
 	lastMessageAt INTEGER NOT NULL,
+	version INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (namespace, conversationID)
 );
 CREATE INDEX IF NOT EXISTS inbox_all ON inbox (namespace, lastMessageAt DESC, conversationID DESC);
@@ -92,6 +107,12 @@ CREATE TABLE IF NOT EXISTS meta (
 	value TEXT NOT NULL
 );`;
 
+/** The index of the inbox version, made once the column exists (an object made before it gets it in `migrate`). */
+const VERSION_INDEX = `CREATE INDEX IF NOT EXISTS inbox_version ON inbox (version)`;
+
+/** The next inbox version: one more than the highest row's (`inbox_version`), in the statement that changes the row. */
+const NEXT_VERSION = `(SELECT COALESCE(MAX(version), 0) + 1 FROM inbox)`;
+
 /** Inbox.status as stored (as the SQL store's). */
 enum InboxStatus {
 	Unaccepted = 0,
@@ -116,6 +137,7 @@ type InboxRow = {
 	lastSeq: number;
 	lastReadSeq: number;
 	lastMessageAt: number;
+	version: number;
 };
 
 type PropagationRow = {
@@ -129,13 +151,14 @@ type PropagationRow = {
 };
 
 /** The upsert of a row, applied only above its `lastSeq` (idempotent and monotonic, ADR-0006), as `SQLInbox`'s. */
-const UPSERT = `INSERT INTO inbox (namespace, conversationID, status, lastSeq, lastReadSeq, lastMessageAt)
-	VALUES (?, ?, ?, ?, ?, ?)
+const UPSERT = `INSERT INTO inbox (namespace, conversationID, status, lastSeq, lastReadSeq, lastMessageAt, version)
+	VALUES (?, ?, ?, ?, ?, ?, ${NEXT_VERSION})
 	ON CONFLICT (namespace, conversationID) DO UPDATE SET
 	status = CASE WHEN excluded.status = ${InboxStatus.Accepted} THEN ${InboxStatus.Accepted} ELSE inbox.status END,
 	lastSeq = excluded.lastSeq,
 	lastReadSeq = MAX(inbox.lastReadSeq, excluded.lastReadSeq),
-	lastMessageAt = excluded.lastMessageAt
+	lastMessageAt = excluded.lastMessageAt,
+	version = excluded.version
 	WHERE excluded.lastSeq > inbox.lastSeq`;
 
 export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
@@ -148,8 +171,19 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		super(ctx, env);
 		this.sql = ctx.storage.sql;
 		this.sql.exec(SCHEMA);
+		this.migrate();
 		// the heartbeat, answered without waking this object
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(HEARTBEAT_PING, HEARTBEAT_PONG));
+	}
+
+	/** An object made before the inbox version gets its column, each row numbered by its rowid (unique, above 0). */
+	private migrate() {
+		const columns = this.sql.exec<{name: string}>(`PRAGMA table_info(inbox)`).toArray();
+		if (!columns.some((column) => column.name === 'version')) {
+			this.sql.exec(`ALTER TABLE inbox ADD COLUMN version INTEGER NOT NULL DEFAULT 0`);
+			this.sql.exec(`UPDATE inbox SET version = rowid`);
+		}
+		this.sql.exec(VERSION_INDEX);
 	}
 
 	/** The Conversation object of `key` (a seam for tests). */
@@ -210,6 +244,31 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		await this.apply(owner, update);
 	}
 
+	/**
+	 * The rows changed after the version `since` (`Inbox.changes`), from this
+	 * object's own storage alone: an unchanged poll is one indexed read here,
+	 * and wakes no other object.
+	 */
+	async changes(owner: InboxOwner, page: {since: number; limit: number}): Promise<InboxChanges> {
+		this.remember(owner);
+		const version = Number(
+			this.sql.exec<{version: number}>(`SELECT COALESCE(MAX(version), 0) AS version FROM inbox`).one().version,
+		);
+		if (page.since === version) {
+			return {version, unchanged: true};
+		}
+		// above this inbox's version (its storage was reset): every row
+		const since = page.since > version ? 0 : page.since;
+		const rows = this.sql
+			.exec<InboxRow>(`SELECT * FROM inbox WHERE version > ? ORDER BY version ASC LIMIT ?`, since, page.limit + 1)
+			.toArray();
+		return inboxChangesOf(
+			rows.map((row) => this.format(row)),
+			version,
+			page.limit,
+		);
+	}
+
 	async getConversation(owner: InboxOwner, key: ConversationKey): Promise<Conversation | undefined> {
 		this.remember(owner);
 		return this.row(key);
@@ -258,7 +317,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	async accept(owner: InboxOwner, key: ConversationKey): Promise<void> {
 		this.remember(owner);
 		this.sql.exec(
-			`UPDATE inbox SET status = ${InboxStatus.Accepted} WHERE namespace = ? AND conversationID = ?`,
+			`UPDATE inbox SET status = ${InboxStatus.Accepted}, version = ${NEXT_VERSION}
+			WHERE namespace = ? AND conversationID = ? AND status <> ${InboxStatus.Accepted}`,
 			key.namespace,
 			key.conversationID,
 		);
@@ -270,7 +330,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		this.remember(owner);
 		this.share(conversationKeyOf(key));
 		this.sql.exec(
-			`UPDATE inbox SET status = ${InboxStatus.Rejected} WHERE namespace = ? AND conversationID = ?`,
+			`UPDATE inbox SET status = ${InboxStatus.Rejected}, version = ${NEXT_VERSION}
+			WHERE namespace = ? AND conversationID = ? AND status <> ${InboxStatus.Rejected}`,
 			key.namespace,
 			key.conversationID,
 		);
@@ -292,10 +353,12 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	async markRead(owner: InboxOwner, key: ConversationKey, seq: number): Promise<void> {
 		this.remember(owner);
 		this.sql.exec(
-			`UPDATE inbox SET lastReadSeq = MAX(lastReadSeq, MIN(?, lastSeq)) WHERE namespace = ? AND conversationID = ?`,
+			`UPDATE inbox SET lastReadSeq = MIN(?, lastSeq), version = ${NEXT_VERSION}
+			WHERE namespace = ? AND conversationID = ? AND MIN(?, lastSeq) > lastReadSeq`,
 			seq,
 			key.namespace,
 			key.conversationID,
+			seq,
 		);
 		this.publishRow(key);
 	}
@@ -566,6 +629,7 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			lastSeq: Number(row.lastSeq),
 			lastReadSeq: Number(row.lastReadSeq),
 			lastMessageAt: Number(row.lastMessageAt),
+			version: Number(row.version),
 		};
 	}
 

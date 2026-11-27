@@ -12,6 +12,9 @@ import {
 	fillHistory,
 	runList,
 	runLive,
+	openPollers,
+	runPoll,
+	runPollEmpty,
 	runRead,
 	runRoom,
 	runSend,
@@ -40,6 +43,8 @@ const USAGE = `usage: pnpm load <${[...SCENARIOS, 'all'].join('|')}> [options]
   --size <n>              characters per direct message (default 200)
   --room-size <n>         sockets in the room (default 100)
   --rate <n>              room messages per second (default 10)
+  --poll-interval <ms>    poll: how often each client polls its inbox (default 1000)
+  --send-rate <n>         poll: direct messages per second while the clients poll (default 20)
   --json <file>           also write the run (parameters, machine, results) as JSON
 `;
 
@@ -62,6 +67,8 @@ const {values, positionals} = parseArgs({
 		size: {type: 'string', default: '200'},
 		'room-size': {type: 'string', default: '100'},
 		rate: {type: 'string', default: '10'},
+		'poll-interval': {type: 'string', default: '1000'},
+		'send-rate': {type: 'string', default: '20'},
 		json: {type: 'string'},
 		help: {type: 'boolean', short: 'h'},
 	},
@@ -94,6 +101,8 @@ const parameters: Parameters = {
 	size: positive('size', values.size),
 	roomSize: positive('room-size', values['room-size']),
 	rate: positive('rate', values.rate),
+	pollInterval: positive('poll-interval', values['poll-interval']),
+	sendRate: positive('send-rate', values['send-rate']),
 };
 if (parameters.clients < 2) {
 	fail(`--clients must be at least 2 (a conversation has two members)`);
@@ -158,6 +167,13 @@ async function main() {
 					await fillHistory(adapter, world, parameters, log);
 				}
 				log(`running ${name} for ${parameters.duration} s`);
+				if (name === 'poll') {
+					// its two phases measured apart, so each has its own server load
+					const pollers = await openPollers(adapter, world, log);
+					await measured(async () => [await runPollEmpty(pollers, parameters)]);
+					await measured(() => runPoll(adapter, world, pollers, parameters, log));
+					continue;
+				}
 				await measured(async () =>
 					name === 'live'
 						? await runLive(adapter, world, parameters, log)

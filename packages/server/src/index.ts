@@ -8,7 +8,8 @@ import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
 import {getSessionAPI} from './api/session/index.js';
-import {getInboxAPI, getRoutedInboxAPI} from './api/inbox/index.js';
+import {getInboxAPI, getInboxChangesAPI, getRoutedInboxAPI} from './api/inbox/index.js';
+import {createInboxVersionCache} from './stores/versions.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
@@ -33,6 +34,7 @@ export type {
 	ConversationKey,
 	ConversationStore,
 	Inbox,
+	InboxChanges,
 	InboxUpdate,
 	KeyDirectory,
 	LiveConnection,
@@ -44,13 +46,17 @@ export type {
 } from './stores/index.js';
 export {
 	cachedKeyDirectory,
+	createInboxVersionCache,
 	createSQLStores,
+	inboxChangesOf,
 	SQLConversationStore,
 	SQLInbox,
 	SQLKeyDirectory,
+	type InboxVersionCache,
 	type KeyDirectoryCache,
 } from './stores/index.js';
 export {answerSync, checkInboxUpgrade, type SyncStores} from './api/inbox/index.js';
+export {inboxTransportsFromEnv, requireInboxTransport, type InboxTransports} from './transports.js';
 export {signSessionToken, verifySessionToken, type SessionClaims} from './session.js';
 export {Room} from './Room.js';
 export {createInProcessLiveInbox} from './live.js';
@@ -93,6 +99,8 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 	const options: RouteOptions<CustomEnv> = {
 		...serverOptions,
 		getTokenBuckets: serverOptions.getTokenBuckets ?? createInProcessTokenBuckets(),
+		// where this process holds the sockets it is the only instance: it may answer an unchanged poll from memory
+		inboxVersionCache: serverOptions.liveInbox ? createInboxVersionCache() : undefined,
 	};
 	const app = new Hono<{Bindings: CustomEnv}>().get('/', (c) => {
 		return c.text('missiv');
@@ -105,6 +113,7 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 	const adminAPI = getAdminAPI(options);
 	const sessionAPI = getSessionAPI(options);
 
+	// the socket upgrades are mounted ahead of the CORS middleware, which a 101 answer has no use for
 	if (options.liveInbox) {
 		// the live channel, where this process holds the sockets (ADR-0006 "Live channel")
 		app.route('/api/inbox', getInboxAPI(options, options.liveInbox));
@@ -113,39 +122,44 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 		app.route('/api/inbox', getRoutedInboxAPI(options, options.getLiveInboxRouter));
 	}
 
-	return app
-		.use('/*', corsSetup)
-		.route('/api/public', publicChatAPI)
-		.route('/api/session', sessionAPI)
-		.route('/api/user', userAPI)
-		.route('/api/private', privateChatAPI)
-		.route('/api/messages', messagesAPI)
-		.route('/api/admin', adminAPI)
-		.onError((err, c) => {
-			const config = c.get('config');
-			const env = config?.env || {};
-			if (err instanceof MissivError) {
-				if (err.code === 'rate_limited') {
-					const {retryAfterMs} = err.details as RateLimitedDetails;
-					c.header('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+	return (
+		app
+			.use('/*', corsSetup)
+			// the polling transport, on the stores alone (ADR-0006 "Amendment: the inbox version and polling"),
+			// behind CORS like every other request a browser on another origin reads the answer of
+			.route('/api/inbox', getInboxChangesAPI(options))
+			.route('/api/public', publicChatAPI)
+			.route('/api/session', sessionAPI)
+			.route('/api/user', userAPI)
+			.route('/api/private', privateChatAPI)
+			.route('/api/messages', messagesAPI)
+			.route('/api/admin', adminAPI)
+			.onError((err, c) => {
+				const config = c.get('config');
+				const env = config?.env || {};
+				if (err instanceof MissivError) {
+					if (err.code === 'rate_limited') {
+						const {retryAfterMs} = err.details as RateLimitedDetails;
+						c.header('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+					}
+					return c.json(err.toResponseBody(), err.status);
 				}
-				return c.json(err.toResponseBody(), err.status);
-			}
-			if (err instanceof HTTPException) {
-				return err.getResponse();
-			}
-			console.error(err);
-			return c.json(
-				{
-					error: {
-						code: 'internal',
-						message: err.message,
-						...(env.EXPOSE_ERRORS === 'true' ? {details: {cause: err.cause, stack: err.stack}} : {}),
-					},
-				} satisfies ErrorResponse,
-				500,
-			);
-		});
+				if (err instanceof HTTPException) {
+					return err.getResponse();
+				}
+				console.error(err);
+				return c.json(
+					{
+						error: {
+							code: 'internal',
+							message: err.message,
+							...(env.EXPOSE_ERRORS === 'true' ? {details: {cause: err.cause, stack: err.stack}} : {}),
+						},
+					} satisfies ErrorResponse,
+					500,
+				);
+			})
+	);
 }
 
 export type App = ReturnType<typeof createServer<{}>>;

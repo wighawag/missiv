@@ -13,11 +13,19 @@
 // content, as the 0.5 adapter sent a placeholder: the server's work is the
 // same for either scheme (the schema, the content's SHA-256 and the Ed25519
 // verification, one row), and the client's encryption stays out of the numbers.
-import {conversationIDOf, INBOX_WS_PATH, INBOX_WS_PROTOCOL, type InboxServerFrame} from '@missiv/common';
+import {
+	conversationIDOf,
+	INBOX_WS_PATH,
+	INBOX_WS_PROTOCOL,
+	inboxConversationKey,
+	MAX_PAGE_SIZE,
+	type InboxServerFrame,
+} from '@missiv/common';
+import type {API} from '@missiv/client';
 import WebSocket from 'ws';
 import {createRemoteActions, createUser, DOMAIN, type TestUser} from '../../../client-server/test/setup.js';
 import {joinRoom} from './rooms.js';
-import type {Adapter, AdapterFactory, InboxConnection, LoadUser, Target} from './types.js';
+import type {Adapter, AdapterFactory, InboxConnection, InboxPoller, LoadUser, Target} from './types.js';
 
 type User = LoadUser & TestUser;
 
@@ -67,6 +75,9 @@ export function v0_6(options: {readNewestPage?: boolean} = {}): AdapterFactory {
 				const {token} = await actions.api.getSession(DOMAIN, {privateKey: asUser(user).keySet.signing.privateKey});
 				return openInbox(target, token);
 			},
+			openPoller(user) {
+				return poller(actions.api, asUser(user));
+			},
 			joinRoom(user, room, joinOptions) {
 				return joinRoom(target, asUser(user), room, joinOptions);
 			},
@@ -106,6 +117,62 @@ async function openInbox(target: Target, token: string): Promise<InboxConnection
 				ws.once('close', () => resolve());
 				ws.close();
 			});
+		},
+	};
+}
+
+/**
+ * A client on the polling transport, as `@missiv/client`'s channel polls: from
+ * the inbox version it reached, and for each changed row the messages after
+ * the last seq it has of that conversation (the first poll only learns them).
+ */
+function poller(api: API, user: TestUser): InboxPoller {
+	const as = {privateKey: user.keySet.signing.privateKey};
+	let version = 0;
+	let looked = false;
+	const held = new Map<string, number>();
+	return {
+		async poll() {
+			const messages: {content: string; receivedAt: number}[] = [];
+			let changed = false;
+			for (;;) {
+				const answer = await api.inboxChanges({type: 'inboxChanges', domain: DOMAIN, since: version}, as);
+				if ('unchanged' in answer) {
+					version = answer.version;
+					break;
+				}
+				changed = true;
+				for (const row of answer.conversations) {
+					const key = inboxConversationKey(row);
+					let after = held.get(key) ?? 0;
+					if (looked) {
+						while (row.lastSeq > after) {
+							const page = await api.listMessages(
+								{
+									type: 'listMessages',
+									domain: DOMAIN,
+									namespace: row.namespace,
+									conversationID: row.conversationID,
+									after,
+									limit: MAX_PAGE_SIZE,
+								},
+								as,
+							);
+							const receivedAt = performance.now();
+							for (const message of page.messages) {
+								messages.push({content: message.content, receivedAt});
+								after = Math.max(after, message.seq);
+							}
+							if (!page.hasMore || page.messages.length === 0) break;
+						}
+					}
+					held.set(key, Math.max(after, row.lastSeq));
+				}
+				version = answer.version;
+				if (!answer.hasMore) break;
+			}
+			looked = true;
+			return {changed, messages};
 		},
 	};
 }
