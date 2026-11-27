@@ -5,6 +5,7 @@ import type {
 	ActionGetAcceptedConversations,
 	ActionGetConversations,
 	ActionGetDomainUser,
+	ActionGetKeySet,
 	ActionGetMessages,
 	ActionGetUnacceptedConversations,
 	ActionMarkAsRead,
@@ -19,6 +20,7 @@ import type {
 	ResponseGetAcceptedConversations,
 	ResponseGetConversations,
 	ResponseGetDomainUser,
+	ResponseGetKeySet,
 	ResponseGetMessages,
 	ResponseGetUnacceptedConversations,
 	ResponseMarkAsRead,
@@ -43,12 +45,10 @@ export class MissivAPIError extends Error {
 	}
 }
 
-/** The delegate key that signs a request. */
+/** The key that signs a request: the Ed25519 signing private key of the account's key set. */
 export type APIOptions = { privateKey: Uint8Array | string };
 
-export { getPublicKey } from '@noble/secp256k1';
-
-/** A delegate private key as delegated-identity takes it: bytes, or 0x-prefixed hex. */
+/** A private key as delegated-identity takes it: bytes, or 0x-prefixed hex. */
 export function toPrivateKey(privateKey: Uint8Array | string): Uint8Array | `0x${string}` {
 	if (typeof privateKey !== 'string') {
 		return privateKey;
@@ -82,7 +82,7 @@ export class API {
 		const body = JSON.stringify(action);
 		const url = new URL(this.endpoint + '/api' + path);
 		if (options) {
-			// delegated-identity's envelope: this server, this route, now, this body
+			// delegated-identity's Ed25519 envelope: this server, this route, now, this body
 			headers[REQUEST_SIGNATURE_HEADER] = await signRequest(
 				{ serverOrigin: url.origin, method: 'POST', path: url.pathname + url.search, body },
 				toPrivateKey(options.privateKey)
@@ -119,6 +119,11 @@ export class API {
 
 	async getDomainUser(action: ActionGetDomainUser) {
 		return this.call<ResponseGetDomainUser>('/user/getDomainUser', action);
+	}
+
+	/** A key set registered in a domain, current or replaced, by its reference (`keySetRef`). */
+	async getKeySet(action: ActionGetKeySet) {
+		return this.call<ResponseGetKeySet>('/user/getKeySet', action);
 	}
 
 	async sendMessage(action: ActionSendMessage, options: APIOptions) {

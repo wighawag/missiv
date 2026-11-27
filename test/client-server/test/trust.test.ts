@@ -22,6 +22,7 @@ import {
 	DOMAIN,
 	APP_ORIGIN,
 	NAMESPACE,
+	publicOf,
 	SERVER_URL,
 	until,
 	type Harness,
@@ -73,48 +74,55 @@ function conversationOf(user: TestUser, other: TestUser, fetch: typeof globalThi
 	});
 }
 
-const reader = (user: TestUser) => ({address: user.address, domain: DOMAIN, privateKey: user.delegatePrivateKey});
+const reader = (user: TestUser) => ({address: user.address, domain: DOMAIN, keySet: user.keySet});
 
-describe('keys are verified against their ownership proof', () => {
-	it("accepts a domain user's key that its wallet signed for an origin of the domain", async () => {
+describe('key sets are verified against their ownership proof', () => {
+	it("accepts a domain user's key set that its wallet signed for an origin of the domain", async () => {
 		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: B.address});
 		expect(await verifyDomainUser(domainUser!, {address: B.address, domain: DOMAIN})).toBe(true);
 	});
 
-	it('refuses a key whose publication signature does not recover its address', async () => {
+	it('refuses a key set whose ownership signature does not recover its address', async () => {
 		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: B.address});
-		// the server hands out C's key under B's name, with C's proof or B's
-		expect(
-			await verifyDomainUser(
-				{...domainUser!, publicKey: C.delegatePublicKey, signature: C.ownershipSignature},
-				{address: B.address, domain: DOMAIN},
-			),
-		).toBe(false);
-		expect(
-			await verifyDomainUser({...domainUser!, publicKey: C.delegatePublicKey}, {address: B.address, domain: DOMAIN}),
-		).toBe(false);
+		// the server hands out C's key set under B's name, with C's proof or B's, and C's keyRef or B's
+		for (const forged of [
+			{...domainUser!, keySet: publicOf(C.keySet), keyRef: C.keyRef, ownershipSignature: C.ownershipSignature},
+			{...domainUser!, keySet: publicOf(C.keySet), keyRef: C.keyRef},
+			{...domainUser!, keySet: publicOf(C.keySet)},
+			// one key of each
+			{...domainUser!, keySet: {signing: C.keySet.signing, encryption: B.keySet.encryption}},
+		]) {
+			expect(await verifyDomainUser(forged, {address: B.address, domain: DOMAIN})).toBe(false);
+		}
+	});
+
+	it("refuses a key set under another key set's reference", async () => {
+		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: B.address});
+		expect(await verifyDomainUser({...domainUser!, keyRef: C.keyRef}, {address: B.address, domain: DOMAIN})).toBe(
+			false,
+		);
 	});
 
 	it('refuses a proof made for an origin of another domain', async () => {
-		const signature = await B.signPublication(B.delegatePublicKey, 'https://other.com');
+		const signature = await B.signPublication(B.keySet, 'https://other.com');
 		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: B.address});
 		expect(
 			await verifyDomainUser(
-				{...domainUser!, signature, appOrigin: 'https://other.com'},
+				{...domainUser!, ownershipSignature: signature, appOrigin: 'https://other.com'},
 				{address: B.address, domain: DOMAIN},
 			),
 		).toBe(false);
 	});
 
-	it('the conversation encrypts nothing to a key the server swapped in', async () => {
+	it('the conversation encrypts nothing to a key set the server swapped in', async () => {
 		const conversation = conversationOf(
 			A,
 			B,
-			lyingFetch((user) => (user.user === B.address ? {...user, publicKey: C.delegatePublicKey} : user)),
+			lyingFetch((user) => (user.user === B.address ? {...user, keySet: publicOf(C.keySet), keyRef: C.keyRef} : user)),
 		);
 		const stop = conversation.subscribe(() => {});
 		const state = await until(conversation, (s) => !!s.otherUser.unverifiedKey);
-		expect(state.otherUser.publicKey).toBeUndefined();
+		expect(state.otherUser.keySet).toBeUndefined();
 		await expect(conversation.sendMessage('for B only')).rejects.toThrow(/not proven/);
 		expect(await h.messages(B, conversationIDOf([A.address, B.address]))).toEqual([]);
 		stop();
@@ -122,7 +130,7 @@ describe('keys are verified against their ownership proof', () => {
 });
 
 describe('nothing is sent in clear unless asked', () => {
-	it('refuses to send to a user with no key, and sends an introduction when asked', async () => {
+	it('refuses to send to a user with no key set, and sends an introduction when asked', async () => {
 		const D = await createUser(); // never registered
 		const conversation = conversationOf(A, D);
 		const stop = conversation.subscribe(() => {});
@@ -136,10 +144,10 @@ describe('nothing is sent in clear unless asked', () => {
 		stop();
 	});
 
-	it('sends encrypted to a verified key: the server stores no text', async () => {
+	it('sends encrypted to a verified key set: the server stores no text', async () => {
 		const conversation = conversationOf(A, B);
 		const stop = conversation.subscribe(() => {});
-		await until(conversation, (s) => s.step === 'Fetched' && !!s.otherUser.publicKey);
+		await until(conversation, (s) => s.step === 'Fetched' && !!s.otherUser.keySet);
 		await conversation.sendMessage('only for B');
 		const [copy] = await h.messages(B, conversationIDOf([A.address, B.address]));
 		expect(copy.messageType).toBe('encrypted');
@@ -154,8 +162,8 @@ describe("each copy's signature is verified on read", () => {
 		const conversationID = conversationIDOf([A.address, B.address]);
 		const messages = await encryptedCopies({
 			scope: {domain: DOMAIN, namespace: NAMESPACE, conversationID},
-			sender: {address: A.address, privateKey: A.delegatePrivateKey},
-			recipient: {address: B.address, publicKey: B.delegatePublicKey},
+			sender: {address: A.address, keySet: A.keySet},
+			recipient: {address: B.address, encryptionKey: B.keySet.encryption.publicKey},
 			text,
 		});
 		await h.api.sendMessage(
@@ -168,7 +176,7 @@ describe("each copy's signature is verified on read", () => {
 				messageType: 'encrypted',
 				messages,
 			},
-			{privateKey: A.delegatePrivateKey},
+			{privateKey: A.keySet.signing.privateKey},
 		);
 		const copies = await h.messages(B, conversationID);
 		return copies[0];
@@ -193,11 +201,33 @@ describe("each copy's signature is verified on read", () => {
 		}
 	});
 
-	it("refuses a copy whose sender key is not the sender's (a server forging a sender)", async () => {
+	it("refuses a copy whose sender key set is not the sender's (a server forging a sender)", async () => {
 		const copy = await sentByA('from A');
-		// C's key and proof, under A's name
-		const forged = {...copy, senderPublicKey: C.delegatePublicKey, senderOwnershipSignature: C.ownershipSignature};
-		expect((await openMessage(forged, reader(B))).error?.code).toBe('unverified');
+		// C's key set and proof, under A's name; C's key set with A's proof
+		for (const forged of [
+			{...copy, senderKeySet: publicOf(C.keySet), senderOwnershipSignature: C.ownershipSignature},
+			{...copy, senderKeySet: publicOf(C.keySet)},
+		]) {
+			expect((await openMessage(forged, reader(B))).error?.code).toBe('unverified');
+		}
+	});
+
+	it("refuses a copy not signed by the sender's signing key", async () => {
+		const copy = await sentByA('from A');
+		const resigned = await signMessageCopy(
+			{
+				domain: DOMAIN,
+				namespace: NAMESPACE,
+				conversationID: copy.conversationID,
+				messageType: 'encrypted',
+				from: A.address,
+				to: B.address,
+				toPublicKey: copy.recipientPublicKey,
+				content: copy.content,
+			},
+			C.keySet.signing.privateKey,
+		);
+		expect((await openMessage({...copy, signature: resigned}, reader(B))).error?.code).toBe('unverified');
 	});
 
 	it('shows an undecryptable copy as such and the rest of the thread as text', async () => {
@@ -214,10 +244,10 @@ describe("each copy's signature is verified on read", () => {
 					messageType: 'encrypted',
 					from: A.address,
 					to: to.address,
-					toPublicKey: B.delegatePublicKey,
+					toPublicKey: B.keySet.encryption.publicKey,
 					content: garbage,
 				},
-				A.delegatePrivateKey,
+				A.keySet.signing.privateKey,
 			);
 		await h.api.sendMessage(
 			{
@@ -228,11 +258,11 @@ describe("each copy's signature is verified on read", () => {
 				lastMessageReadTimestampMS: 0,
 				messageType: 'encrypted',
 				messages: [
-					{to: A.address, toPublicKey: B.delegatePublicKey, content: garbage, signature: await signed(A)},
-					{to: B.address, toPublicKey: B.delegatePublicKey, content: garbage, signature: await signed(B)},
+					{to: A.address, toPublicKey: B.keySet.encryption.publicKey, content: garbage, signature: await signed(A)},
+					{to: B.address, toPublicKey: B.keySet.encryption.publicKey, content: garbage, signature: await signed(B)},
 				],
 			},
-			{privateKey: A.delegatePrivateKey},
+			{privateKey: A.keySet.signing.privateKey},
 		);
 
 		const conversation = conversationOf(B, A);

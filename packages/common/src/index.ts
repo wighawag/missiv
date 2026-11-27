@@ -4,6 +4,7 @@
 import {z} from 'zod';
 import {keccak_256} from '@noble/hashes/sha3';
 import {bytesToHex} from '@noble/hashes/utils';
+import type {PublicKeySet} from 'delegated-identity';
 
 // ------------------------------------------------------------------------------------------------
 // primitives
@@ -12,6 +13,9 @@ import {bytesToHex} from '@noble/hashes/utils';
 export type String0x = `0x${string}`;
 export type PublicKey = String0x;
 export type Address = String0x;
+/** A 32-byte key, as 0x-prefixed lowercase hex. */
+export type Key = String0x;
+export type {KeySet, PublicKeySet} from 'delegated-identity';
 
 /** lowercase 0x-prefixed hex */
 export const String0xSchema = z.custom<String0x>(
@@ -53,19 +57,38 @@ const ProfileFields = {
 	description: z.string().max(512).optional(),
 };
 
+/** A 32-byte public key (Ed25519 or X25519), lowercase 0x-prefixed hex. */
+export const KeySchema = z.custom<Key>((v) => typeof v === 'string' && /^0x[a-f0-9]{64}$/.test(v), {
+	message: 'expected a 32-byte key as lowercase 0x-prefixed hex',
+});
+
 /**
- * Publish a delegate key for a domain: `signature` is the wallet's EIP-191
- * signature over the publication message of the key that signs this request,
- * for `appOrigin`, the origin of the app (its scheme, host and port, as the
- * wallet was shown it), whose host is `domain`. The profile is the domain's: a
- * domain shows only what was registered in it.
+ * The public half of a key set (delegated-identity's `PublicKeySet`): the
+ * Ed25519 key that signs for the account, the X25519 key others encrypt to.
+ * Only the public keys: anything else is dropped.
+ */
+export const PublicKeySetSchema = z.object({
+	signing: z.object({publicKey: KeySchema}),
+	encryption: z.object({publicKey: KeySchema}),
+});
+
+/**
+ * Register a key set for a domain: `ownershipSignature` is the wallet's EIP-191
+ * signature over the publication message of `keySet` (delegated-identity's
+ * `originPublicKeyPublicationMessage`) for `appOrigin`, the origin of the app
+ * (its scheme, host and port, as the wallet was shown it), whose host is
+ * `domain`. The request is signed by the key set's signing key. Registering
+ * another key set for the account in the domain replaces the current one (the
+ * replaced one stays readable through `getKeySet`). The profile is the domain's:
+ * a domain shows only what was registered in it.
  */
 export const ActionRegisterDomainUserSchema = z.object({
 	type: z.literal('register'),
 	domain: DomainSchema,
 	appOrigin: z.string().min(1).max(300),
-	signature: String0xSchema,
 	address: AddressSchema,
+	keySet: PublicKeySetSchema,
+	ownershipSignature: String0xSchema,
 	...ProfileFields,
 });
 export type ActionRegisterDomainUser = z.infer<typeof ActionRegisterDomainUserSchema>;
@@ -79,13 +102,33 @@ export const ActionEditDomainUserSchema = z.object({
 export type ActionEditDomainUser = z.infer<typeof ActionEditDomainUserSchema>;
 export type ResponseEditDomainUser = {ok: true; message: string};
 
-/** A wallet in a domain: its delegate key with the ownership proof, and its profile there. */
+/**
+ * A key set registered for a wallet in a domain, current or replaced, with its
+ * ownership proof: what a reader checks a key against before using it.
+ */
+export type RegisteredKeySet = {
+	user: Address;
+	domain: string;
+	/** the key set's reference (delegated-identity's `keySetRef`) */
+	keyRef: String0x;
+	keySet: PublicKeySet;
+	/** the wallet's signature over the publication message of `keySet` for `appOrigin` */
+	ownershipSignature: String0x;
+	/** the app origin the wallet signed for, whose host is `domain` */
+	appOrigin: string;
+	/** when it was first registered */
+	registered: number;
+};
+
+/** A wallet in a domain: its current key set with the ownership proof, and its profile there. */
 export type DomainUser = {
 	user: Address;
 	domain: string;
-	publicKey: PublicKey;
-	/** the wallet's signature over the publication message of `publicKey` for `appOrigin` */
-	signature: String0x;
+	/** the current key set's reference (delegated-identity's `keySetRef`) */
+	keyRef: String0x;
+	keySet: PublicKeySet;
+	/** the wallet's signature over the publication message of `keySet` for `appOrigin` */
+	ownershipSignature: String0x;
 	/** the app origin the wallet signed for, whose host is `domain` */
 	appOrigin: string;
 	name: string | null;
@@ -101,6 +144,15 @@ export const ActionGetDomainUserSchema = z.object({
 });
 export type ActionGetDomainUser = z.infer<typeof ActionGetDomainUserSchema>;
 export type ResponseGetDomainUser = {domainUser: DomainUser | undefined};
+
+/** Any key set registered in the domain, current or replaced, by its reference: a reader checks old messages with it. */
+export const ActionGetKeySetSchema = z.object({
+	type: z.literal('getKeySet'),
+	domain: DomainSchema,
+	keyRef: KeySchema,
+});
+export type ActionGetKeySet = z.infer<typeof ActionGetKeySetSchema>;
+export type ResponseGetKeySet = {keySet: RegisteredKeySet | undefined};
 
 // ------------------------------------------------------------------------------------------------
 // conversations
@@ -199,10 +251,11 @@ export type ResponseUnblock = {success: true};
 /**
  * Send a message: one copy per member, the sender's own included. The members
  * are the recipients (`to`), so `conversationID` must be `conversationIDOf` them.
- * An encrypted copy names the key it is encrypted to (`toPublicKey`), which must
- * be the recipient's registered key; a clear copy names none. Each copy carries
- * the sender's signature over it (`signMessageCopy`), which the server stores and
- * the reader checks.
+ * An encrypted copy names the X25519 encryption key it is encrypted to
+ * (`toPublicKey`), which must be the encryption key of the recipient's current
+ * key set; a clear copy names none. Each copy carries the sender's Ed25519
+ * signature over it (`signMessageCopy`), which the server stores and the reader
+ * checks. (0.5's per-copy format on 0.6's keys, until the one-ciphertext format.)
  */
 const sendMessageFields = {
 	type: z.literal('sendMessage'),
@@ -211,13 +264,10 @@ const sendMessageFields = {
 	lastMessageReadTimestampMS: z.number(),
 };
 
-/** a copy's signature by the sender's delegate key (`signMessageCopy`): the compact signature and the recovery byte */
-export const MessageSignatureSchema = z.custom<String0x>(
-	(v) => typeof v === 'string' && /^0x[0-9a-f]{128}0[01]$/.test(v),
-	{
-		message: 'expected a message signature (0x, 64 bytes compact, the recovery byte)',
-	},
-);
+/** a copy's signature by the sender's Ed25519 signing key (`signMessageCopy`): 64 bytes */
+export const MessageSignatureSchema = z.custom<String0x>((v) => typeof v === 'string' && /^0x[0-9a-f]{128}$/.test(v), {
+	message: 'expected a message signature (0x, 64 bytes of lowercase hex)',
+});
 
 export const MAX_MEMBERS = 32;
 
@@ -229,7 +279,7 @@ export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
 			.array(
 				z.object({
 					to: AddressSchema,
-					toPublicKey: PublicKeySchema,
+					toPublicKey: KeySchema,
 					content: z.string().max(16384),
 					signature: MessageSignatureSchema,
 				}),
@@ -244,7 +294,7 @@ export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
 			.array(
 				z.object({
 					to: AddressSchema,
-					toPublicKey: PublicKeySchema.optional(),
+					toPublicKey: KeySchema.optional(),
 					content: z.string().max(16384),
 					signature: MessageSignatureSchema,
 				}),
@@ -266,12 +316,15 @@ export type ConversationMessage = {
 	id: string;
 	recipient: Address;
 	sender: Address;
-	senderPublicKey: PublicKey;
-	/** the sender's ownership proof of `senderPublicKey` (the wallet's signature over its publication message) */
+	/** the reference of the sender's key set when it sent (`getKeySet` answers it after a replacement too) */
+	senderKeyRef: String0x;
+	/** the sender's key set when it sent: its signing key signed this copy */
+	senderKeySet: PublicKeySet;
+	/** the sender's ownership proof of `senderKeySet` (the wallet's signature over its publication message) */
 	senderOwnershipSignature: String0x;
 	/** the app origin that proof names, whose host is `domain` */
 	senderAppOrigin: string;
-	/** the key an encrypted copy is encrypted to; null for a clear copy */
+	/** the X25519 encryption key an encrypted copy is encrypted to; null for a clear copy */
 	recipientPublicKey: PublicKey | null;
 	content: string;
 	timestamp: number;
@@ -329,8 +382,9 @@ export function getConversationID(accountA: Address, accountB: Address) {
 // ------------------------------------------------------------------------------------------------
 
 export type ClientMessageType =
-	// the login: `signature` is delegated-identity's request signature over the
-	// challenge (method GET, the room's path, the server's origin)
+	// the login: `signature` is delegated-identity's Ed25519 request signature over
+	// the challenge (method GET, the room's path, the server's origin), by the
+	// signing key of the account's current key set in the room's domain
 	// a message: attributed by the server to the session's account, not signed (rooms
 	// are unencrypted and server-relayed, ADR-0002)
 	{address: `0x${string}`; signature: string} | {message: string} | {logout: true};
@@ -377,21 +431,4 @@ export {
 	type PushHandoffHistory,
 } from './push.js';
 
-export {
-	messageCopyMessage,
-	signMessageCopy,
-	recoverMessageCopySigner,
-	type MessageCopyToSign,
-} from './message-signature.js';
-
-// The ownership proof and the request signature live in delegated-identity,
-// shared with the services that check the same proofs; re-exported here.
-export {
-	fromDomainToOrigin,
-	originPublicKeyPublicationMessage,
-	signRequest,
-	recoverRequestSigner,
-	recoverAccount,
-	REQUEST_SIGNATURE_HEADER,
-	DEFAULT_MAX_REQUEST_AGE_MS,
-} from 'delegated-identity';
+export {messageCopyMessage, signMessageCopy, verifyMessageCopy, type MessageCopyToSign} from './message-signature.js';

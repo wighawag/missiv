@@ -11,7 +11,15 @@ export function splitStatements(sql: string): string[] {
 }
 
 /** The tables the migrations create, dropped by `resetDatabase`. */
-const TABLES = ['RequestSignatures', 'Blocks', 'Messages', 'ConversationParticipants', 'Conversations', 'DomainUsers'];
+const TABLES = [
+	'RequestSignatures',
+	'Blocks',
+	'Messages',
+	'ConversationParticipants',
+	'Conversations',
+	'DomainUsers',
+	'KeySets',
+];
 const MIGRATIONS_TABLE = '_missiv_migrations';
 
 /**

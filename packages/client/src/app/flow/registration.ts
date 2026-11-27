@@ -1,6 +1,5 @@
-import { derived, get, writable, type Readable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { CompleteUser, MissivRegistration, MissivRegistrationStore } from '$lib/index.js';
-import { originPublicKeyPublicationMessage } from '@missiv/common';
 
 export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
 	step: 'NeedInformation' | 'WaitingForSignature' | 'Registering' | 'Interupted' | 'Done';
@@ -9,7 +8,14 @@ export type RegistrationFlow = { error?: { message: string; cause?: any } } & {
 
 export function createRegistrationFlow(
 	missivRegistration: MissivRegistrationStore,
-	params: { requestSignature: (address: string, msg: string) => Promise<string> }
+	params: {
+		/**
+		 * the wallet's ownership signature of the account's key set for the app origin
+		 * (`@etherplay/connect`'s `getSignatureForPublicKeyPublication`, which asks the
+		 * wallet only when the account does not hold it yet)
+		 */
+		requestSignature: () => Promise<`0x${string}`>;
+	}
 ) {
 	let $flow: RegistrationFlow | undefined = undefined;
 	let $missivRegistration: MissivRegistration = get(missivRegistration);
@@ -129,15 +135,9 @@ export function createRegistrationFlow(
 			address: $flow.address
 		});
 
-		let signature: string;
+		let signature: `0x${string}`;
 		try {
-			signature = await params.requestSignature(
-				$flow.address,
-				originPublicKeyPublicationMessage(
-					missivRegistration.appOrigin,
-					$missivRegistration.signer.publicKey as `0x${string}`
-				)
-			);
+			signature = await params.requestSignature();
 		} catch (err) {
 			set({
 				step: 'NeedInformation',
@@ -152,8 +152,7 @@ export function createRegistrationFlow(
 			address: $flow.address
 		});
 		try {
-			// TODO check  `0x${string}`
-			await missivRegistration.register(signature as `0x${string}`, options);
+			await missivRegistration.register(signature, options);
 			if (options?.closeOnComplete) {
 				resolveFlow();
 			} else {

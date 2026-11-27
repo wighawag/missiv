@@ -52,3 +52,21 @@ git fetch <remote> && git switch -c work/messaging-keys-and-registration <remote
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/messaging-keys-and-registration.md work/tasks/done/messaging-keys-and-registration.md
 ```
+
+## Decisions
+
+Each is recorded with its alternatives in `work/notes/observations/2026-11-27-messaging-keys-and-registration-decisions.md`, plus JSDoc or SQL comments at the code they govern. Please link that note from the done record.
+1. The migration is a new file (`0001_v0_6.sql`) rather than an edit of `0001_initial.sql`, so a 0.5 database fails loudly at start instead of running on the wrong schema.
+2. Both the signing key and the encryption key are unique across all (user, domain) pairs, so even the same account registering its key set in another domain gets 409.
+3. Message rows store `senderKeyRef` and the read joins `KeySets`, so the sender's key set and proof still arrive inline with each message.
+4. The interim copy format changes its labels to `missiv message copy v2` and `missiv encrypted v2`. As the task asked, the cipher (xchacha20poly1305) and the keccak hashing stay the same.
+5. Wire field names follow delegated-identity: `keySet`, `ownershipSignature`, `keyRef`. Until the next format task, `toPublicKey`/`recipientPublicKey` keep their names but now hold the X25519 key, and `APIOptions.privateKey` now holds the Ed25519 signing key.
+6. The client account uses connect's own field names, so connect's account can be passed straight in.
+7. New refusal: a registration whose request is signed by a key other than the key set's own is 403.
+8. `@missiv/common` re-exports only the two delegated-identity types.
+9. `verifyKeySet` also checks that `keyRef` matches `keySetRef(keySet)`.
+10. connect 0.19 requires a chain, so the demo app now names Ethereum mainnet with a public RPC. The demo never transacts on it.
+
+**Limitations (in the same note):**
+- Ed25519 signatures are deterministic. If two devices send byte-identical registrations in the same millisecond, the second is refused as a replay (409), even though its key set is already registered.
+- The load harness's `0.5` adapter now uses the new keys, so a run today can't be compared with the secp256k1 baseline in `load-baseline-0-5.md`.

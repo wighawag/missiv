@@ -61,7 +61,7 @@ export function openConversationList(params: {
 				ctx.set({ step: 'Idle' });
 				return;
 			}
-			const { address, signer } = registration;
+			const { address, keySet } = registration;
 			ctx.set({ step: 'Fetching', address });
 			return poll(
 				ctx,
@@ -69,7 +69,7 @@ export function openConversationList(params: {
 				async () => {
 					const { conversations } = await api.getConversations(
 						{ type: 'getConversations', domain: params.domain, namespace: params.namespace },
-						{ privateKey: signer.privateKey }
+						{ privateKey: keySet.signing.privateKey }
 					);
 					ctx.set({
 						step: 'Fetched',

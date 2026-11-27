@@ -1,6 +1,6 @@
 # missiv load harness
 
-Drives a missiv server over real HTTP and WebSockets with many simulated clients (real wallets and delegate keys, registered as `test/client-server` registers its users) and prints the throughput and the p50/p95/p99 latencies of what they do. It is not part of `pnpm test` (that runs only `test/stats.test.ts`, the harness's arithmetic); a load run has its own command.
+Drives a missiv server over real HTTP and WebSockets with many simulated clients (real wallets and key sets, registered as `test/client-server` registers its users) and prints the throughput and the p50/p95/p99 latencies of what they do. It is not part of `pnpm test` (that runs only `test/stats.test.ts`, the harness's arithmetic); a load run has its own command.
 
 ```sh
 pnpm build                       # the harness runs the built packages
@@ -33,11 +33,11 @@ Whatever the harness starts it stops, at the end of the run, on an error, and on
 
 ## API adapters
 
-The scenarios speak only `src/adapters/types.ts`'s `Adapter`; `src/adapters/v0-5.ts` is missiv 0.5's API (`--api 0.5`, the default), built on `test/client-server/test/setup.ts`'s `createUser` and `createActions` over a real-HTTP `@missiv/client` `API`. A later API is one more adapter registered in `src/cli.ts`'s `ADAPTERS`, run against the same scenarios.
+The scenarios speak only `src/adapters/types.ts`'s `Adapter`; `src/adapters/v0-5.ts` is missiv 0.5's API (`--api 0.5`, the default; on 0.6's Ed25519/X25519 key sets since `messaging-keys-and-registration`, so a run today is not the secp256k1 baseline's), built on `test/client-server/test/setup.ts`'s `createUser` and `createActions` over a real-HTTP `@missiv/client` `API`. A later API is one more adapter registered in `src/cli.ts`'s `ADAPTERS`, run against the same scenarios.
 
 ## Decisions
 
-- **The Node.js target runs in a worker thread.** In process, as the task asks, but not on the harness's thread: the simulated clients sign every request with secp256k1, which on one shared event loop would be counted as server time. A child process (`node platforms/nodejs/dist/cli.js`) was the alternative; the worker keeps the start and stop in the harness's hands and lets it read the server thread's load (`serverLoad`). Touches only this package.
+- **The Node.js target runs in a worker thread.** In process, as the task asks, but not on the harness's thread: the simulated clients sign every request (secp256k1 at the baseline, Ed25519 since), which on one shared event loop would be counted as server time. A child process (`node platforms/nodejs/dist/cli.js`) was the alternative; the worker keeps the start and stop in the harness's hands and lets it read the server thread's load (`serverLoad`). Touches only this package.
 - **Each room socket connects from its own loopback address** (`sourceAddress` in `src/scenarios.ts`: 127.0.1.1, 127.0.1.2, ...). The room rate-limits per IP (one action per 5 s past a 20 s burst, a login included), so a hundred sockets from 127.0.0.1 would measure the limiter. A remote `--url` sees one IP for every socket, and the harness warns. Alternatives: a server built without the limiter (no longer the platform as it runs), or fewer messages per socket (not a fan-out test). Keep `--rate` at or below `--room-size / 5` for a sustained run.
 - **HTTP scenarios are closed loops, the room an open loop** (see above). An open-loop HTTP rate would need a target rate per platform before the first measurement; the closed loop finds the plateau by itself, and a sweep of `--clients` shows the latency at lower load.
 - **The harness's arithmetic is in `pnpm test`, no load run is.** `test/stats.test.ts` (percentiles, the pairing of conversations) takes milliseconds and starts nothing.

@@ -1,16 +1,19 @@
 // The client-server harness: a missiv server in process (Hono's app.request on
-// in-memory libSQL, no port), driven through @missiv/client's API with REAL keys:
-// each user is a wallet that signs the ownership proof of a delegate key, and the
-// delegate key signs every request. The server runs with no DEV flag, as in
-// production; a test that needs another configuration passes its own env.
+// in-memory libSQL, no port), driven through @missiv/client's API with REAL keys,
+// as @etherplay/connect makes them: each user is a wallet and an origin key, from
+// which delegated-identity derives the user's key set (an Ed25519 signing key, an
+// X25519 encryption key); the wallet signs the ownership proof of the key set,
+// and its signing key signs every request. The server runs with no DEV flag, as
+// in production; a test that needs another configuration passes its own env.
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
-import {getPublicKey, utils as secpUtils} from '@noble/secp256k1';
 import {
-	conversationIDOf,
+	deriveKeySet,
+	keySetRef,
 	originPublicKeyPublicationMessage,
-	signMessageCopy,
-	type ConversationMessage,
-} from '@missiv/common';
+	type KeySet,
+	type PublicKeySet,
+} from 'delegated-identity';
+import {conversationIDOf, signMessageCopy, type ConversationMessage} from '@missiv/common';
 import {createServer, migrate, type PushNotifier} from '@missiv/server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
@@ -21,52 +24,51 @@ export const APP_ORIGIN = 'https://test.com';
 export const NAMESPACE = 'test';
 export const SERVER_URL = 'http://localhost';
 /** a well-formed copy signature: the server stores a copy's signature and never checks it (its reader does) */
-export const UNCHECKED_SIGNATURE = `0x${'11'.repeat(64)}00` as `0x${string}`;
-
-function toHex(arr: Uint8Array): `0x${string}` {
-	let str = `0x`;
-	for (const element of arr) {
-		str += element.toString(16).padStart(2, '0');
-	}
-	return str as `0x${string}`;
-}
+export const UNCHECKED_SIGNATURE = `0x${'11'.repeat(64)}` as `0x${string}`;
 
 export type TestUser = {
 	address: `0x${string}`;
-	delegatePrivateKey: Uint8Array;
-	delegatePublicKey: `0x${string}`;
-	/** the wallet's signature over the publication message of the delegate key, for APP_ORIGIN */
+	/** the origin private key the key set is derived from (connect's origin key for APP_ORIGIN) */
+	originPrivateKey: `0x${string}`;
+	/** the user's key set in the app, private halves included */
+	keySet: KeySet;
+	/** `keySetRef` of the key set */
+	keyRef: `0x${string}`;
+	/** the wallet's signature over the publication message of the key set, for APP_ORIGIN */
 	ownershipSignature: `0x${string}`;
-	/** sign the publication message of another delegate key (a second device), for an origin */
-	signPublication(publicKey: `0x${string}`, origin?: string): Promise<`0x${string}`>;
+	/** sign the publication message of a key set (another one, or for another origin) */
+	signPublication(keySet: PublicKeySet, origin?: string): Promise<`0x${string}`>;
 };
+
+/** The public half of a key set, as it is registered. */
+export function publicOf(keySet: PublicKeySet): PublicKeySet {
+	return {signing: {publicKey: keySet.signing.publicKey}, encryption: {publicKey: keySet.encryption.publicKey}};
+}
 
 export async function createUser(): Promise<TestUser> {
 	const wallet = privateKeyToAccount(generatePrivateKey());
-	const delegatePrivateKey = secpUtils.randomPrivateKey();
-	const delegatePublicKey = toHex(getPublicKey(delegatePrivateKey));
-	const signPublication = async (publicKey: `0x${string}`, origin: string = APP_ORIGIN) =>
+	const originPrivateKey = generatePrivateKey();
+	const keySet = deriveKeySet(originPrivateKey);
+	const signPublication = async (keySet: PublicKeySet, origin: string = APP_ORIGIN) =>
 		(
-			await wallet.signMessage({message: originPublicKeyPublicationMessage(origin, publicKey)})
+			await wallet.signMessage({message: originPublicKeyPublicationMessage(origin, keySet)})
 		).toLowerCase() as `0x${string}`;
 	return {
 		address: wallet.address.toLowerCase() as `0x${string}`,
-		delegatePrivateKey,
-		delegatePublicKey,
-		ownershipSignature: await signPublication(delegatePublicKey),
+		originPrivateKey,
+		keySet,
+		keyRef: await keySetRef(keySet),
+		ownershipSignature: await signPublication(keySet),
 		signPublication,
 	};
 }
 
-/** A @missiv/client account of a test user: its wallet address and its delegate key as the signer. */
-export function accountOf(user: TestUser) {
+/** A @missiv/client account of a test user, as connect's signed-in account carries it. */
+export function accountOf(user: TestUser, keySet: KeySet = user.keySet) {
 	return {
 		address: user.address,
-		signer: {
-			address: user.address,
-			privateKey: toHex(user.delegatePrivateKey),
-			publicKey: user.delegatePublicKey,
-		},
+		keySet,
+		savedPublicKeyPublicationSignature: keySet === user.keySet ? user.ownershipSignature : undefined,
 	};
 }
 
@@ -98,9 +100,9 @@ export function until<T>(
 	});
 }
 
-export function newDelegateKey() {
-	const privateKey = secpUtils.randomPrivateKey();
-	return {privateKey, publicKey: toHex(getPublicKey(privateKey))};
+/** Another key set (from another origin key): what a wallet derives for another app, or an attacker's. */
+export function newKeySet(): KeySet {
+	return deriveKeySet(generatePrivateKey());
 }
 
 export {conversationIDOf};
@@ -146,7 +148,7 @@ export type Actions = ReturnType<typeof createActions>;
 /**
  * The actions a test (or the load harness, `test/load`) takes as its users, over
  * any @missiv/client `API`: in process (`app.request`) or over real HTTP. Each
- * request is signed by the acting user's delegate key, each copy by the sender's.
+ * request is signed by the acting user's signing key, each copy by the sender's.
  */
 export function createActions(api: API, options?: {before?: () => Promise<unknown>}) {
 	const before = options?.before ?? (() => Promise.resolve());
@@ -157,12 +159,13 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 			{
 				type: 'register',
 				address: user.address,
-				signature: user.ownershipSignature,
+				keySet: publicOf(user.keySet),
+				ownershipSignature: user.ownershipSignature,
 				domain: options?.domain || DOMAIN,
 				appOrigin: APP_ORIGIN,
 				name: options?.name,
 			},
-			{privateKey: user.delegatePrivateKey},
+			{privateKey: user.keySet.signing.privateKey},
 		);
 	}
 
@@ -196,7 +199,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 			all.map(async (recipient) => ({
 				content,
 				to: recipient.address,
-				toPublicKey: recipient.delegatePublicKey,
+				toPublicKey: recipient.keySet.encryption.publicKey,
 				// each copy signed by the sender, as @missiv/client signs it
 				signature: await signMessageCopy(
 					{
@@ -206,10 +209,10 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 						messageType,
 						from: from.address,
 						to: recipient.address,
-						toPublicKey: messageType === 'encrypted' ? recipient.delegatePublicKey : undefined,
+						toPublicKey: messageType === 'encrypted' ? recipient.keySet.encryption.publicKey : undefined,
 						content,
 					},
-					from.delegatePrivateKey,
+					from.keySet.signing.privateKey,
 				),
 			})),
 		);
@@ -223,7 +226,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 				conversationID: id,
 				lastMessageReadTimestampMS: timestamp,
 			},
-			{privateKey: from.delegatePrivateKey},
+			{privateKey: from.keySet.signing.privateKey},
 		);
 	}
 
@@ -236,21 +239,21 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 				conversationID,
 				lastMessageReadTimestampMS: timestamp,
 			},
-			{privateKey: user.delegatePrivateKey},
+			{privateKey: user.keySet.signing.privateKey},
 		);
 	}
 
 	async function reject(user: TestUser, conversationID: string) {
 		await api.rejectConversation(
 			{type: 'rejectConversation', domain: DOMAIN, namespace: NAMESPACE, conversationID},
-			{privateKey: user.delegatePrivateKey},
+			{privateKey: user.keySet.signing.privateKey},
 		);
 	}
 
 	async function messages(user: TestUser, conversationID: string, domain = DOMAIN): Promise<ConversationMessage[]> {
 		const result = await api.getMessages(
 			{type: 'getMessages', domain, namespace: NAMESPACE, conversationID},
-			{privateKey: user.delegatePrivateKey},
+			{privateKey: user.keySet.signing.privateKey},
 		);
 		return result.messages;
 	}
@@ -263,7 +266,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 		return (
 			await api.getAcceptedConversations(
 				{type: 'getAcceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
-				{privateKey: user.delegatePrivateKey},
+				{privateKey: user.keySet.signing.privateKey},
 			)
 		).acceptedConversations;
 	}
@@ -272,7 +275,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 		return (
 			await api.getUnacceptedConversations(
 				{type: 'getUnacceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
-				{privateKey: user.delegatePrivateKey},
+				{privateKey: user.keySet.signing.privateKey},
 			)
 		).unacceptedConversations;
 	}

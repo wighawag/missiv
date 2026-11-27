@@ -2,7 +2,7 @@ import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './ty
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from '@missiv/common';
-import {recoverRequestSigner} from 'delegated-identity';
+import {verifyRequestSignature} from 'delegated-identity';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
 import {Methods} from 'eip-1193';
@@ -326,8 +326,8 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	}
 
 	/**
-	 * A login: the key registered for the address in the room's domain signed the
-	 * challenge (delegated-identity's envelope), and, in a contract-gated room, the
+	 * A login: the signing key of the address's current key set in the room's
+	 * domain signed the challenge (delegated-identity's Ed25519 envelope), and, in a contract-gated room, the
 	 * contract admits the address. Nothing about the session changes unless both
 	 * hold: a refused login leaves it as it was.
 	 */
@@ -342,14 +342,15 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			this.send(ws, {error: `User not found on domain: ${session.domain}`, code: 'unauthenticated'});
 			return;
 		}
-		const recovered = recoverRequestSigner({
+		const checked = await verifyRequestSignature({
 			serverOrigin: session.serverOrigin,
 			method: 'GET',
 			path: session.path,
 			body: session.challenge,
 			signature: data.signature,
+			publicKey: domainUser.keySet.signing.publicKey,
 		});
-		if (!recovered.ok || recovered.publicKey !== domainUser.publicKey) {
+		if (!checked.ok) {
 			this.send(ws, {error: 'Invalid signature', code: 'unauthenticated'});
 			return;
 		}
@@ -370,7 +371,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 			this.broadcast({quit: session.address, id: session.id});
 		}
 		session.address = domainUser.user;
-		session.publicKey = domainUser.publicKey;
+		session.publicKey = domainUser.keySet.signing.publicKey;
 		session.authorized = authorized;
 		// attached to the socket so it survives hibernation
 		this.saveSocketData(ws, {address: session.address, publicKey: session.publicKey, authorized});

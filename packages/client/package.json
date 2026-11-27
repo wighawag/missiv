@@ -30,17 +30,17 @@
 	},
 	"dependencies": {
 		"@noble/ciphers": "^1.2.1",
+		"@noble/curves": "^1.9.7",
 		"@noble/hashes": "^1.7.1",
-		"@noble/secp256k1": "^2.2.3",
 		"@scure/base": "^1.2.4",
-		"delegated-identity": "^0.1.1",
+		"delegated-identity": "^0.2.0",
 		"@missiv/common": "workspace:^"
 	},
 	"peerDependencies": {
 		"svelte": "^5.0.0"
 	},
 	"devDependencies": {
-		"@etherplay/connect": "^0.0.8",
+		"@etherplay/connect": "^0.19.0",
 		"@sveltejs/adapter-auto": "^4.0.0",
 		"@sveltejs/kit": "^2.20.1",
 		"@sveltejs/package": "^2.3.10",

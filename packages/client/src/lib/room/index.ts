@@ -97,7 +97,10 @@ export function openRoom(params: {
 		run(registration, ctx) {
 			const account =
 				registration.step === 'Registered'
-					? { address: registration.address, privateKey: registration.signer.privateKey }
+					? {
+							address: registration.address,
+							privateKey: registration.keySet.signing.privateKey
+						}
 					: undefined;
 			const address = account?.address;
 			let websocket: RoomSocket | undefined;
@@ -255,7 +258,8 @@ export function openRoom(params: {
 				const ws = websocket;
 				const challenge = session;
 				ctx.set({ ...room, loggingIn: true, session: challenge });
-				// the login is a request signature over this socket's challenge: this server, this room, now
+				// the login is an Ed25519 request signature (the key set's signing key) over this
+				// socket's challenge: this server, this room, now
 				const signature = await signRequest(
 					{
 						serverOrigin: serverOriginOf(params.url),

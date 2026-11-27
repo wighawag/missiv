@@ -14,12 +14,13 @@ import {
 	type RoomSocket,
 } from '@missiv/client';
 import {createInProcessRooms} from '@missiv/server';
+import {deriveKeySet} from 'delegated-identity';
 import {
 	accountOf,
 	conversationIDOf,
 	createHarness,
 	createUser,
-	newDelegateKey,
+	newKeySet,
 	DOMAIN,
 	APP_ORIGIN,
 	NAMESPACE,
@@ -64,7 +65,7 @@ function registrationOf(account: Readable<Account>, fetch: typeof globalThis.fet
 const hold = (store: Readable<unknown>) => store.subscribe(() => {});
 
 describe('registration', () => {
-	it('is Idle without a signer, Unregistered for a new account, Registered once registered', async () => {
+	it('is Idle without an account, Unregistered for a new account, Registered once registered', async () => {
 		const D = await createUser();
 		const account = writable<Account>(undefined);
 		const registration = registrationOf(account);
@@ -82,19 +83,38 @@ describe('registration', () => {
 		stop();
 	});
 
-	it("says when the account's registered key is another one, and registering replaces it", async () => {
-		const second = newDelegateKey();
-		const account = writable<Account>({
-			address: A.address,
-			signer: {address: A.address, privateKey: toHex(second.privateKey), publicKey: second.publicKey},
-		});
+	it("says when the account's registered key set is another one, and registering replaces it", async () => {
+		const second = newKeySet();
+		const account = writable<Account>(accountOf(A, second));
 		const registration = registrationOf(account);
 		const stop = hold(registration);
 		const state = await until(registration, (r) => r.step === 'Unregistered');
 		expect(state.step === 'Unregistered' && state.otherKey).toBe(true);
 
-		await registration.register(await A.signPublication(second.publicKey));
+		await registration.register(await A.signPublication(second));
 		expect(get(registration).step).toBe('Registered');
+		stop();
+	});
+
+	it("registers with the account's saved ownership signature, as connect's account carries it", async () => {
+		const D = await createUser();
+		const registration = registrationOf(writable<Account>(accountOf(D)));
+		const stop = hold(registration);
+		await until(registration, (r) => r.step === 'Unregistered');
+		await registration.register();
+		const registered = get(registration);
+		expect(registered.step === 'Registered' && registered.user.keyRef).toBe(D.keyRef);
+		stop();
+	});
+
+	it('a second device of the account (the same origin key) is Registered with no new registration', async () => {
+		const {fetch, count} = countingFetch();
+		const device = accountOf({...A, keySet: deriveKeySet(A.originPrivateKey)});
+		const registration = registrationOf(writable<Account>(device), fetch);
+		const stop = hold(registration);
+		const state = await until(registration, (r) => r.step === 'Registered');
+		expect(state.step === 'Registered' && state.user.keyRef).toBe(A.keyRef);
+		expect(count('/api/user/register')).toBe(0);
 		stop();
 	});
 
@@ -163,7 +183,7 @@ describe('conversation', () => {
 		const {fetch, count} = countingFetch();
 		const conversation = conversationOf(A, B, fetch);
 		const stop = hold(conversation);
-		await until(conversation, (c) => c.step === 'Fetched' && !!c.otherUser.publicKey);
+		await until(conversation, (c) => c.step === 'Fetched' && !!c.otherUser.keySet);
 		await conversation.sendMessage('hello B');
 
 		const forB = conversationOf(B, A, fetch);
@@ -363,7 +383,3 @@ describe('room', () => {
 		stop();
 	});
 });
-
-function toHex(arr: Uint8Array): `0x${string}` {
-	return `0x${Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
