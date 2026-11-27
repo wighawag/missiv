@@ -1,5 +1,12 @@
 # @missiv/client
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [43d28cb]
+  - @missiv/common@0.5.0
+
 ## 0.4.0
 
 Published as `@missiv/client` from 0.4.0 (formerly `missiv-client`, which stops at 0.3.x and is deprecated).
