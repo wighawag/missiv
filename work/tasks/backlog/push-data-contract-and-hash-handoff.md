@@ -1,0 +1,64 @@
+---
+title: A direct message's push data as a typed contract, and a hand-off in its navigate URL for browsers that never run the service worker
+slug: push-data-contract-and-hash-handoff
+blockedBy: []
+covers: []
+---
+
+## Why
+
+From the idea `work/notes/ideas/a-dm-push-leads-to-its-conversation.md` (jolly-roger `with/messaging` QA, finding F19: clicking a direct message's notification opens the app's home page, not the conversation). Decided with the human (2026-11-25, 2026-11-26): missiv never puts an app route in `navigate`; it stays the app's root, and the app routes from the ids missiv sends.
+
+Two facts shape the rest (checked 2026-11-26 against primary sources):
+
+- The Notifications standard's activate steps (whatwg/notifications `notifications.bs`, "Activating a notification"): a notification with a navigation URL (`navigate`) is navigated to, and `notificationclick` is NOT fired. Only a notification without one reaches the app's click handler.
+- WebKit's "Meet Declarative Web Push" and the Push API draft: on Safari 18.4+ (iOS/iPadOS Home Screen web apps) and 18.5+ (macOS), a `web_push: 8030` message is shown and clicked with no JavaScript; the service worker gets a `push` event only with `mutable: true`, which missiv does not set. So there the app's worker never sees missiv's push, `data` never reaches the page, and the click lands on `navigate`.
+
+So the conversation must also travel in `navigate` itself, as a fragment of the root. Decided with the human (2026-11-26): missiv does it itself (push-notification-server forwards `navigate` as sent, so nothing is needed there), always, with no opt-in: an app that does not read the fragment just opens its root as before. The format is generic rather than missiv-specific, so another service pushing to the same app can use it too and the app keeps one reader; if several services ever do, the convention could move into push-notification-server unchanged.
+
+## What to build
+
+### 1. `data.missiv` as an exported, pinned type
+
+- In `@missiv/common`: export `MissivPushData` (`type: 'message'`, `domain`, `namespace`, `conversationID`, `messageID`, `sender`) and a guard `readMissivPushData(data: unknown): MissivPushData | undefined` that an app's service worker calls on the notification's `data.missiv` without trusting its shape. A zod schema beside the others is the natural form.
+- `pushMessage` (`packages/server/src/push.ts`) builds `data.missiv` as a `MissivPushData`.
+- Versioning rule, written next to the type: adding a field is compatible; renaming, removing or changing one's meaning is a new `type` value.
+
+### 2. The hand-off in `navigate`
+
+- `navigate` becomes `${appOrigin || https://domain}/#push-handoff=<base64url JSON>`, the JSON being `{missiv: MissivPushHandoff}`. base64url without padding, of the UTF-8 JSON (a fixed 4/3 growth, where percent-encoded JSON can triple). Keyed by service name so other services' hand-offs could sit beside it under the same convention.
+- The convention combines with a fragment the URL already has (decided with the human, 2026-11-26): the hand-off is always the LAST segment, `#push-handoff=...` when the URL has no fragment, `#<existing fragment>&push-handoff=...` when it has one. base64url contains no `&` or `#`, so the segment's end is the end of the URL and it is found and removed exactly, leaving the existing fragment byte for byte. missiv's own `navigate` is the root, so it never has one; the rule is for the generic helper and any other service using it.
+- `MissivPushHandoff` (exported from `@missiv/common`) is only what routing needs: `type`, `namespace`, `conversationID`. Not `sender` or `messageID`: the URL ends up in the browser's history and in a link a user can copy, so it carries references, the fewest that route, never content; the page fetches the rest by id.
+- In `@missiv/common`, all generic (nothing missiv-specific but the last one):
+  - `withPushHandoff(url: string, handoff: object): string`: the URL with the segment appended by the rule above (what `pushMessage` calls).
+  - `splitPushHandoff(hash: string): {handoff: Record<string, unknown> | undefined; hash: string}`: pure; the hand-off (absent, malformed or non-object gives `undefined`, never throws) and the hash WITHOUT the segment (`''` when nothing else was there).
+  - `consumePushHandoff(location = window.location, history = window.history)`: for the page; reads the hand-off from the current URL and, when one was there, REMOVES it at once with `history.replaceState` (keeping path, query, `history.state` and the rest of the fragment), then returns it. Removing is part of reading, not left to the app: a hand-off left in the URL replays on reload, on a bookmark and in a link the user shares, and sits in the address bar. An app calls it on load BEFORE its router reads the URL (so a hash router only ever sees its own fragment) and on `hashchange`.
+  - `readMissivPushHandoff(value: unknown): MissivPushHandoff | undefined` for the `missiv` key.
+- Size: the whole message stays well under Web Push's payload limit (4096 bytes of record per RFC 8030/8291, about 3993 of plaintext). missiv's fields are bounded by their schemas in `@missiv/common` (`domain` 253, `namespace` 64, `conversationID` 256, `appOrigin` 300; worst case about 1.7 KB in all), so a test with the longest allowed values asserts the serialized message's size under a stated margin, rather than a check at run time.
+
+### 3. Docs
+
+A "Push notifications" section in the root README (or `packages/server/README.md`, linked from the root): what a push contains and never contains (no message content), `navigate` (the root plus the hand-off fragment), `tag` (one notification per conversation), `data.missiv`, the hand-off's format and readers, and how an app reaches the conversation: from its service worker's `notificationclick` where the worker runs (showing the notification WITHOUT `navigate`, or the click never reaches it, per the standard above), and from the fragment on load where it does not (Safari 18.4+), with the sources. One line on the trade-off of no opt-in: an app that routes on the URL fragment must call `consumePushHandoff` before its router starts, or the router sees `#push-handoff=...` at the root.
+
+### Out of scope
+
+- Any app route in `navigate`.
+- An opt-in for the hand-off (decided: none).
+- `mutable: true`: it gives up Declarative Web Push's reliability and only helps an app whose worker re-shows the notification.
+- Any change to push-notification-server.
+
+## Acceptance criteria
+
+- [ ] `MissivPushData`, `MissivPushHandoff`, `withPushHandoff`, `splitPushHandoff`, `consumePushHandoff`, `readMissivPushData` and `readMissivPushHandoff` are exported from `@missiv/common`; `pushMessage` builds `data.missiv` and the fragment through them.
+- [ ] `push.test.ts` pins the whole message: `web_push`, `title`, `body` (sender abbreviated, no content), `navigate` exactly the root plus `#push-handoff=` and the expected encoding of `{missiv: {type, namespace, conversationID}}`, `tag`, `data.missiv` field by field.
+- [ ] `splitPushHandoff` round-trips `withPushHandoff` (a fixed test vector, so another implementation can check itself against it), for a URL without a fragment and with one (`#/conversations?x=1` comes back byte for byte); the readers return `undefined` for a missing, malformed or wrong-type value.
+- [ ] `consumePushHandoff` (tested on a fake location and history) removes the segment with `replaceState`, keeps path, query, state and the rest of the fragment, returns the hand-off once, and does nothing (no `replaceState`) when there is none.
+- [ ] A test with the longest allowed `domain`, `namespace`, `conversationID` and `appOrigin` asserts the serialized message stays under 3500 bytes.
+- [ ] The README section exists, with the browser behaviour, its sources, and the no-opt-in trade-off.
+- [ ] A changeset for `@missiv/common` and `@missiv/server` (minor: new exports; `navigate` gains a fragment, its path unchanged).
+- [ ] `pnpm -r format:check && pnpm build && pnpm test` is green.
+- [ ] The idea note `work/notes/ideas/a-dm-push-leads-to-its-conversation.md` is deleted in the commit that lands this (its product is this task).
+
+## Prompt
+
+Make the push missiv sends for a new direct message a typed, documented contract, and carry the conversation in its `navigate` URL as a `#push-handoff=<base64url JSON>` fragment of the app's root, always, for browsers that never run the service worker. Read this task's "Why" first. Work in `packages/server/src/push.ts` (`pushMessage`), `packages/server/src/push.test.ts`, and `packages/common/src/index.ts` (where the zod schemas live). Never put an app route in `navigate`. The hand-off carries `type`, `namespace` and `conversationID` only, under the key `missiv`; it is always the last fragment segment, and reading it in the page removes it from the URL. Domain vocabulary is in `CONTEXT.md`. Add a changeset (`pnpm changeset`).
