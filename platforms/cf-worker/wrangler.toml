@@ -1,6 +1,6 @@
 name = "missiv-server"
 main = "src/worker.ts"
-compatibility_date = "2023-08-14"
+compatibility_date = "2025-03-10"
 
 compatibility_flags = [ "nodejs_compat" ] # for node:async_hooks
 
@@ -11,13 +11,17 @@ enabled = true
 binding = "DB" # i.e. available in your Worker on env.DB
 database_name = "missiv-db"
 database_id = "1c8f2d0f-7cef-47a0-bc2e-cdb63d5a266b"
-# the schema: @missiv/server's migration files, applied by `wrangler d1 migrations apply missiv-db`
+# the schema: @missiv/server's migration files, applied by `wrangler d1 migrations apply missiv-db`.
+# On Cloudflare only the KeyDirectory's tables (KeySets, DomainUsers, RequestSignatures) are used:
+# conversations and inboxes are Durable Objects, and the shared files' Messages, Inbox and Blocks stay empty
 migrations_dir = "../../packages/server/src/schema/migrations"
 
 [durable_objects]
 bindings = [
   { name = "ROOMS", class_name = "ServerObjectRoom" },
-  { name = "LIMITERS", class_name = "ServerObjectRateLimiter" }
+  { name = "LIMITERS", class_name = "ServerObjectRateLimiter" },
+  { name = "CONVERSATIONS", class_name = "ServerObjectConversation" },
+  { name = "INBOXES", class_name = "ServerObjectInbox" }
 ]
 
 [[migrations]]
@@ -27,6 +31,11 @@ new_classes = ["ServerObjectRoom"]
 [[migrations]]
 tag = "v2"
 new_classes = ["ServerObjectRateLimiter"]
+
+# direct messaging's stores (ADR-0005): SQLite-backed, which only a new class can be
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ServerObjectConversation", "ServerObjectInbox"]
 
 #[[migrations]]
 #tag = "v1"

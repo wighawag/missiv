@@ -45,3 +45,9 @@ git fetch <remote> && git switch -c work/cloudflare-durable-object-stores <remot
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/cloudflare-durable-object-stores.md work/tasks/done/cloudflare-durable-object-stores.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-cloudflare-durable-object-stores-decisions.md](../../notes/observations/2026-11-27-cloudflare-durable-object-stores-decisions.md)

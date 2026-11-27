@@ -1,7 +1,7 @@
 // The Inbox's live side held in process (Node.js, Bun): the open sockets of each
-// (domain, user), as a Map. What a hibernatable Inbox Durable Object will give
-// Cloudflare (task `cloudflare-durable-object-stores`), a Map gives one
-// long-lived process. Several instances behind a load balancer would put a bus
+// (domain, user), as a Map. What a hibernatable Inbox Durable Object gives
+// Cloudflare (`platforms/cf-worker/src/stores/inbox.ts`, behind a
+// `LiveInboxRouter`), a Map gives one long-lived process. Several instances behind a load balancer would put a bus
 // behind `LiveInbox` (publish to every instance, each delivering to its own
 // sockets); none is built.
 import type {Address, InboxServerFrame} from '@missiv/common';

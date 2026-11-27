@@ -9,13 +9,20 @@ import {
 	parseInboxConversationKey,
 	type InboxServerFrame,
 	type InboxSync,
+	type Message,
 } from '@missiv/common';
 import type {ServerOptions} from '../../types.js';
 import type {Env} from '../../env.js';
 import {sessionSecrets, setup} from '../../setup.js';
 import {MissivError} from '../../errors.js';
 import {verifySessionToken, type SessionClaims} from '../../session.js';
-import type {LiveConnection, LiveInboxHost, Stores} from '../../stores/ports.js';
+import type {ConversationStore, Inbox, LiveConnection, LiveInboxHost, LiveInboxRouter} from '../../stores/ports.js';
+
+/** What answering a `sync` needs of the stores: a conversation's messages, and the account's inbox rows. */
+export type SyncStores = {
+	conversations: Pick<ConversationStore, 'listMessages'>;
+	inbox: Pick<Inbox, 'getConversation' | 'update'>;
+};
 
 /** The session token a client offers as its second WebSocket protocol, after `missiv-inbox`. */
 function offeredToken(header: string | undefined): string | undefined {
@@ -35,9 +42,16 @@ function offeredToken(header: string | undefined): string | undefined {
  * long absence costs memory of one page), then the account's inbox row; a
  * conversation it is not a member of (or a malformed key) is skipped, as it
  * would be refused over HTTP. Then `ready`.
+ *
+ * A sync also heals the row: when the newest message it sent is above the
+ * row's `lastSeq` (or there is no row), the inbox update that message should
+ * have made is applied first (`Inbox.update`, idempotent and monotonic), so a
+ * row whose update is still being retried (Cloudflare's Inbox objects, updated
+ * after the append and retried by alarm) is right as soon as the client syncs.
+ * Where rows are written with the message (SQL), it never applies.
  */
-async function answerSync(
-	stores: Stores,
+export async function answerSync(
+	stores: SyncStores,
 	claims: SessionClaims,
 	sync: InboxSync,
 	send: (frame: InboxServerFrame) => void,
@@ -51,6 +65,7 @@ async function answerSync(
 		}
 		const conversation = {domain: claims.domain, ...parsed};
 		let after = since;
+		let newest: Message | undefined;
 		for (;;) {
 			if (!isOpen()) {
 				return;
@@ -62,12 +77,23 @@ async function answerSync(
 			for (const message of page.messages) {
 				send({type: 'message', message});
 				after = message.seq;
+				newest = message;
 			}
 			if (!page.hasMore || page.messages.length === 0) {
 				break;
 			}
 		}
-		const row = await stores.inbox.getConversation(claims.account, conversation);
+		let row = await stores.inbox.getConversation(claims.account, conversation);
+		if (newest && (!row || newest.seq > row.lastSeq)) {
+			await stores.inbox.update({
+				...conversation,
+				user: claims.account,
+				seq: newest.seq,
+				lastMessageAt: newest.serverTimestamp,
+				own: newest.sender === claims.account,
+			});
+			row = await stores.inbox.getConversation(claims.account, conversation);
+		}
 		if (row) {
 			send({type: 'conversation', conversation: row});
 		}
@@ -75,6 +101,53 @@ async function answerSync(
 	if (isOpen()) {
 		send({type: 'ready'});
 	}
+}
+
+/**
+ * The claims of the session token an inbox upgrade offers (`Sec-WebSocket-Protocol:
+ * missiv-inbox, <token>`), checked BEFORE any socket is accepted: an absent,
+ * invalid or expired one throws 401 (`unauthenticated`), as every other route
+ * refuses it.
+ */
+export function checkInboxUpgrade(protocolHeader: string | undefined, secrets: string[], now: number): SessionClaims {
+	const token = offeredToken(protocolHeader);
+	if (!token) {
+		throw new MissivError(
+			'unauthenticated',
+			`a session token is required, offered as the WebSocket protocol after ${INBOX_WS_PROTOCOL}`,
+		);
+	}
+	const checked = verifySessionToken(token, secrets, now);
+	if (!checked.ok) {
+		throw new MissivError(
+			'unauthenticated',
+			checked.reason === 'expired' ? 'the session token has expired' : 'the session token is not valid',
+		);
+	}
+	return checked.claims;
+}
+
+/**
+ * `GET /api/inbox/ws` where the sockets are held elsewhere (`LiveInboxRouter`,
+ * Cloudflare's Inbox objects): the token is checked here, at the upgrade, as
+ * `getInboxAPI` does, then the request goes to `accept`, which answers with the
+ * accepted socket. The response is rebuilt with headers of its own, so no
+ * middleware re-wraps a 101 (observation `cf-worker-room-upgrade-500-on-wrangler-dev`).
+ */
+export function getRoutedInboxAPI<CustomEnv extends Env>(
+	options: ServerOptions<CustomEnv>,
+	getRouter: (env: CustomEnv) => LiveInboxRouter,
+) {
+	return new Hono<{Bindings: CustomEnv}>().get('/ws', setup({serverOptions: options}), async (c) => {
+		const env = c.get('config').env as CustomEnv;
+		const claims = checkInboxUpgrade(c.req.header('Sec-WebSocket-Protocol'), sessionSecrets(env), Date.now());
+		const response = await getRouter(env).accept(c.req.raw, claims);
+		return new Response(response.body, {
+			status: response.status,
+			headers: new Headers(response.headers),
+			...({webSocket: (response as {webSocket?: unknown}).webSocket} as object),
+		});
+	});
 }
 
 /**
@@ -94,21 +167,7 @@ export function getInboxAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 		setup({serverOptions: options}),
 		async (c, next) => {
 			const secrets = sessionSecrets(c.get('config').env);
-			const token = offeredToken(c.req.header('Sec-WebSocket-Protocol'));
-			if (!token) {
-				throw new MissivError(
-					'unauthenticated',
-					`a session token is required, offered as the WebSocket protocol after ${INBOX_WS_PROTOCOL}`,
-				);
-			}
-			const checked = verifySessionToken(token, secrets, Date.now());
-			if (!checked.ok) {
-				throw new MissivError(
-					'unauthenticated',
-					checked.reason === 'expired' ? 'the session token has expired' : 'the session token is not valid',
-				);
-			}
-			c.set('session', checked.claims);
+			c.set('session', checkInboxUpgrade(c.req.header('Sec-WebSocket-Protocol'), secrets, Date.now()));
 			return next();
 		},
 		upgradeWebSocket((c) => {

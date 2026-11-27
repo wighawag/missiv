@@ -3,7 +3,7 @@ import {Bindings, MiddlewareHandler} from 'hono/types';
 import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
 import type {PushNotifier} from './push.js';
-import type {LiveInboxHost, Stores} from './stores/ports.js';
+import type {LiveInboxHost, LiveInboxRouter, Stores} from './stores/ports.js';
 import type {ServerTokenBuckets} from './rate-limit.js';
 
 export type ServerObjectStorage = {
@@ -92,10 +92,17 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 	 * The Inbox's live side held in this process (nodejs, bun:
 	 * `createInProcessLiveInbox`): with it the server serves `GET
 	 * /api/inbox/ws` and pushes every new message and conversation update to the
-	 * members' open sockets. Without it (cf-worker, until its Inbox Durable
-	 * Object) the route is absent.
+	 * members' open sockets. A platform whose sockets are held elsewhere passes
+	 * `getLiveInboxRouter` instead; with neither the route is absent.
 	 */
 	liveInbox?: LiveInboxHost;
+	/**
+	 * The Inbox's live side held outside this process, by objects that push their
+	 * own frames (cf-worker: each user's Inbox Durable Object): the server serves
+	 * `GET /api/inbox/ws` by checking the token and handing the upgrade to
+	 * `accept`, and publishes nothing itself. Ignored when `liveInbox` is set.
+	 */
+	getLiveInboxRouter?: (env: Env) => LiveInboxRouter;
 	getEnv: (c: Context<{Bindings: Env}>) => Env;
 	/**
 	 * The notifier of new direct messages; by default the one PUSH_SERVER_URL and

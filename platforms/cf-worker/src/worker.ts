@@ -5,21 +5,39 @@ import 'named-logs-context';
 import {enable as enableWorkersLogger} from 'workers-logger';
 import {logs} from 'named-logs';
 // ------------------------------------------------------------------------------------------------
-import {createServer, Room, ServerObjectId, ServerObjectStorage, RateLimiter, Env, ServerObject} from '@missiv/server';
+import {
+	createServer,
+	Room,
+	ServerObjectId,
+	ServerObjectStorage,
+	RateLimiter,
+	Env,
+	ServerObject,
+	type KeyDirectoryCache,
+} from '@missiv/server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
 import {CloudflareWorkerEnv} from './env.js';
 import type {RemoteSQL} from 'remote-sql';
+import {createCloudflareStores, createLiveInboxRouter} from './stores/index.js';
+
+// the Durable Objects of direct messaging (ADR-0005): conversations and inboxes
+export {ServerObjectConversation, ServerObjectInbox} from './stores/index.js';
 
 // ------------------------------------------------------------------------------------------------
 enableWorkersLogger('*');
 const logger = logs('missiv-cf-worker');
 // ------------------------------------------------------------------------------------------------
 
+/** this isolate's cache of key lookups (D1), shared by its requests */
+const keyCache: KeyDirectoryCache = new Map();
+
 const services = {
 	getDB: (env: CloudflareWorkerEnv) => new RemoteD1(env.DB),
+	// D1 for the KeyDirectory only; conversations and inboxes in Durable Objects
+	getStores: (env: CloudflareWorkerEnv) => createCloudflareStores(env, keyCache),
 	getRoom: (env: CloudflareWorkerEnv, idOrName: ServerObjectId | string) => {
 		if (typeof idOrName == 'string') {
 			idOrName = env.ROOMS.idFromName(idOrName);
@@ -182,6 +200,8 @@ export const app = createServer<CloudflareWorkerEnv>({
 	getIP: (c) => c.req.header('CF-Connecting-IP'),
 	// the pushes of a new message run after the response
 	waitUntil: (c, promise) => c.executionCtx.waitUntil(promise),
+	// the live channel: each socket held by its user's Inbox object, which pushes its own frames
+	getLiveInboxRouter: createLiveInboxRouter,
 	upgradeWebSocket,
 });
 

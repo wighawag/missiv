@@ -43,7 +43,10 @@ export async function deliverAppended<CustomEnv extends Env>(
 	members: {sender: Address; recipient: Address},
 ): Promise<void> {
 	const {message} = result;
+	// the frames are this process's to publish only where it holds the sockets; a
+	// routed live inbox (cf-worker's Inbox objects) pushes its own on each update
 	const live = options.liveInbox;
+	const online = live ?? options.getLiveInboxRouter?.(env);
 	const tasks: Promise<unknown>[] = [];
 	if (live) {
 		const to = result.hiddenFrom === members.recipient ? [members.sender] : [members.sender, members.recipient];
@@ -58,11 +61,11 @@ export async function deliverAppended<CustomEnv extends Env>(
 
 	const notifier = options.getPushNotifier ? options.getPushNotifier(env) : pushNotifierFromEnv(env);
 	if (notifier) {
-		const skipOnline = env.PUSH_SKIP_WHEN_ONLINE === 'true' && !!live;
+		const skipOnline = env.PUSH_SKIP_WHEN_ONLINE === 'true' && !!online;
 		for (const to of result.pushTo) {
 			tasks.push(
 				(async () => {
-					if (skipOnline && (await live!.isOnline(message.domain, to.address))) {
+					if (skipOnline && (await online!.isOnline(message.domain, to.address))) {
 						return;
 					}
 					await notifier.notify({
@@ -86,7 +89,11 @@ export async function deliverAppended<CustomEnv extends Env>(
 	}
 }
 
-/** After `accept`, `reject` or `markRead`: the user's inbox row to its own sockets (its other devices, its other stores). */
+/**
+ * After `accept`, `reject` or `markRead`: the user's inbox row to its own
+ * sockets (its other devices, its other stores), where this process holds them
+ * (a routed live inbox pushes its own).
+ */
 export async function deliverConversation<CustomEnv extends Env>(
 	options: ServerOptions<CustomEnv>,
 	stores: Stores,

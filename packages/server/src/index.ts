@@ -8,7 +8,7 @@ import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
 import {getSessionAPI} from './api/session/index.js';
-import {getInboxAPI} from './api/inbox/index.js';
+import {getInboxAPI, getRoutedInboxAPI} from './api/inbox/index.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
@@ -38,10 +38,20 @@ export type {
 	LiveConnection,
 	LiveInbox,
 	LiveInboxHost,
+	LiveInboxRouter,
 	PushRecipient,
 	Stores,
 } from './stores/index.js';
-export {createSQLStores, SQLConversationStore, SQLInbox, SQLKeyDirectory} from './stores/index.js';
+export {
+	cachedKeyDirectory,
+	createSQLStores,
+	SQLConversationStore,
+	SQLInbox,
+	SQLKeyDirectory,
+	type KeyDirectoryCache,
+} from './stores/index.js';
+export {answerSync, checkInboxUpgrade, type SyncStores} from './api/inbox/index.js';
+export {signSessionToken, verifySessionToken, type SessionClaims} from './session.js';
 export {Room} from './Room.js';
 export {createInProcessLiveInbox} from './live.js';
 export {RateLimiter} from './RateLimiter.js';
@@ -98,6 +108,9 @@ export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions
 	if (options.liveInbox) {
 		// the live channel, where this process holds the sockets (ADR-0006 "Live channel")
 		app.route('/api/inbox', getInboxAPI(options, options.liveInbox));
+	} else if (options.getLiveInboxRouter) {
+		// the live channel, where another object holds the sockets (cf-worker's Inbox objects)
+		app.route('/api/inbox', getRoutedInboxAPI(options, options.getLiveInboxRouter));
 	}
 
 	return app

@@ -18,8 +18,8 @@ export type TokenBucketResult = {allowed: true} | {allowed: false; retryAfterMs:
 /**
  * One token bucket per key, created full on first use. A refused request takes
  * nothing. May answer asynchronously, so a platform can keep the buckets in a
- * server object (the send's in the Inbox Durable Object, task
- * `cloudflare-durable-object-stores`).
+ * server object (the send's could move into cf-worker's Inbox Durable Object:
+ * observation `2026-11-27-cf-send-bucket-still-per-isolate`).
  */
 export type TokenBuckets = {
 	take(key: string): TokenBucketResult | Promise<TokenBucketResult>;

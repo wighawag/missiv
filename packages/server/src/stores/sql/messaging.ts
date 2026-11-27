@@ -1,5 +1,5 @@
 // The ConversationStore and the Inbox over `remote-sql` (ADR-0005), for Node.js
-// (libSQL), Bun (bun:sqlite) and, as an interim, Cloudflare (D1): `Messages`,
+// (libSQL) and Bun (bun:sqlite): `Messages`,
 // `Inbox` and `Blocks` of one database, so a send is ONE transaction (one
 // `batch`): the dedup read, the append under the next seq with the block check,
 // both members' inbox rows, and the read of what was stored (with the
