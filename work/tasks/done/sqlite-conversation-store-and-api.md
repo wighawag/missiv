@@ -54,3 +54,9 @@ git fetch <remote> && git switch -c work/sqlite-conversation-store-and-api <remo
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/sqlite-conversation-store-and-api.md work/tasks/done/sqlite-conversation-store-and-api.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-sqlite-conversation-store-and-api-decisions.md](../../notes/observations/2026-11-27-sqlite-conversation-store-and-api-decisions.md)

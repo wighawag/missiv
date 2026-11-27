@@ -1,5 +1,5 @@
 import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './types.js';
-import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
+import {SQLKeyDirectory} from './stores/sql/KeyDirectory.js';
 import {RateLimiterClient} from './RateLimiter.js';
 import {ClientMessageType, ServerMessageType} from '@missiv/common';
 import {verifyRequestSignature} from 'delegated-identity';
@@ -41,7 +41,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	lastTimestamp: number = 0;
 	sessions: Map<WebSocket, Session> = new Map();
 
-	dbStorage!: RemoteSQLStorage; // set in instantiate
+	dbStorage!: SQLKeyDirectory; // set in instantiate
 	env: CustomEnv;
 	identifier:
 		| {name: string; domain: string; authorization: string | undefined; serverOrigin: string; path: string}
@@ -58,7 +58,7 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	// as this is an abstract class, we defer instantiation logic to the subclass
 	instantiate() {
 		const db = this.getDB(this.env);
-		this.dbStorage = new RemoteSQLStorage(db);
+		this.dbStorage = new SQLKeyDirectory(db);
 
 		this.getWebSockets().forEach((webSocket) => {
 			// The constructor may have been called when waking up from hibernation,

@@ -4,7 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import {parseArgs} from 'node:util';
 import {performance} from 'node:perf_hooks';
-import {v0_5} from './adapters/v0-5.js';
+import {v0_6} from './adapters/v0-6.js';
 import type {AdapterFactory} from './adapters/types.js';
 import {
 	SCENARIOS,
@@ -20,7 +20,8 @@ import {
 import {formatSummary, type Summary} from './stats.js';
 import {atURL, startBun, startNode, type RunningTarget} from './targets.js';
 
-const ADAPTERS: Record<string, AdapterFactory> = {'0.5': v0_5};
+// 0.5's adapter went with 0.5's API (its numbers: work/notes/findings/load-baseline-0-5.md)
+const ADAPTERS: Record<string, AdapterFactory> = {'0.6': v0_6(), '0.6-page': v0_6({readNewestPage: true})};
 
 const USAGE = `usage: pnpm load <${[...SCENARIOS, 'all'].join('|')}> [options]
 
@@ -30,7 +31,7 @@ const USAGE = `usage: pnpm load <${[...SCENARIOS, 'all'].join('|')}> [options]
                           url:  a server already running at --url (wrangler dev, a deployment)
   --url <origin>          the server for --target url, e.g. http://127.0.0.1:34003
   --bun <path>            the bun executable (default: bun on PATH)
-  --api <version>         the API adapter (default 0.5; available: ${Object.keys(ADAPTERS).join(', ')})
+  --api <version>         the API adapter (default 0.6; available: ${Object.keys(ADAPTERS).join(', ')})
   --clients <n>           simulated users in send/read/list, one concurrent client each (default 20)
   --conversations <n>     conversations among them (default 20)
   --duration <s>          seconds each scenario runs (default 10)
@@ -52,7 +53,7 @@ const {values, positionals} = parseArgs({
 		target: {type: 'string', default: 'node'},
 		url: {type: 'string'},
 		bun: {type: 'string', default: 'bun'},
-		api: {type: 'string', default: '0.5'},
+		api: {type: 'string', default: '0.6'},
 		clients: {type: 'string', default: '20'},
 		conversations: {type: 'string', default: '20'},
 		duration: {type: 'string', default: '10'},

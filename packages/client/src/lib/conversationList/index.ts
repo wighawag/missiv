@@ -1,7 +1,7 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, type FetchFunction } from '$lib/API.js';
 import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
-import type { Conversation } from '@missiv/common';
+import { isUnread, type Conversation } from '@missiv/common';
 
 export type ConversationList = { error?: StoreError } & (
 	| // no registered account
@@ -18,7 +18,7 @@ export type ConversationList = { error?: StoreError } & (
 			step: 'Fetched';
 			address: string;
 			conversations: Conversation[];
-			/** accepted conversations with a message newer than their last read */
+			/** accepted conversations with a message newer than their last read (`lastReadSeq`) */
 			numUnread: number;
 			/** conversation requests: not accepted yet */
 			numUnaccepted: number;
@@ -30,9 +30,9 @@ export function countConversations(conversations: Conversation[]) {
 	let numUnread = 0;
 	let numUnaccepted = 0;
 	for (const conversation of conversations) {
-		if (!conversation.accepted) {
+		if (conversation.status === 'unaccepted') {
 			numUnaccepted++;
-		} else if (conversation.lastRead < conversation.lastMessage) {
+		} else if (conversation.status === 'accepted' && isUnread(conversation)) {
 			numUnread++;
 		}
 	}
@@ -67,8 +67,8 @@ export function openConversationList(params: {
 				ctx,
 				pollingInterval * 1000,
 				async () => {
-					const { conversations } = await api.getConversations(
-						{ type: 'getConversations', domain: params.domain, namespace: params.namespace },
+					const { conversations } = await api.listConversations(
+						{ type: 'listConversations', domain: params.domain, namespace: params.namespace },
 						{ privateKey: keySet.signing.privateKey }
 					);
 					ctx.set({

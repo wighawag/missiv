@@ -5,6 +5,7 @@ import {z} from 'zod';
 import {keccak_256} from '@noble/hashes/sha3';
 import {bytesToHex} from '@noble/hashes/utils';
 import type {PublicKeySet} from 'delegated-identity';
+import {MessageToSendSchema, type Message} from './message.js';
 
 // ------------------------------------------------------------------------------------------------
 // primitives
@@ -40,6 +41,8 @@ export const ERROR_STATUS = {
 	forbidden: 403,
 	not_found: 404,
 	conflict: 409,
+	/** a messageID whose time is outside the window around the server's clock (`MESSAGE_ID_WINDOW_MS`) */
+	stale: 400,
 	rate_limited: 429,
 	internal: 500,
 } as const;
@@ -162,7 +165,8 @@ export type ResponseGetKeySet = {keySet: RegisteredKeySet | undefined};
  * `POST /api/session` (ADR-0006): a request signed by the signing key of the
  * caller's current key set in `domain`, answered with a session token that
  * authenticates every later request in that domain (as `Authorization: Bearer
- * <token>`) but `register` and `sendMessage`, which stay signed.
+ * <token>`) but `register`, which stays signed (a send is authorized by the
+ * token and the message's own signature).
  */
 export const ActionOpenSessionSchema = z.object({
 	domain: DomainSchema,
@@ -177,86 +181,80 @@ export type ResponseOpenSession = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// conversations
+// conversations (0.6, ADR-0006 "API")
 // ------------------------------------------------------------------------------------------------
 
+/** A member's view of a conversation: requested (`unaccepted`), `accepted`, or `rejected` (which blocked the other member). */
+export const CONVERSATION_STATUSES = ['unaccepted', 'accepted', 'rejected'] as const;
+export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number];
+
+/**
+ * A conversation as one member's inbox lists it: keyed by `(domain, namespace,
+ * conversationID)`, never by `conversationID` alone. `lastSeq` is the seq of
+ * the newest message this member can see, `lastReadSeq` the newest it marked
+ * read: the conversation is unread while `lastReadSeq < lastSeq`.
+ */
 export type Conversation = {
 	domain: string;
 	namespace: string;
-	user: Address;
 	conversationID: string;
+	/** the two members, as `conversationID` names them */
 	members: Address[];
-	lastMessage: number;
-	lastRead: number;
-	accepted: boolean;
+	status: ConversationStatus;
+	lastSeq: number;
+	lastReadSeq: number;
+	/** the server time of the newest message this member can see (ms) */
+	lastMessageAt: number;
 };
+
+/** Whether a conversation has a message newer than the member's last read one. */
+export function isUnread(conversation: Pick<Conversation, 'lastSeq' | 'lastReadSeq'>): boolean {
+	return conversation.lastReadSeq < conversation.lastSeq;
+}
 
 const conversationScope = {
 	domain: DomainSchema,
 	namespace: NamespaceSchema,
 };
 
-/** a page: at most `limit` (default and maximum 100) items older than the cursor `before` */
-const pageFields = {
-	limit: z.number().int().min(1).max(100).optional(),
-	before: z.string().max(512).optional(),
-};
 export const MAX_PAGE_SIZE = 100;
-
-export const ActionGetConversationsSchema = z.object({
-	type: z.literal('getConversations'),
-	...conversationScope,
-	...pageFields,
-});
-export type ActionGetConversations = z.infer<typeof ActionGetConversationsSchema>;
-/** `cursor` is set when there are older items: pass it as `before` for the next page */
-export type ResponseGetConversations = {conversations: Conversation[]; cursor?: string};
-
-export const ActionGetUnacceptedConversationsSchema = z.object({
-	type: z.literal('getUnacceptedConversations'),
-	...conversationScope,
-	...pageFields,
-});
-export type ActionGetUnacceptedConversations = z.infer<typeof ActionGetUnacceptedConversationsSchema>;
-export type ResponseGetUnacceptedConversations = {unacceptedConversations: Conversation[]; cursor?: string};
-
-export const ActionGetAcceptedConversationsSchema = z.object({
-	type: z.literal('getAcceptedConversations'),
-	...conversationScope,
-	...pageFields,
-});
-export type ActionGetAcceptedConversations = z.infer<typeof ActionGetAcceptedConversationsSchema>;
-export type ResponseGetAcceptedConversations = {acceptedConversations: Conversation[]; cursor?: string};
-
-export const ActionAcceptConversationSchema = z.object({
-	type: z.literal('acceptConversation'),
-	...conversationScope,
-	conversationID: ConversationIDSchema,
-	lastMessageReadTimestampMS: z.number(),
-});
-export type ActionAcceptConversation = z.infer<typeof ActionAcceptConversationSchema>;
-export type ResponseAcceptConversation = {timestampMS: number};
-
-export const ActionMarkAsReadSchema = z.object({
-	type: z.literal('markAsRead'),
-	...conversationScope,
-	conversationID: ConversationIDSchema,
-	lastMessageReadTimestampMS: z.number(),
-});
-export type ActionMarkAsRead = z.infer<typeof ActionMarkAsReadSchema>;
-export type ResponseMarkAsRead = {success: true};
+const LimitSchema = z.number().int().min(1).max(MAX_PAGE_SIZE).optional();
+const SeqSchema = z.number().int().nonnegative();
 
 /**
- * Reject a conversation request. In a conversation of two, it also blocks the
- * other member in the domain: nothing they send reaches you until `unblock`.
+ * The account's conversations in a domain and namespace, newest message first,
+ * from its inbox index; `status` filters. `cursor` is set when there are older
+ * ones: pass it as `before` for the next page (it names the last item's
+ * position, so a page never repeats or skips an item that did not move).
  */
-export const ActionRejectConversationSchema = z.object({
-	type: z.literal('rejectConversation'),
+export const ActionListConversationsSchema = z.object({
+	type: z.literal('listConversations'),
+	...conversationScope,
+	status: z.enum(CONVERSATION_STATUSES).optional(),
+	before: z.string().max(512).optional(),
+	limit: LimitSchema,
+});
+export type ActionListConversations = z.infer<typeof ActionListConversationsSchema>;
+export type ResponseListConversations = {conversations: Conversation[]; cursor?: string};
+
+const conversationFields = {
 	...conversationScope,
 	conversationID: ConversationIDSchema,
-});
-export type ActionRejectConversation = z.infer<typeof ActionRejectConversationSchema>;
-export type ResponseRejectConversation = {success: true};
+};
+
+/** Accept a conversation request: it moves to the accepted conversations. */
+export const ActionAcceptSchema = z.object({type: z.literal('accept'), ...conversationFields});
+export type ActionAccept = z.infer<typeof ActionAcceptSchema>;
+export type ResponseAccept = {success: true};
+
+/**
+ * Reject a conversation. It also blocks its other member in the whole domain:
+ * what they send is acknowledged to them and never reaches you, in any
+ * namespace, until `unblock`.
+ */
+export const ActionRejectSchema = z.object({type: z.literal('reject'), ...conversationFields});
+export type ActionReject = z.infer<typeof ActionRejectSchema>;
+export type ResponseReject = {success: true};
 
 export const ActionUnblockSchema = z.object({
 	type: z.literal('unblock'),
@@ -266,104 +264,60 @@ export const ActionUnblockSchema = z.object({
 export type ActionUnblock = z.infer<typeof ActionUnblockSchema>;
 export type ResponseUnblock = {success: true};
 
+/** Mark the conversation read up to `seq` (never backwards, never past its last message). */
+export const ActionMarkReadSchema = z.object({type: z.literal('markRead'), ...conversationFields, seq: SeqSchema});
+export type ActionMarkRead = z.infer<typeof ActionMarkReadSchema>;
+export type ResponseMarkRead = {success: true};
+
 // ------------------------------------------------------------------------------------------------
-// messages
+// messages (0.6, ADR-0006 "Sending"; the format is `message.ts`)
 // ------------------------------------------------------------------------------------------------
 
 /**
- * Send a message: one copy per member, the sender's own included. The members
- * are the recipients (`to`), so `conversationID` must be `conversationIDOf` them.
- * An encrypted copy names the X25519 encryption key it is encrypted to
- * (`toPublicKey`), which must be the encryption key of the recipient's current
- * key set; a clear copy names none. Each copy carries the sender's Ed25519
- * signature over it (`signMessageCopy`), which the server stores and the reader
- * checks. (0.5's per-copy format on 0.6's keys, until the one-ciphertext format.)
+ * How far a messageID's time (its ULID's) may be from the server's clock: a
+ * send outside it is refused `stale`, with the server's time, and the client
+ * signs the message again under a fresh messageID.
  */
-const sendMessageFields = {
+export const MESSAGE_ID_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * `POST /api/messages/send`: one message (`MessageToSendSchema`), authorized by
+ * the session token (its account and key set must be the message's `sender`
+ * and `senderKeyRef`) and by the message's own signature, which the server
+ * verifies against that key set before storing anything. 1:1 only. A retry of
+ * a stored message (same messageID, same signature) answers its stored `seq`;
+ * the same messageID with another signature is refused `conflict`.
+ */
+export const ActionSendMessageSchema = z.object({
 	type: z.literal('sendMessage'),
-	...conversationScope,
-	conversationID: ConversationIDSchema,
-	lastMessageReadTimestampMS: z.number(),
-};
-
-/** a copy's signature by the sender's Ed25519 signing key (`signMessageCopy`): 64 bytes */
-export const MessageSignatureSchema = z.custom<String0x>((v) => typeof v === 'string' && /^0x[0-9a-f]{128}$/.test(v), {
-	message: 'expected a message signature (0x, 64 bytes of lowercase hex)',
+	message: MessageToSendSchema,
 });
-
-export const MAX_MEMBERS = 32;
-
-export const ActionSendMessageSchema = z.discriminatedUnion('messageType', [
-	z.object({
-		...sendMessageFields,
-		messageType: z.literal('encrypted'),
-		messages: z
-			.array(
-				z.object({
-					to: AddressSchema,
-					toPublicKey: KeySchema,
-					content: z.string().max(16384),
-					signature: MessageSignatureSchema,
-				}),
-			)
-			.min(2)
-			.max(MAX_MEMBERS),
-	}),
-	z.object({
-		...sendMessageFields,
-		messageType: z.literal('clear'),
-		messages: z
-			.array(
-				z.object({
-					to: AddressSchema,
-					toPublicKey: KeySchema.optional(),
-					content: z.string().max(16384),
-					signature: MessageSignatureSchema,
-				}),
-			)
-			.min(2)
-			.max(MAX_MEMBERS),
-	}),
-]);
 export type ActionSendMessage = z.infer<typeof ActionSendMessageSchema>;
-export type ActionSendEncryptedMessage = Extract<ActionSendMessage, {messageType: 'encrypted'}>;
-export type ActionSendInClearMessage = Extract<ActionSendMessage, {messageType: 'clear'}>;
-export type ResponseSendMessage = {timestampMS: number};
+export type ResponseSendMessage = {seq: number; serverTimestamp: number};
+/** The `details` of a `stale` refusal: the server's clock, to sign the message again against. */
+export type StaleDetails = {serverTime: number};
 
-export type ConversationMessage = {
-	domain: string;
-	namespace: string;
-	conversationID: string;
-	/** time-ordered (a ULID), shared by the rows of one message */
-	id: string;
-	recipient: Address;
-	sender: Address;
-	/** the reference of the sender's key set when it sent (`getKeySet` answers it after a replacement too) */
-	senderKeyRef: String0x;
-	/** the sender's key set when it sent: its signing key signed this copy */
-	senderKeySet: PublicKeySet;
-	/** the sender's ownership proof of `senderKeySet` (the wallet's signature over its publication message) */
-	senderOwnershipSignature: String0x;
-	/** the app origin that proof names, whose host is `domain` */
-	senderAppOrigin: string;
-	/** the X25519 encryption key an encrypted copy is encrypted to; null for a clear copy */
-	recipientPublicKey: PublicKey | null;
-	content: string;
-	timestamp: number;
-	messageType: 'encrypted' | 'clear';
-	/** the sender's signature over this copy (`signMessageCopy`), stored as sent and never checked by the server */
-	signature: String0x;
-};
-
-export const ActionGetMessagesSchema = z.object({
-	type: z.literal('getMessages'),
-	...conversationScope,
-	conversationID: ConversationIDSchema,
-	...pageFields,
-});
-export type ActionGetMessages = z.infer<typeof ActionGetMessagesSchema>;
-/** newest first; `cursor` is set when there are older messages: pass it as `before` */
-export type ResponseGetMessages = {messages: ConversationMessage[]; cursor?: string};
+/**
+ * A conversation's messages by seq, always returned in ascending seq order:
+ * with `after`, the first `limit` messages after that seq (what is new since
+ * the last one the client has); with `before`, the last `limit` before it
+ * (paging back); with neither, the newest `limit`. `hasMore` says whether
+ * messages remain past the page in its direction (newer for `after`, older
+ * otherwise). A member never lists a message hidden from it (a blocked sender's).
+ */
+export const ActionListMessagesSchema = z
+	.object({
+		type: z.literal('listMessages'),
+		...conversationFields,
+		after: SeqSchema.optional(),
+		before: SeqSchema.optional(),
+		limit: LimitSchema,
+	})
+	.refine((action) => action.after === undefined || action.before === undefined, {
+		message: 'after and before are exclusive',
+	});
+export type ActionListMessages = z.infer<typeof ActionListMessagesSchema>;
+export type ResponseListMessages = {messages: Message[]; hasMore: boolean};
 
 // ------------------------------------------------------------------------------------------------
 // admin
@@ -387,6 +341,19 @@ export function conversationIDOf(members: Address[]): string {
 		return getConversationID(sorted[0], sorted[1]);
 	}
 	return `0x${bytesToHex(keccak_256(sorted.join(':')))}`;
+}
+
+/**
+ * The two members of a 1:1 conversationID (`getConversationID`'s form: the two
+ * lowercase addresses, the greater first), or undefined for any other form (a
+ * group's hash, a malformed ID, an account with itself).
+ */
+export function membersOfConversationID(conversationID: string): [Address, Address] | undefined {
+	const match = /^(0x[0-9a-f]{40})(0x[0-9a-f]{40})$/.exec(conversationID);
+	if (!match || match[1] <= match[2]) {
+		return undefined;
+	}
+	return [match[1] as Address, match[2] as Address];
 }
 
 export function getConversationID(accountA: Address, accountB: Address) {
@@ -453,8 +420,6 @@ export {
 	type PushHandoffHistory,
 } from './push.js';
 
-export {messageCopyMessage, signMessageCopy, verifyMessageCopy, type MessageCopyToSign} from './message-signature.js';
-
 export {
 	MESSAGE_SCHEMES,
 	MAX_MESSAGE_CONTENT_LENGTH,
@@ -479,4 +444,4 @@ export {
 	type Message,
 } from './message.js';
 
-export {newULID} from './ids.js';
+export {newULID, ulidAt, ulidTime} from './ids.js';

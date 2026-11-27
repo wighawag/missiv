@@ -1,6 +1,7 @@
 // The seam between the scenarios and a version of missiv's API. A scenario
-// speaks only this interface; each API version is one adapter (`v0-5.ts` for
-// missiv 0.5), so a new API is a new adapter, not a new harness. What a call
+// speaks only this interface; each API version is one adapter (`v0-6.ts` for
+// missiv 0.6; 0.5's left with its API), so a new API is a new adapter, not a
+// new harness. What a call
 // costs on the client (signing, and in later APIs encrypting) is part of what
 // the harness measures, since a real client pays it too.
 
@@ -40,7 +41,7 @@ export interface Adapter {
 	send(from: LoadUser, conversation: LoadConversation, content: string): Promise<void>;
 	/**
 	 * Read a conversation as an open conversation view does: in 0.5 the newest
-	 * page (the 2 s poll); an API with a cursor fetches only what is new since this
+	 * page (the 2 s poll); in 0.6, with a seq cursor, only what is new since this
 	 * user's last read. Returns how many messages came back.
 	 */
 	read(user: LoadUser, conversation: LoadConversation): Promise<number>;

@@ -148,20 +148,20 @@ describe('conversation list', () => {
 		// a request from A (unaccepted), and one from C that B accepts and has read
 		await h.send({from: A, to: B, content: 'hi'});
 		await h.send({from: C, to: B, content: 'yo'});
-		await h.accept(B, conversationIDOf([B.address, C.address]), Date.now());
+		await h.accept(B, conversationIDOf([B.address, C.address]));
+		await h.markRead(B, conversationIDOf([B.address, C.address]), 1);
 		state = await until(list, (l) => l.step === 'Fetched' && l.conversations.length === 2);
 		expect(state.step === 'Fetched' && [state.numUnaccepted, state.numUnread]).toEqual([1, 0]);
 
 		// a newer message in the accepted one: unread
-		await wait(5);
 		await h.send({from: C, to: B, content: 'again'});
 		state = await until(list, (l) => l.step === 'Fetched' && l.numUnread === 1, 5000);
 		expect(state.step === 'Fetched' && state.numUnaccepted).toBe(1);
 
 		stop();
-		const after = count('/api/private/getConversations');
+		const after = count('/api/private/listConversations');
 		await wait(100);
-		expect(count('/api/private/getConversations')).toBeLessThanOrEqual(after + 1);
+		expect(count('/api/private/listConversations')).toBeLessThanOrEqual(after + 1);
 	});
 });
 
@@ -197,26 +197,57 @@ describe('conversation', () => {
 		const early = conversationOf(A, B, fetch);
 		const stopEarly = hold(early);
 		stopEarly();
-		const after = count('/api/private/getMessages');
+		const after = count('/api/private/listMessages');
 		await wait(100);
-		expect(count('/api/private/getMessages')).toBeLessThanOrEqual(after + 1);
+		expect(count('/api/private/listMessages')).toBeLessThanOrEqual(after + 1);
 	});
 
-	it('accepts and marks read once per newer message, not on every poll', async () => {
+	it('accepts once and marks read once per newer message, not on every poll', async () => {
 		const {fetch, count} = countingFetch();
 		await h.send({from: A, to: B, content: 'one'});
 		const conversation = conversationOf(B, A, fetch, {markAsAcceptedAndRead: true});
 		const stop = hold(conversation);
 		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1);
 		await wait(100); // several polls
-		expect(count('/api/private/acceptConversation')).toBe(1);
-		expect(await h.accepted(B)).toHaveLength(1);
+		expect(count('/api/private/accept')).toBe(1);
+		expect(count('/api/private/markRead')).toBe(1);
+		const [accepted] = await h.accepted(B);
+		expect([accepted.lastSeq, accepted.lastReadSeq]).toEqual([1, 1]);
+		await h.send({from: A, to: B, content: 'two'});
+		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 2);
+		await wait(100);
+		expect([count('/api/private/accept'), count('/api/private/markRead')]).toEqual([1, 2]);
 		stop();
+	});
+
+	it('fetches only what is new after the first page: listMessages after the last seq it has', async () => {
+		const bodies: any[] = [];
+		const fetch = (async (input: any, init?: any) => {
+			if (String(input).endsWith('/api/private/listMessages')) {
+				bodies.push(JSON.parse(init.body));
+			}
+			return h.app.request(input, init);
+		}) as typeof globalThis.fetch;
+		await h.send({from: A, to: B, content: 'one'});
+		await h.send({from: A, to: B, content: 'two'});
+		const conversation = conversationOf(B, A, fetch);
+		const stop = hold(conversation);
+		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 2);
+		await h.send({from: A, to: B, content: 'three'});
+		const state = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 3);
+		stop();
+		expect(state.step === 'Fetched' && state.messages.map((m) => [m.seq, m.content])).toEqual([
+			[1, 'one'],
+			[2, 'two'],
+			[3, 'three'],
+		]);
+		expect(bodies[0].after).toBeUndefined();
+		expect(bodies.slice(1).every((body) => body.after >= 2)).toBe(true);
 	});
 
 	it('surfaces a failing server and goes on polling', async () => {
 		let down = true;
-		const {fetch} = countingFetch((path) => down && path === '/api/private/getMessages');
+		const {fetch} = countingFetch((path) => down && path === '/api/private/listMessages');
 		const conversation = conversationOf(A, B, fetch);
 		const stop = hold(conversation);
 		const failed = await until(conversation, (c) => !!c.error);

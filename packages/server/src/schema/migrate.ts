@@ -15,6 +15,8 @@ const TABLES = [
 	'RequestSignatures',
 	'Blocks',
 	'Messages',
+	'Inbox',
+	// 0001_v0_6's, dropped by 0002 (kept here for a database that stopped between them)
 	'ConversationParticipants',
 	'Conversations',
 	'DomainUsers',

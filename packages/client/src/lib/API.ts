@@ -1,33 +1,29 @@
 import { REQUEST_SIGNATURE_HEADER, signRequest } from 'delegated-identity';
 import type {
-	ActionAcceptConversation,
+	ActionAccept,
 	ActionEditDomainUser,
-	ActionGetAcceptedConversations,
-	ActionGetConversations,
 	ActionGetDomainUser,
 	ActionGetKeySet,
-	ActionGetMessages,
-	ActionGetUnacceptedConversations,
-	ActionMarkAsRead,
+	ActionListConversations,
+	ActionListMessages,
+	ActionMarkRead,
 	ActionOpenSession,
 	ActionRegisterDomainUser,
-	ActionRejectConversation,
+	ActionReject,
 	ActionSendMessage,
 	ActionUnblock,
 	ErrorCode,
 	ErrorResponse,
-	ResponseAcceptConversation,
+	ResponseAccept,
 	ResponseEditDomainUser,
-	ResponseGetAcceptedConversations,
-	ResponseGetConversations,
 	ResponseGetDomainUser,
 	ResponseGetKeySet,
-	ResponseGetMessages,
-	ResponseGetUnacceptedConversations,
-	ResponseMarkAsRead,
+	ResponseListConversations,
+	ResponseListMessages,
+	ResponseMarkRead,
 	ResponseOpenSession,
 	ResponseRegisterDomainUser,
-	ResponseRejectConversation,
+	ResponseReject,
 	ResponseSendMessage,
 	ResponseUnblock
 } from '@missiv/common';
@@ -68,8 +64,9 @@ export const SESSION_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
 
 /**
  * The typed HTTP API. A call that needs an account takes its signing key
- * (`APIOptions`): `register` and `sendMessage` are signed with it (delegated-
- * identity's Ed25519 envelope); every other call presents a session token
+ * (`APIOptions`): `register` is signed with it (delegated-identity's Ed25519
+ * envelope); every other call, `sendMessage` included (whose message carries
+ * its own signature), presents a session token
  * (ADR-0006), which this API opens with one signed `POST /api/session` per
  * domain and key, reuses, renews before it expires, and opens again once when
  * the server refuses it (`unauthenticated`: a rotated secret, a replaced key set).
@@ -161,16 +158,17 @@ export class API {
 		return opening;
 	}
 
-	/** A call authenticated by the session of `options`' key in `action.domain`. */
+	/** A call authenticated by the session of `options`' key in `domain` (by default `action.domain`). */
 	async authenticatedCall<T>(
 		path: string,
-		action: { domain: string },
-		options: APIOptions
+		action: object,
+		options: APIOptions,
+		domain: string = (action as { domain: string }).domain
 	): Promise<T> {
-		let opening = this.session(action.domain, options);
+		let opening = this.session(domain, options);
 		let session = await opening;
 		if (session.expiresAt - SESSION_RENEWAL_MARGIN_MS <= Date.now()) {
-			opening = this.session(action.domain, options, opening);
+			opening = this.session(domain, options, opening);
 			session = await opening;
 		}
 		try {
@@ -182,7 +180,7 @@ export class API {
 				throw err;
 			}
 			// once: a token refused twice is not a stale session
-			session = await this.session(action.domain, options, opening);
+			session = await this.session(domain, options, opening);
 			return this.call<T>(path, action, undefined, { Authorization: `Bearer ${session.token}` });
 		}
 	}
@@ -204,48 +202,43 @@ export class API {
 		return this.call<ResponseGetKeySet>('/user/getKeySet', action);
 	}
 
+	/**
+	 * Send a message (`composeMessage` / `composeIntroduction`): on the session
+	 * of its sender's key, authorized by its own signature. Answers its `seq`; a
+	 * retry of the same message (same messageID and signature) answers the same.
+	 * Refused `stale` (its `details.serverTime`) when its messageID is too far
+	 * from the server's clock: compose it again with a fresh messageID.
+	 */
 	async sendMessage(action: ActionSendMessage, options: APIOptions) {
-		return this.call<ResponseSendMessage>('/private/sendMessage', action, options);
+		return this.authenticatedCall<ResponseSendMessage>(
+			'/messages/send',
+			action,
+			options,
+			action.message.domain
+		);
 	}
 
-	async getConversations(action: ActionGetConversations, options: APIOptions) {
-		return this.authenticatedCall<ResponseGetConversations>(
-			'/private/getConversations',
+	/** A conversation's messages by seq: `after` what the client has, `before` to page back. */
+	async listMessages(action: ActionListMessages, options: APIOptions) {
+		return this.authenticatedCall<ResponseListMessages>('/private/listMessages', action, options);
+	}
+
+	/** The account's conversations, newest message first, optionally by status. */
+	async listConversations(action: ActionListConversations, options: APIOptions) {
+		return this.authenticatedCall<ResponseListConversations>(
+			'/private/listConversations',
 			action,
 			options
 		);
 	}
 
-	async getAcceptedConversations(action: ActionGetAcceptedConversations, options: APIOptions) {
-		return this.authenticatedCall<ResponseGetAcceptedConversations>(
-			'/private/getAcceptedConversations',
-			action,
-			options
-		);
+	async accept(action: ActionAccept, options: APIOptions) {
+		return this.authenticatedCall<ResponseAccept>('/private/accept', action, options);
 	}
 
-	async getUnacceptedConversations(action: ActionGetUnacceptedConversations, options: APIOptions) {
-		return this.authenticatedCall<ResponseGetUnacceptedConversations>(
-			'/private/getUnacceptedConversations',
-			action,
-			options
-		);
-	}
-
-	async acceptConversation(action: ActionAcceptConversation, options: APIOptions) {
-		return this.authenticatedCall<ResponseAcceptConversation>(
-			'/private/acceptConversation',
-			action,
-			options
-		);
-	}
-
-	async rejectConversation(action: ActionRejectConversation, options: APIOptions) {
-		return this.authenticatedCall<ResponseRejectConversation>(
-			'/private/rejectConversation',
-			action,
-			options
-		);
+	/** Reject a conversation, which blocks its other member in the domain. */
+	async reject(action: ActionReject, options: APIOptions) {
+		return this.authenticatedCall<ResponseReject>('/private/reject', action, options);
 	}
 
 	/** Let a member you blocked (by rejecting their conversation) reach you again. */
@@ -253,12 +246,9 @@ export class API {
 		return this.authenticatedCall<ResponseUnblock>('/private/unblock', action, options);
 	}
 
-	async markAsRead(action: ActionMarkAsRead, options: APIOptions) {
-		return this.authenticatedCall<ResponseMarkAsRead>('/private/markAsRead', action, options);
-	}
-
-	async getMessages(action: ActionGetMessages, options: APIOptions) {
-		return this.authenticatedCall<ResponseGetMessages>('/private/getMessages', action, options);
+	/** Mark a conversation read up to `seq`. */
+	async markRead(action: ActionMarkRead, options: APIOptions) {
+		return this.authenticatedCall<ResponseMarkRead>('/private/markRead', action, options);
 	}
 
 	/** Drop every table and migrate again; needs the server's ADMIN_TOKEN. */
