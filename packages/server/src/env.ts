@@ -23,6 +23,12 @@ export type Env = {
 	PUSH_SERVER_URL?: string;
 	/** the token push-notification-server issued for each domain: `<domain>=<token>,...` (secrets) */
 	PUSH_TOKENS?: string;
+	/**
+	 * `true` to send no Web Push to a recipient who has the live channel open
+	 * (`/api/inbox/ws`) in the message's domain, where the message is pushed on
+	 * the socket already; unset, every recipient is pushed, online or not
+	 */
+	PUSH_SKIP_WHEN_ONLINE?: string;
 	/** the JSON-RPC endpoint of a chain, for contract-gated rooms */
 	[chainId: `CHAIN_${string}`]: string | undefined;
 };

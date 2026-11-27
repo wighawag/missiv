@@ -5,6 +5,7 @@ Drives a missiv server over real HTTP and WebSockets with many simulated clients
 ```sh
 pnpm build                       # the harness runs the built packages
 pnpm load all                    # every scenario against the Node.js platform
+pnpm load live --clients 200 --conversations 200   # live fan-out to 200 open inbox sockets
 pnpm load send --target bun      # one scenario against the Bun platform (bun on PATH, or --bun <path>)
 pnpm load read --target url --url http://127.0.0.1:34003   # a server already running (wrangler dev, a deployment)
 pnpm load room --room-size 500 --rate 50 --json /tmp/room.json
@@ -16,10 +17,11 @@ pnpm load --help
 - `send`: every client sends direct messages in its conversations, one after another (0.6: one `clear` message signed by the sender, whose signature the server verifies against the sender's current key set; the content is a placeholder of `--size` characters, so the client's encryption is not in the numbers, its signing is, and the server's work is that of any scheme).
 - `read`: every client reads its conversations as an open conversation view does; each conversation is first filled with `--history` messages. In 0.6 (`--api 0.6`) that is the catch-up by seq (`listMessages` after the last seq the user has, so once caught up only what is new, usually nothing); `--api 0.6-page` reads the newest page (up to 100) every time, what opening a conversation costs and what every 0.5 read (`getMessages`) cost.
 - `list`: every client fetches its conversation list (`listConversations`, the 20 s poll).
+- `live`: live fan-out on the inbox channel (0.6). Every client opens its live inbox socket (`GET /api/inbox/ws`, its session token at the upgrade), then the `send` loop runs; each message is timed from the start of its send to its arrival on the recipient's socket (`live`) and on the sender's own (`live-own`, its other devices); `live-send` is the send's answer with the sockets open. A message not on both sockets within 5 s of the last delivery is `incomplete`. Its numbers: `work/notes/findings/load-live-inbox.md`.
 - `room`: `--room-size` sockets join one room (`room-join`: each socket's connect and login), then `--rate` messages a second for `--duration` seconds, the sockets taking turns to send. `room` is each message's time to its LAST delivery (every socket, the sender's included), `room-delivery` every single delivery; a message refused (`error:rate_limited`) or not delivered to every socket counts as `incomplete`.
-- `all`: the four in turn; `send`, `read` and `list` share one set of users and conversations.
+- `all`: the five in turn; `send`, `read`, `list` and `live` share one set of users and conversations.
 
-`send`, `read` and `list` are closed loops: each of `--clients` clients issues its next request as soon as the previous one is answered, so the throughput is what the server sustains at that concurrency and the latency includes the queueing. `room` is an open loop at a fixed rate.
+`send`, `read`, `list` and `live` are closed loops: each of `--clients` clients issues its next request as soon as the previous one is answered, so the throughput is what the server sustains at that concurrency and the latency includes the queueing. `room` is an open loop at a fixed rate.
 
 Each result line also gives `serverLoad` (node only: the share of the scenario's time the server's thread was busy, 100% means the server is the bottleneck) and, at the end, the harness's own event loop utilization: above 90% the harness, not the server, is the limit, and it says so.
 

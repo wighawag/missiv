@@ -1,15 +1,23 @@
 import type { Readable } from 'svelte/store';
 import {
 	getConversationID,
+	inboxConversationKey,
 	ulidAt,
 	type Address,
 	type KeySet,
 	type Message,
-	type PublicKeySet
+	type PublicKeySet,
+	type ResponseSendMessage
 } from '@missiv/common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, MissivAPIError, type FetchFunction } from '$lib/API.js';
-import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
+import {
+	activeStore,
+	retryUntilDone,
+	toStoreError,
+	type StoreError
+} from '$lib/utils/lifecycle.js';
+import { openInboxChannel, type CreateInboxSocket } from '$lib/inbox/index.js';
 import {
 	composeIntroduction,
 	composeMessage,
@@ -40,10 +48,11 @@ export type OtherUser = {
 export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
 	| // no registered account
 	{ step: 'Idle'; conversationID: undefined }
-	// fetching the messages for the first time
+	// fetching the newest messages for the first time
 	| { step: 'Fetching'; conversationID: string }
-	// fetched, and polled again while subscribed for what is new (by seq); in seq
-	// order, newest last; each message opened on its own
+	// fetched, then kept current by the live inbox channel (each new message
+	// pushed, what was missed synced by seq after a reconnection); in seq order,
+	// newest last; each message opened on its own
 	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[] }
 );
 
@@ -55,25 +64,28 @@ export type CurrentConversation = Readable<ConversationState> & {
 };
 
 /**
- * One conversation of two, while subscribed: the newest page first, then every
- * poll fetches only the messages after the last seq it has (`listMessages`
- * with `after`), opening each new one once (`openMessage`). Polling stays until
- * the live inbox channel (task `live-inbox-channel`).
+ * One conversation of two, while subscribed: the newest page over HTTP once,
+ * then the live inbox channel (`openInboxChannel`, one socket shared with the
+ * account's other stores): every new message is pushed and opened once
+ * (`openMessage`, each seq once), and after every (re)connection a `sync` asks
+ * for what came after the last seq it has. No polling. A message this store
+ * sends is shown from the send's answer, its echo on the socket ignored.
  */
 export function openOneConversation(params: {
 	registration: MissivRegistrationStore;
 	endpoint: string;
 	domain: string;
 	namespace: string;
-	/** seconds between two fetches (default 2) */
-	pollingInterval?: number;
 	otherUser: { address: Address; name?: string };
 	/** accept the conversation (once) and mark it read up to each newer message shown */
 	markAsAcceptedAndRead?: boolean;
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
+	/** how the live channel's socket is made (default: `new WebSocket(url, protocols)`) */
+	createWebSocket?: CreateInboxSocket;
+	/** the first delay before a retry (a failed fetch, a lost socket), doubled up to 30 s (default 1 s) */
+	retryDelayMs?: number;
 }): CurrentConversation {
-	const pollingInterval = params.pollingInterval || 2;
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 	const { domain, namespace } = params;
 	// a key is only ever the one this store verified
@@ -82,9 +94,14 @@ export function openOneConversation(params: {
 		name: params.otherUser.name
 	};
 
-	/** the account of the current run, and how to refresh it */
+	/** the account of the current run, and how to show a message it sent */
 	let current:
-		| { address: Address; keySet: KeySet; conversationID: string; refresh(): Promise<void> }
+		| {
+				address: Address;
+				keySet: KeySet;
+				conversationID: string;
+				add(messages: Message[]): Promise<void>;
+		  }
 		| undefined;
 
 	const store = activeStore<MissivRegistration, ConversationState>({
@@ -101,13 +118,30 @@ export function openOneConversation(params: {
 			const keySet = registration.keySet;
 			const privateKey = keySet.signing.privateKey;
 			const conversationID = getConversationID(address, params.otherUser.address);
+			const syncKey = inboxConversationKey({ namespace, conversationID });
 			const reader = { address, domain, keySet };
 			ctx.set({ step: 'Fetching', conversationID, otherUser: initialOther });
 			let lastMarked = 0;
 			let accepted = false;
-			/** the newest seq this run has, the cursor of the next fetch */
-			let lastSeq: number | undefined;
+			let marking: Promise<void> = Promise.resolve();
+			/** every seq opened or being opened, so each is opened once */
+			const known = new Set<number>();
+			/** the openings in flight, by seq */
+			const opening = new Map<number, Promise<void>>();
+			/** seqs whose opening failed (a key set fetch): the sync cursor stays below them */
+			const failed = new Set<number>();
 			let opened: OpenedMessage[] = [];
+			let fetched = false;
+			let stopFetch: (() => void) | undefined;
+
+			const setError = (message: string) => (err: unknown) =>
+				ctx.update((state) => ({ ...state, error: toStoreError(message, err) }));
+
+			/** the seq a sync asks after: the newest this run has, below any it failed to open */
+			function cursor(): number {
+				const newest = opened.length ? opened[opened.length - 1].seq : 0;
+				return failed.size > 0 ? Math.min(newest, Math.min(...failed) - 1) : newest;
+			}
 
 			async function resolveOtherKey() {
 				const { otherUser } = ctx.get();
@@ -136,76 +170,154 @@ export function openOneConversation(params: {
 				}));
 			}
 
-			async function fetchMessages() {
-				await resolveOtherKey();
-				// the first fetch is the newest page (older ones are not paged in here);
-				// every later one each page after the newest seq this run has, so a burst
-				// larger than a page is not skipped
-				let more = true;
-				while (more) {
-					const page = await api.listMessages(
-						{
-							type: 'listMessages',
-							domain,
-							namespace,
-							conversationID,
-							...(lastSeq !== undefined ? { after: lastSeq } : {})
-						},
-						{ privateKey }
-					);
-					// a key set fetch that fails throws here: the cursor stays, the next poll retries
-					// a message the server returns for another scope (domain, namespace or
-					// conversation) is not this thread's: shown as unverified, never opened
-					const fresh = await Promise.all(
-						page.messages.map((message) =>
-							message.domain === domain &&
-							message.namespace === namespace &&
-							message.conversationID === conversationID
-								? openMessage(message, reader, api)
-								: Promise.resolve(notThisConversation(message))
-						)
-					);
-					if (!ctx.active) {
-						return;
-					}
-					more = lastSeq !== undefined && page.hasMore;
-					// a refresh after a send may overlap a poll: each seq once, in order
-					const known = new Set(opened.map((message) => message.seq));
-					opened = [...opened, ...fresh.filter((message) => !known.has(message.seq))].sort(
-						(a, b) => a.seq - b.seq
-					);
-					lastSeq = Math.max(lastSeq ?? 0, ...page.messages.map((message) => message.seq));
-				}
+			function publish() {
+				if (!fetched || !ctx.active) return;
 				ctx.update((state) => ({
 					step: 'Fetched',
 					conversationID,
 					otherUser: state.otherUser,
 					messages: opened
 				}));
+				markIfNeeded();
+			}
+
+			function markIfNeeded() {
 				const newest = opened[opened.length - 1];
-				if (params.markAsAcceptedAndRead && newest && newest.seq > lastMarked) {
-					lastMarked = newest.seq;
-					if (!accepted) {
-						await api.accept({ type: 'accept', domain, namespace, conversationID }, { privateKey });
-						accepted = true;
+				if (!params.markAsAcceptedAndRead || !newest || newest.seq <= lastMarked) return;
+				lastMarked = newest.seq;
+				const seq = newest.seq;
+				marking = marking
+					.then(async () => {
+						if (!accepted) {
+							await api.accept(
+								{ type: 'accept', domain, namespace, conversationID },
+								{ privateKey }
+							);
+							accepted = true;
+						}
+						await api.markRead(
+							{ type: 'markRead', domain, namespace, conversationID, seq },
+							{ privateKey }
+						);
+					})
+					.catch(setError('failed to mark the conversation read'));
+			}
+
+			/**
+			 * Open the messages not yet known and add them in seq order. A message the
+			 * server returns for another scope (domain, namespace or conversation) is
+			 * not this thread's: shown as unverified, never opened.
+			 */
+			async function add(messages: Message[]) {
+				// a seq being opened (its echo raced the send's answer) is awaited, not opened twice
+				const inFlight = messages.flatMap((message) => {
+					const promise = opening.get(message.seq);
+					return promise ? [promise] : [];
+				});
+				const fresh = messages.filter((message) => !known.has(message.seq));
+				for (const message of fresh) known.add(message.seq);
+				if (fresh.length === 0) {
+					await Promise.all(inFlight);
+					return;
+				}
+				const settled = Promise.allSettled(
+					fresh.map((message) =>
+						message.domain === domain &&
+						message.namespace === namespace &&
+						message.conversationID === conversationID
+							? openMessage(message, reader, api)
+							: Promise.resolve(notThisConversation(message))
+					)
+				).then((results) => {
+					if (!ctx.active) return;
+					const done: OpenedMessage[] = [];
+					results.forEach((result, i) => {
+						const seq = fresh[i].seq;
+						if (result.status === 'fulfilled') {
+							failed.delete(seq);
+							done.push(result.value);
+						} else {
+							// opened again when a sync brings it back
+							known.delete(seq);
+							failed.add(seq);
+							setError('failed to open a message')(result.reason);
+						}
+					});
+					opened = [...opened, ...done].sort((a, b) => a.seq - b.seq);
+					publish();
+				});
+				for (const message of fresh) opening.set(message.seq, settled);
+				try {
+					await Promise.all([settled, ...inFlight]);
+				} finally {
+					for (const message of fresh) {
+						if (opening.get(message.seq) === settled) opening.delete(message.seq);
 					}
-					await api.markRead(
-						{ type: 'markRead', domain, namespace, conversationID, seq: newest.seq },
-						{ privateKey }
-					);
 				}
 			}
 
-			const run = { address, keySet, conversationID, refresh: fetchMessages };
+			async function fetchNewest() {
+				await resolveOtherKey();
+				const page = await api.listMessages(
+					{ type: 'listMessages', domain, namespace, conversationID },
+					{ privateKey }
+				);
+				if (!ctx.active) return;
+				await add(page.messages);
+				fetched = true;
+				publish();
+				// what arrived between the page's read and the socket's opening
+				await channel.sync({ [syncKey]: cursor() });
+			}
+
+			function startFetching() {
+				if (stopFetch) return;
+				stopFetch = retryUntilDone(
+					ctx,
+					fetchNewest,
+					setError('failed to fetch the messages'),
+					params.retryDelayMs
+				);
+			}
+
+			const channel = openInboxChannel({
+				endpoint: params.endpoint,
+				domain,
+				privateKey,
+				api,
+				createWebSocket: params.createWebSocket,
+				reconnectDelayMs: params.retryDelayMs
+			});
+			const unsubscribe = channel.subscribe({
+				onOpen() {
+					ctx.update(({ error: _, ...state }) => state as ConversationState);
+					if (fetched) {
+						channel.sync({ [syncKey]: cursor() });
+					} else {
+						startFetching();
+					}
+				},
+				onMessage(message) {
+					if (
+						message.domain === domain &&
+						message.namespace === namespace &&
+						message.conversationID === conversationID
+					) {
+						add([message]).catch(setError('failed to open a message'));
+					}
+				},
+				onError(err) {
+					// without the channel, the history still shows
+					startFetching();
+					setError('the live inbox is not connected')(err);
+				}
+			});
+
+			const run = { address, keySet, conversationID, add };
 			current = run;
-			const stop = poll(ctx, pollingInterval * 1000, fetchMessages, (err) =>
-				ctx.update((state) => ({
-					...state,
-					error: toStoreError('failed to fetch the messages', err)
-				}))
-			);
 			return () => {
-				stop();
+				unsubscribe();
+				stopFetch?.();
 				if (current === run) current = undefined;
 			};
 		}
@@ -228,19 +340,20 @@ export function openOneConversation(params: {
 		compose: (messageID?: string) => ReturnType<typeof composeMessage>
 	) {
 		const options = { privateKey: run.keySet.signing.privateKey };
+		let message = await compose();
+		let answer: ResponseSendMessage;
 		try {
-			await api.sendMessage({ type: 'sendMessage', message: await compose() }, options);
+			answer = await api.sendMessage({ type: 'sendMessage', message }, options);
 		} catch (err) {
 			const serverTime = (err as MissivAPIError)?.details as { serverTime?: number } | undefined;
 			if (!(err instanceof MissivAPIError && err.code === 'stale' && serverTime?.serverTime)) {
 				throw err;
 			}
-			await api.sendMessage(
-				{ type: 'sendMessage', message: await compose(ulidAt(serverTime.serverTime)) },
-				options
-			);
+			message = await compose(ulidAt(serverTime.serverTime));
+			answer = await api.sendMessage({ type: 'sendMessage', message }, options);
 		}
-		await run.refresh().catch(() => {});
+		// shown at once, whether or not the live channel is connected; its echo is ignored
+		await run.add([{ ...message, ...answer }]).catch(() => {});
 	}
 
 	async function sendMessage(text: string) {

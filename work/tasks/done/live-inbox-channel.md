@@ -46,3 +46,9 @@ git fetch <remote> && git switch -c work/live-inbox-channel <remote>/main
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/live-inbox-channel.md work/tasks/done/live-inbox-channel.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-live-inbox-channel-decisions.md](../../notes/observations/2026-11-27-live-inbox-channel-decisions.md)

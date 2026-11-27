@@ -10,7 +10,7 @@ import {
 	type ResponseSendMessage,
 	type StaleDetails,
 } from '@missiv/common';
-import {pushNotifierFromEnv} from '../../push.js';
+import {deliverAppended} from '../../delivery.js';
 import {Env} from '../../env.js';
 import {otherMemberOf} from '../conversation.js';
 
@@ -70,27 +70,12 @@ export function getMessagesAPI<CustomEnv extends Env>(options: ServerOptions<Cus
 				for (const update of result.pendingInboxUpdates) {
 					await stores.inbox.update(update);
 				}
-				// a push to the recipient (not one who blocked the sender), after the
-				// response, from the recipients the append loaded
-				const notifier = options.getPushNotifier ? options.getPushNotifier(env as CustomEnv) : pushNotifierFromEnv(env);
-				if (notifier && result.pushTo.length > 0) {
-					const pushes = Promise.all(
-						result.pushTo.map((to) =>
-							notifier.notify({
-								domain: message.domain,
-								namespace: message.namespace,
-								conversationID: message.conversationID,
-								messageID: message.messageID,
-								sender: account,
-								recipient: to.address,
-								appOrigin: to.appOrigin,
-							}),
-						),
-					);
-					const settled = pushes.catch((err) => console.error(`push failed`, err));
-					if (options.waitUntil) {
-						options.waitUntil(c, settled);
-					}
+				// the live frames to both members' sockets and the push to the recipient
+				// (not one who blocked the sender), after the response, from the
+				// recipients the append loaded
+				const delivered = deliverAppended(options, env as CustomEnv, stores, result, {sender: account, recipient});
+				if (options.waitUntil) {
+					options.waitUntil(c, delivered);
 				}
 			}
 			return c.json({

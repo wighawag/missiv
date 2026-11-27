@@ -5,6 +5,9 @@ export type {
 	Inbox,
 	InboxUpdate,
 	KeyDirectory,
+	LiveConnection,
+	LiveInbox,
+	LiveInboxHost,
 	PushRecipient,
 	Stores,
 } from './ports.js';

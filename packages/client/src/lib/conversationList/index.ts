@@ -1,6 +1,12 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, type FetchFunction } from '$lib/API.js';
-import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
+import {
+	activeStore,
+	retryUntilDone,
+	toStoreError,
+	type StoreError
+} from '$lib/utils/lifecycle.js';
+import { openInboxChannel, type CreateInboxSocket } from '$lib/inbox/index.js';
 import { isUnread, type Conversation } from '@missiv/common';
 
 export type ConversationList = { error?: StoreError } & (
@@ -13,7 +19,7 @@ export type ConversationList = { error?: StoreError } & (
 			step: 'Fetching';
 			address: string;
 	  }
-	// fetched, and polled again while subscribed
+	// fetched, then kept current by the live inbox channel while subscribed
 	| {
 			step: 'Fetched';
 			address: string;
@@ -39,18 +45,36 @@ export function countConversations(conversations: Conversation[]) {
 	return { numUnread, numUnaccepted };
 }
 
+/** Newest message first, as `listConversations` orders them. */
+function byLastMessage(a: Conversation, b: Conversation) {
+	return (
+		b.lastMessageAt - a.lastMessageAt ||
+		(a.conversationID < b.conversationID ? 1 : a.conversationID > b.conversationID ? -1 : 0)
+	);
+}
+
+/**
+ * The account's conversations in a domain and namespace, while subscribed: the
+ * newest page (`listConversations`) each time the live inbox channel opens (the
+ * first time and after every reconnection, when conversations may have started
+ * or changed unseen), then kept current by the inbox rows the channel pushes
+ * (each new message, accept, reject, markRead, from any of the account's
+ * devices and stores), applied by `lastSeq` (never back). No polling.
+ */
 export function openConversationList(params: {
 	registration: MissivRegistrationStore;
 	endpoint: string;
 	domain: string;
 	namespace: string;
-	/** seconds between two fetches (default 20) */
-	pollingInterval?: number;
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
+	/** how the live channel's socket is made (default: `new WebSocket(url, protocols)`) */
+	createWebSocket?: CreateInboxSocket;
+	/** the first delay before a retry (a failed fetch, a lost socket), doubled up to 30 s (default 1 s) */
+	retryDelayMs?: number;
 }) {
-	const pollingInterval = params.pollingInterval || 20;
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
+	const { domain, namespace } = params;
 
 	const store = activeStore<MissivRegistration, ConversationList>({
 		source: params.registration,
@@ -62,28 +86,91 @@ export function openConversationList(params: {
 				return;
 			}
 			const { address, keySet } = registration;
+			const privateKey = keySet.signing.privateKey;
 			ctx.set({ step: 'Fetching', address });
-			return poll(
-				ctx,
-				pollingInterval * 1000,
-				async () => {
+			let rows = new Map<string, Conversation>();
+			let fetched = false;
+			/** the rows pushed while a fetch is in flight, applied over its answer */
+			let pushedDuringFetch: Conversation[] | undefined;
+			let stopFetch: (() => void) | undefined;
+
+			function apply(map: Map<string, Conversation>, conversation: Conversation) {
+				const known = map.get(conversation.conversationID);
+				if (!known || conversation.lastSeq >= known.lastSeq) {
+					map.set(conversation.conversationID, conversation);
+				}
+			}
+
+			function publish() {
+				if (!fetched || !ctx.active) return;
+				const conversations = [...rows.values()].sort(byLastMessage);
+				ctx.set({ step: 'Fetched', address, conversations, ...countConversations(conversations) });
+			}
+
+			async function fetchList() {
+				pushedDuringFetch = [];
+				try {
 					const { conversations } = await api.listConversations(
-						{ type: 'listConversations', domain: params.domain, namespace: params.namespace },
-						{ privateKey: keySet.signing.privateKey }
+						{ type: 'listConversations', domain, namespace },
+						{ privateKey }
 					);
-					ctx.set({
-						step: 'Fetched',
-						address,
-						conversations,
-						...countConversations(conversations)
-					});
+					if (!ctx.active) return;
+					const next = new Map<string, Conversation>();
+					for (const conversation of conversations) apply(next, conversation);
+					for (const conversation of pushedDuringFetch) apply(next, conversation);
+					rows = next;
+					fetched = true;
+					publish();
+				} finally {
+					pushedDuringFetch = undefined;
+				}
+			}
+
+			function refetch() {
+				stopFetch?.();
+				stopFetch = retryUntilDone(
+					ctx,
+					fetchList,
+					(err) =>
+						ctx.update((list) => ({
+							...list,
+							error: toStoreError('failed to fetch the conversations', err)
+						})),
+					params.retryDelayMs
+				);
+			}
+
+			const channel = openInboxChannel({
+				endpoint: params.endpoint,
+				domain,
+				privateKey,
+				api,
+				createWebSocket: params.createWebSocket,
+				reconnectDelayMs: params.retryDelayMs
+			});
+			const unsubscribe = channel.subscribe({
+				onOpen() {
+					refetch();
 				},
-				(err) =>
+				onConversation(conversation) {
+					if (conversation.domain !== domain || conversation.namespace !== namespace) return;
+					pushedDuringFetch?.push(conversation);
+					apply(rows, conversation);
+					publish();
+				},
+				onError(err) {
+					// without the channel, the list still shows (once)
+					if (!fetched && !stopFetch) refetch();
 					ctx.update((list) => ({
 						...list,
-						error: toStoreError('failed to fetch the conversations', err)
-					}))
-			);
+						error: toStoreError('the live inbox is not connected', err)
+					}));
+				}
+			});
+			return () => {
+				unsubscribe();
+				stopFetch?.();
+			};
 		}
 	});
 

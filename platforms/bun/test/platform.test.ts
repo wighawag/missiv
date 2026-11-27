@@ -5,6 +5,7 @@
 // `bun-and-cf-worker-platforms-not-run-since-0-4`): this runs it.
 import {afterAll, beforeAll, describe, expect, it} from 'bun:test';
 import {createBunServer} from '../src/server.js';
+import {INBOX_WS_PATH, INBOX_WS_PROTOCOL, type InboxServerFrame} from '@missiv/common';
 import {
 	conversationIDOf,
 	createRemoteActions,
@@ -45,6 +46,40 @@ describe('bun platform', () => {
 		expect([forB.status, forB.lastSeq, forB.lastReadSeq]).toEqual(['accepted', 2, 2]);
 		const [forA] = await actions.conversations(a);
 		expect([forA.status, forA.lastSeq, forA.lastReadSeq]).toEqual(['accepted', 2, 1]);
+	});
+
+	it("serves the live inbox channel: a message reaches the recipient's open socket, a bad token is refused", async () => {
+		const [a, b]: TestUser[] = await Promise.all([createUser(), createUser()]);
+		await actions.registerAll([a, b]);
+		const wsURL = `ws://127.0.0.1:${server.port}${INBOX_WS_PATH}`;
+
+		const refused = new WebSocket(wsURL, [INBOX_WS_PROTOCOL, 'not.a-token']);
+		const refusedOutcome = await new Promise<string>((resolve) => {
+			refused.addEventListener('open', () => resolve('open'));
+			refused.addEventListener('error', () => resolve('refused'));
+			refused.addEventListener('close', () => resolve('refused'));
+		});
+		expect(refusedOutcome).toBe('refused');
+
+		const {token} = await actions.api.getSession('test.com', {privateKey: b.keySet.signing.privateKey});
+		const ws = new WebSocket(wsURL, [INBOX_WS_PROTOCOL, token]);
+		const frames: InboxServerFrame[] = [];
+		const received = new Promise<void>((resolve) =>
+			ws.addEventListener('message', (event) => {
+				frames.push(JSON.parse(String(event.data)));
+				if (frames.some((frame) => frame.type === 'conversation')) resolve();
+			}),
+		);
+		await new Promise((resolve, reject) => {
+			ws.addEventListener('open', resolve);
+			ws.addEventListener('error', reject);
+		});
+		expect(ws.protocol).toBe(INBOX_WS_PROTOCOL);
+		await actions.send({from: a, to: b, content: 'live on bun'});
+		await received;
+		expect(frames.map((frame) => frame.type)).toEqual(['message', 'conversation']);
+		expect(frames[0].type === 'message' && frames[0].message.content).toBe('live on bun');
+		ws.close();
 	});
 
 	it('answers its root', async () => {
