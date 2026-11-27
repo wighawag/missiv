@@ -1,5 +1,6 @@
 import {Hono} from 'hono';
-import {ActionSendMessageSchema, ServerOptions} from '../../types.js';
+import {ActionSendMessageSchema, RouteOptions} from '../../types.js';
+import {charge} from '../../rate-limit.js';
 import {requireAccount, setup} from '../../setup.js';
 import {MissivError, validateJSON} from '../../errors.js';
 import {
@@ -14,7 +15,7 @@ import {pushNotifierFromEnv} from '../../push.js';
 import {Env} from '../../env.js';
 import {otherMemberOf} from '../conversation.js';
 
-export function getMessagesAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+export function getMessagesAPI<CustomEnv extends Env>(options: RouteOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
 		/**
@@ -30,11 +31,15 @@ export function getMessagesAPI<CustomEnv extends Env>(options: ServerOptions<Cus
 		 * blocked the sender is acknowledged like any other and stored hidden
 		 * from them. No request signature and no replay set: the messageID, inside
 		 * its window and unique in the conversation, is the send's replay guard.
+		 * Before any of it but the token, the account's send budget (a token
+		 * bucket per account and domain, never per IP): beyond it `rate_limited`
+		 * with the wait, so a flood costs no signature check and no read.
 		 */
 		.post('/send', validateJSON(ActionSendMessageSchema), async (c) => {
 			const {message} = c.req.valid('json');
 			const {account, keyRef} = requireAccount(c, message.domain);
 			const {stores, env} = c.get('config');
+			await charge(options.getTokenBuckets(env as CustomEnv).send, `${message.domain}:${account}`);
 
 			if (message.sender !== account) {
 				throw new MissivError('forbidden', 'the message is not from the account of the session');

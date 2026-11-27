@@ -21,6 +21,14 @@ export abstract class RateLimiter<CustomEnv extends Env> extends AbstractServerO
 		this.nextAllowedTime = 0;
 	}
 
+	/**
+	 * Whether the limit has caught up with the clock (`nowMs`): its next action
+	 * would be answered as a new limiter's, so a process may forget it.
+	 */
+	isIdleAt(nowMs: number): boolean {
+		return this.nextAllowedTime * 1000 <= nowMs;
+	}
+
 	// as this is an abstract class, we defer instantiation logic to the subclass
 	instantiate() {}
 

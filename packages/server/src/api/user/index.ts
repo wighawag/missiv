@@ -4,16 +4,19 @@ import {
 	ActionGetDomainUserSchema,
 	ActionGetKeySetSchema,
 	ActionRegisterDomainUserSchema,
-	ServerOptions,
+	RouteOptions,
 } from '../../types.js';
 import {keySetRef, recoverAccount} from 'delegated-identity';
 import {isOriginOfDomain} from '@missiv/common';
 import {refuseReplay, requireAccount, requireSigner, setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {MissivError, validateJSON} from '../../errors.js';
+import {limitPerIP} from '../../rate-limit.js';
 
-export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+export function getUserAPI<CustomEnv extends Env>(options: RouteOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
+		// a registration charges the IP's budget (the one /session charges) before its signature is checked
+		.use('/register', limitPerIP(options))
 		.use(setup({serverOptions: options}))
 		/**
 		 * Register a key set: the request signed by its Ed25519 signing key, its

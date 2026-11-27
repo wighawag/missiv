@@ -7,10 +7,13 @@ import {performance} from 'node:perf_hooks';
 import {serve} from '@hono/node-server';
 import {createNodeServer} from 'missiv';
 
-// a session secret of its own: the harness's clients open sessions like any client
+// a session secret of its own: the harness's clients open sessions like any client.
+// The rate limits raised out of reach (every client registers from 127.0.0.1 and
+// sends in a closed loop): the run measures the server, not its token buckets
+const LOAD_RATE_LIMITS = {RATE_LIMIT_SEND_BURST: '1000000000', RATE_LIMIT_IP_BURST: '1000000000'};
 const {app, injectWebSocket} = await createNodeServer({
 	db: ':memory:',
-	env: {SESSION_SECRET: 'load-harness-session-secret'},
+	env: {SESSION_SECRET: 'load-harness-session-secret', ...LOAD_RATE_LIMITS},
 });
 const server = serve({fetch: app.fetch, port: 0, hostname: '127.0.0.1'}, (info) => {
 	parentPort?.postMessage({port: info.port});

@@ -137,9 +137,16 @@ export function mintSessionToken(secret: string, claims: SessionClaims): string 
 /**
  * The in-process server, its SESSION_SECRET set (pass `SESSION_SECRET: undefined`
  * for a server without), and `queries`: every SQL statement it prepared, in order.
+ * Its send budget is raised (`RATE_LIMIT_SEND_BURST`), so a test that sends a
+ * long history from one account is not rate limited; a test of the limits passes
+ * its own. `getIP` is the caller's IP as a platform finds it (none by default,
+ * and an unknown IP is not limited per IP).
  */
-export function createHarness(env: Record<string, string | undefined> = {}, options?: {notifier?: PushNotifier}) {
-	env = {SESSION_SECRET, ...env};
+export function createHarness(
+	env: Record<string, string | undefined> = {},
+	options?: {notifier?: PushNotifier; getIP?: () => string | undefined},
+) {
+	env = {SESSION_SECRET, RATE_LIMIT_SEND_BURST: '1000', ...env};
 	const db = new RemoteLibSQL(createClient({url: ':memory:'}));
 	const queries: string[] = [];
 	// the database as the server sees it, recording each statement it prepares
@@ -171,6 +178,7 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 			return env as any;
 		},
 		getPushNotifier: options?.notifier ? () => options.notifier : undefined,
+		getIP: options?.getIP,
 		upgradeWebSocket() {
 			return (() => {}) as any;
 		},

@@ -4,6 +4,7 @@ import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
 import type {PushNotifier} from './push.js';
 import type {Stores} from './stores/ports.js';
+import type {ServerTokenBuckets} from './rate-limit.js';
 
 export type ServerObjectStorage = {
 	get<T = unknown>(key: string): Promise<T | undefined>;
@@ -74,9 +75,19 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 	 */
 	inProcessRooms?: {
 		getRoom(env: Env, name: string): InProcessRoom;
-		/** the client's IP, for the rate limiter */
-		getIP?(c: Context): string | undefined;
 	};
+	/**
+	 * The client's IP, as the platform knows it (its socket's address, a header its
+	 * edge sets): for the per-IP limit of `/session` and `register` and for a room's
+	 * rate limiter. A request whose IP is unknown is not limited per IP.
+	 */
+	getIP?(c: Context): string | undefined;
+	/**
+	 * The token buckets of sends (per account) and of `/session` and `register`
+	 * (per IP); by default held in this process (`createInProcessTokenBuckets`),
+	 * configured by the RATE_LIMIT_* env. Resolved once per `createServer`.
+	 */
+	getTokenBuckets?: (env: Env) => ServerTokenBuckets;
 	getEnv: (c: Context<{Bindings: Env}>) => Env;
 	/**
 	 * The notifier of new direct messages; by default the one PUSH_SERVER_URL and
@@ -92,6 +103,11 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 			outputFormat: 'ws';
 		}
 	>;
+};
+
+/** The options a route module receives from `createServer`: its token buckets resolved, one set for all routes. */
+export type RouteOptions<Env extends Bindings = Bindings> = ServerOptions<Env> & {
+	getTokenBuckets: (env: Env) => ServerTokenBuckets;
 };
 
 // export type UpgradeWebSocket = (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<any, string, {

@@ -43,6 +43,7 @@ export const ERROR_STATUS = {
 	conflict: 409,
 	/** a messageID whose time is outside the window around the server's clock (`MESSAGE_ID_WINDOW_MS`) */
 	stale: 400,
+	/** a send beyond the account's budget, or a session or registration beyond the IP's (`RateLimitedDetails`) */
 	rate_limited: 429,
 	internal: 500,
 } as const;
@@ -296,6 +297,12 @@ export type ActionSendMessage = z.infer<typeof ActionSendMessageSchema>;
 export type ResponseSendMessage = {seq: number; serverTimestamp: number};
 /** The `details` of a `stale` refusal: the server's clock, to sign the message again against. */
 export type StaleDetails = {serverTime: number};
+/**
+ * The `details` of a `rate_limited` refusal: how long until the request would be
+ * accepted (the next token of the caller's bucket), also in the `Retry-After`
+ * header, in whole seconds rounded up.
+ */
+export type RateLimitedDetails = {retryAfterMs: number};
 
 /**
  * A conversation's messages by seq, always returned in ascending seq order:
