@@ -102,9 +102,18 @@ importers:
 
   packages/common:
     dependencies:
+      '@noble/ciphers':
+        specifier: ^1.2.1
+        version: 1.2.1
+      '@noble/curves':
+        specifier: ^1.9.7
+        version: 1.9.7
       '@noble/hashes':
         specifier: ^1.7.1
         version: 1.7.1
+      '@scure/base':
+        specifier: ^1.2.4
+        version: 1.2.4
       delegated-identity:
         specifier: ^0.2.0
         version: 0.2.0
@@ -124,6 +133,9 @@ importers:
       typescript:
         specifier: ^5.8.2
         version: 5.8.2
+      vitest:
+        specifier: ^3.0.9
+        version: 3.0.9(@types/node@22.13.10)(supports-color@8.1.1)(terser@5.39.0)(tsx@4.19.3)(yaml@2.7.0)
 
   packages/server:
     dependencies:
@@ -3378,7 +3390,7 @@ snapshots:
     dependencies:
       '@etherplay/delegation': 0.2.0
       '@etherplay/wallet-connector': 0.2.1
-      '@noble/curves': 1.8.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.7.1
       '@noble/secp256k1': 2.2.3
       '@scure/bip32': 1.6.2
@@ -4650,7 +4662,7 @@ snapshots:
   ox@0.6.9(typescript@5.8.2)(zod@3.24.2):
     dependencies:
       '@adraffy/ens-normalize': 1.11.0
-      '@noble/curves': 1.8.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.7.1
       '@scure/bip32': 1.6.2
       '@scure/bip39': 1.5.4

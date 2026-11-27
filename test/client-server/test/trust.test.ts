@@ -8,7 +8,7 @@ import {writable} from 'svelte/store';
 import {
 	createMissivRegistration,
 	encryptedCopies,
-	openMessage,
+	openMessageCopy,
 	openOneConversation,
 	verifyDomainUser,
 	type Account,
@@ -152,7 +152,7 @@ describe('nothing is sent in clear unless asked', () => {
 		const [copy] = await h.messages(B, conversationIDOf([A.address, B.address]));
 		expect(copy.messageType).toBe('encrypted');
 		expect(copy.content).not.toContain('only for B');
-		expect(await openMessage(copy, reader(B))).toMatchObject({content: 'only for B'});
+		expect(await openMessageCopy(copy, reader(B))).toMatchObject({content: 'only for B'});
 		stop();
 	});
 });
@@ -184,9 +184,9 @@ describe("each copy's signature is verified on read", () => {
 
 	it('opens a copy signed by its sender, for both members', async () => {
 		const copy = await sentByA('hi B');
-		expect(await openMessage(copy, reader(B))).toMatchObject({content: 'hi B', sender: A.address});
+		expect(await openMessageCopy(copy, reader(B))).toMatchObject({content: 'hi B', sender: A.address});
 		const [own] = await h.messages(A, copy.conversationID);
-		expect(await openMessage(own, reader(A))).toMatchObject({content: 'hi B'});
+		expect(await openMessageCopy(own, reader(A))).toMatchObject({content: 'hi B'});
 	});
 
 	it('refuses a copy whose content, recipient or conversation was changed', async () => {
@@ -197,7 +197,7 @@ describe("each copy's signature is verified on read", () => {
 			{...copy, namespace: 'other'},
 		];
 		for (const message of tampered) {
-			expect((await openMessage(message, reader(B))).error?.code).toBe('unverified');
+			expect((await openMessageCopy(message, reader(B))).error?.code).toBe('unverified');
 		}
 	});
 
@@ -208,7 +208,7 @@ describe("each copy's signature is verified on read", () => {
 			{...copy, senderKeySet: publicOf(C.keySet), senderOwnershipSignature: C.ownershipSignature},
 			{...copy, senderKeySet: publicOf(C.keySet)},
 		]) {
-			expect((await openMessage(forged, reader(B))).error?.code).toBe('unverified');
+			expect((await openMessageCopy(forged, reader(B))).error?.code).toBe('unverified');
 		}
 	});
 
@@ -227,7 +227,7 @@ describe("each copy's signature is verified on read", () => {
 			},
 			C.keySet.signing.privateKey,
 		);
-		expect((await openMessage({...copy, signature: resigned}, reader(B))).error?.code).toBe('unverified');
+		expect((await openMessageCopy({...copy, signature: resigned}, reader(B))).error?.code).toBe('unverified');
 	});
 
 	it('shows an undecryptable copy as such and the rest of the thread as text', async () => {

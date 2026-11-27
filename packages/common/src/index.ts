@@ -454,3 +454,29 @@ export {
 } from './push.js';
 
 export {messageCopyMessage, signMessageCopy, verifyMessageCopy, type MessageCopyToSign} from './message-signature.js';
+
+export {
+	MESSAGE_SCHEMES,
+	MAX_MESSAGE_CONTENT_LENGTH,
+	MessageIDSchema,
+	MessageSignatureHexSchema,
+	MessageHeaderSchema,
+	MessageToSignSchema,
+	MessageToSendSchema,
+	MessageSchema,
+	pairwiseKeyID,
+	keyRefsOfPairwiseKeyID,
+	messageHeaderLines,
+	messageSigningPayload,
+	signMessage,
+	verifyMessage,
+	encryptPairwise,
+	decryptPairwise,
+	type MessageScheme,
+	type MessageHeader,
+	type MessageToSign,
+	type MessageToSend,
+	type Message,
+} from './message.js';
+
+export {newULID} from './ids.js';

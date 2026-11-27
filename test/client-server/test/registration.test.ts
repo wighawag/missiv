@@ -3,7 +3,7 @@
 // one account do, and the key directory a reader checks old messages against.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {deriveKeySet, keySetRef, type KeySet} from 'delegated-identity';
-import {encryptedCopies, openMessage, verifyKeySet} from '@missiv/client';
+import {encryptedCopies, openMessageCopy, verifyKeySet} from '@missiv/client';
 import {
 	APP_ORIGIN,
 	conversationIDOf,
@@ -255,7 +255,7 @@ describe('the key directory', () => {
 
 		const [copy] = await h.messages(B, conversationID);
 		expect(copy).toMatchObject({senderKeyRef: A.keyRef, senderKeySet: publicOf(A.keySet)});
-		expect(await openMessage(copy, {address: B.address, domain: DOMAIN, keySet: B.keySet})).toMatchObject({
+		expect(await openMessageCopy(copy, {address: B.address, domain: DOMAIN, keySet: B.keySet})).toMatchObject({
 			content: 'before the replacement',
 		});
 	});
