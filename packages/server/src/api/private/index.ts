@@ -1,139 +1,75 @@
 import {Hono} from 'hono';
 import {
-	ActionAcceptConversationSchema,
-	ActionGetAcceptedConversationsSchema,
-	ActionGetConversationsSchema,
-	ActionGetMessagesSchema,
-	ActionGetUnacceptedConversationsSchema,
-	ActionMarkAsReadSchema,
-	ActionRejectConversationSchema,
-	ActionSendMessageSchema,
+	ActionAcceptSchema,
+	ActionListConversationsSchema,
+	ActionListMessagesSchema,
+	ActionMarkReadSchema,
+	ActionRejectSchema,
 	ActionUnblockSchema,
 	ServerOptions,
 } from '../../types.js';
-import {refuseReplay, requireAccount, requireSignedAccount, setup} from '../../setup.js';
-import {MissivError, validateJSON} from '../../errors.js';
-import {conversationIDOf} from '@missiv/common';
-import {pushNotifierFromEnv} from '../../push.js';
+import {requireAccount, setup} from '../../setup.js';
+import {validateJSON} from '../../errors.js';
+import {MAX_PAGE_SIZE, type ResponseListConversations, type ResponseListMessages} from '@missiv/common';
 import {Env} from '../../env.js';
+import {otherMemberOf} from '../conversation.js';
 
+/**
+ * The reads and the status changes of direct messaging (ADR-0006 "API"), every
+ * one on a session token: a member's messages by seq, its conversation list
+ * from its inbox index, accept, reject (and block), unblock, markRead. Sends are
+ * `/api/messages/send`.
+ */
 export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
 		.use(setup({serverOptions: options}))
-		.post('/sendMessage', validateJSON(ActionSendMessageSchema), async (c) => {
-			const action = c.req.valid('json');
-			// still a signed request, replay-checked, until the message signature
-			// authorizes a send (ADR-0004 decision 4, task sqlite-conversation-store-and-api)
-			const {account, domainUser} = requireSignedAccount(c, action.domain);
-			const storage = c.get('config').storage;
-
-			// the conversation is its members: the recipients, the sender among them
-			const members = action.messages.map((message) => message.to);
-			if (new Set(members).size !== members.length) {
-				throw new MissivError('invalid_request', 'a member is named twice');
-			}
-			if (!members.includes(account)) {
-				throw new MissivError('invalid_request', "the sender's own copy is missing");
-			}
-			if (action.conversationID !== conversationIDOf(members)) {
-				throw new MissivError('invalid_request', 'conversationID is not the ID of its members');
-			}
-			if (action.messageType === 'encrypted') {
-				// a recipient's copy names the X25519 key of that recipient's current key
-				// set; the sender's own copy names the key its shared secret is with, a member's
-				const keys = await storage.encryptionKeysOf(action.domain, members);
-				const memberKeys = new Set(keys.values());
-				for (const message of action.messages) {
-					const expected =
-						message.to === account ? memberKeys.has(message.toPublicKey) : keys.get(message.to) === message.toPublicKey;
-					if (!expected) {
-						throw new MissivError(
-							'conflict',
-							`the copy for ${message.to} is not encrypted to its registered encryption key`,
-						);
-					}
-				}
-			}
-			const blockers = await storage.blockersOf(action.domain, account, members);
-			const deliverTo = new Set(members.filter((member) => !blockers.has(member)));
-
-			await refuseReplay(c);
-			const {timestampMS, messageID} = await storage.sendMessage(domainUser, Date.now(), action, members, deliverTo);
-
-			// a push to each recipient (not the sender, not one who blocked them), after the response
-			const env = c.get('config').env as CustomEnv;
-			const notifier = options.getPushNotifier ? options.getPushNotifier(env) : pushNotifierFromEnv(env);
-			if (notifier) {
-				const recipients = members.filter((member) => member !== account && deliverTo.has(member));
-				const pushes = storage.domainUsersOf(action.domain, recipients).then((users) =>
-					Promise.all(
-						users.map((user) =>
-							notifier.notify({
-								domain: action.domain,
-								namespace: action.namespace,
-								conversationID: action.conversationID,
-								messageID,
-								sender: account,
-								recipient: user.user,
-								appOrigin: user.appOrigin,
-							}),
-						),
-					),
-				);
-				const settled = pushes.catch((err) => console.error(`push failed`, err));
-				if (options.waitUntil) {
-					options.waitUntil(c, settled);
-				}
-			}
-
-			return c.json({timestampMS});
-		})
-		.post('/getConversations', validateJSON(ActionGetConversationsSchema), async (c) => {
+		.post('/listMessages', validateJSON(ActionListMessagesSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			return c.json(await c.get('config').storage.getConversations(action.domain, action.namespace, account, action));
+			otherMemberOf(action.conversationID, account);
+			const page = await c.get('config').stores.conversations.listMessages(account, action, {
+				after: action.after,
+				before: action.before,
+				limit: action.limit ?? MAX_PAGE_SIZE,
+			});
+			return c.json(page satisfies ResponseListMessages);
 		})
-		.post('/getAcceptedConversations', validateJSON(ActionGetAcceptedConversationsSchema), async (c) => {
+		.post('/listConversations', validateJSON(ActionListConversationsSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			return c.json(
-				await c.get('config').storage.getAcceptedConversations(action.domain, action.namespace, account, action),
-			);
+			const page = await c.get('config').stores.inbox.listConversations(account, action, {
+				status: action.status,
+				before: action.before,
+				limit: action.limit ?? MAX_PAGE_SIZE,
+			});
+			return c.json(page satisfies ResponseListConversations);
 		})
-		.post('/getUnacceptedConversations', validateJSON(ActionGetUnacceptedConversationsSchema), async (c) => {
+		.post('/accept', validateJSON(ActionAcceptSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			return c.json(
-				await c.get('config').storage.getUnacceptedConversations(action.domain, action.namespace, account, action),
-			);
-		})
-		.post('/markAsRead', validateJSON(ActionMarkAsReadSchema), async (c) => {
-			const action = c.req.valid('json');
-			const {account} = requireAccount(c, action.domain);
-			await c.get('config').storage.markAsRead(account, action);
+			otherMemberOf(action.conversationID, account);
+			await c.get('config').stores.inbox.accept(account, action);
 			return c.json({success: true} as const);
 		})
-		.post('/rejectConversation', validateJSON(ActionRejectConversationSchema), async (c) => {
+		.post('/reject', validateJSON(ActionRejectSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			await c.get('config').storage.rejectConversation(account, Date.now(), action);
+			const other = otherMemberOf(action.conversationID, account);
+			await c.get('config').stores.inbox.reject(account, action, other, Date.now());
 			return c.json({success: true} as const);
 		})
 		.post('/unblock', validateJSON(ActionUnblockSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			await c.get('config').storage.unblock(account, action);
+			await c.get('config').stores.inbox.unblock(account, action.domain, action.address);
 			return c.json({success: true} as const);
 		})
-		.post('/getMessages', validateJSON(ActionGetMessagesSchema), async (c) => {
+		.post('/markRead', validateJSON(ActionMarkReadSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			return c.json(await c.get('config').storage.getMessages(account, action));
-		})
-		.post('/acceptConversation', validateJSON(ActionAcceptConversationSchema), async (c) => {
-			const action = c.req.valid('json');
-			const {account} = requireAccount(c, action.domain);
-			return c.json(await c.get('config').storage.acceptConversation(account, Date.now(), action));
+			otherMemberOf(action.conversationID, account);
+			await c.get('config').stores.inbox.markRead(account, action, action.seq);
+			return c.json({success: true} as const);
 		});
 
 	return app;

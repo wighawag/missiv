@@ -1,19 +1,19 @@
 // The client trusts no key it has not verified (S3-12): every key against its
-// wallet's ownership proof, no clear text unless asked, every copy's signature
-// checked on read, and one bad copy shown as such instead of breaking the thread.
+// wallet's ownership proof, no clear text unless asked, every message's
+// signature checked on read, and one bad message shown as such instead of
+// breaking the thread.
 // Against the in-process server; a lying server is the real one behind a fetch
 // that rewrites its answers.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {writable} from 'svelte/store';
 import {
 	createMissivRegistration,
-	encryptedCopies,
-	openMessageCopy,
+	openMessage,
 	openOneConversation,
 	verifyDomainUser,
 	type Account,
 } from '@missiv/client';
-import {signMessageCopy, type ConversationMessage} from '@missiv/common';
+import {signMessage, type Message} from '@missiv/common';
 import {
 	accountOf,
 	conversationIDOf,
@@ -139,8 +139,8 @@ describe('nothing is sent in clear unless asked', () => {
 		expect(await h.messages(A, conversationIDOf([A.address, D.address]))).toEqual([]);
 
 		await conversation.sendIntroduction('hello, register to read encrypted messages');
-		const [copy] = await h.messages(A, conversationIDOf([A.address, D.address]));
-		expect(copy.messageType).toBe('clear');
+		const [message] = await h.messages(A, conversationIDOf([A.address, D.address]));
+		expect(message.scheme).toBe('clear');
 		stop();
 	});
 
@@ -149,121 +149,88 @@ describe('nothing is sent in clear unless asked', () => {
 		const stop = conversation.subscribe(() => {});
 		await until(conversation, (s) => s.step === 'Fetched' && !!s.otherUser.keySet);
 		await conversation.sendMessage('only for B');
-		const [copy] = await h.messages(B, conversationIDOf([A.address, B.address]));
-		expect(copy.messageType).toBe('encrypted');
-		expect(copy.content).not.toContain('only for B');
-		expect(await openMessageCopy(copy, reader(B))).toMatchObject({content: 'only for B'});
+		const [message] = await h.messages(B, conversationIDOf([A.address, B.address]));
+		expect(message.scheme).toBe('pairwise-v1');
+		expect(message.content).not.toContain('only for B');
+		expect(await openMessage(message, reader(B), h.api)).toMatchObject({content: 'only for B'});
 		stop();
 	});
 });
 
-describe("each copy's signature is verified on read", () => {
+describe("each message's signature is verified on read", () => {
 	async function sentByA(text: string) {
-		const conversationID = conversationIDOf([A.address, B.address]);
-		const messages = await encryptedCopies({
-			scope: {domain: DOMAIN, namespace: NAMESPACE, conversationID},
-			sender: {address: A.address, keySet: A.keySet},
-			recipient: {address: B.address, encryptionKey: B.keySet.encryption.publicKey},
-			text,
-		});
-		await h.api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: DOMAIN,
-				namespace: NAMESPACE,
-				conversationID,
-				lastMessageReadTimestampMS: 0,
-				messageType: 'encrypted',
-				messages,
-			},
-			{privateKey: A.keySet.signing.privateKey},
-		);
-		const copies = await h.messages(B, conversationID);
-		return copies[0];
+		await h.send({from: A, to: B, content: text, scheme: 'pairwise-v1'});
+		const [message] = await h.messages(B, conversationIDOf([A.address, B.address]));
+		return message;
 	}
 
-	it('opens a copy signed by its sender, for both members', async () => {
-		const copy = await sentByA('hi B');
-		expect(await openMessageCopy(copy, reader(B))).toMatchObject({content: 'hi B', sender: A.address});
-		const [own] = await h.messages(A, copy.conversationID);
-		expect(await openMessageCopy(own, reader(A))).toMatchObject({content: 'hi B'});
+	it('opens a stored message signed by its sender, for both members', async () => {
+		const message = await sentByA('hi B');
+		expect(await openMessage(message, reader(B), h.api)).toMatchObject({content: 'hi B', sender: A.address});
+		const [own] = await h.messages(A, message.conversationID);
+		expect(own).toEqual(message);
+		expect(await openMessage(own, reader(A), h.api)).toMatchObject({content: 'hi B'});
 	});
 
-	it('refuses a copy whose content, recipient or conversation was changed', async () => {
-		const copy = await sentByA('original');
-		const tampered: ConversationMessage[] = [
-			{...copy, content: copy.content.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))},
-			{...copy, conversationID: conversationIDOf([B.address, C.address])},
-			{...copy, namespace: 'other'},
+	it('refuses a message a server changed: its content, conversation, namespace or sender key set', async () => {
+		const message = await sentByA('original');
+		const tampered: Message[] = [
+			{...message, content: message.content.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))},
+			{...message, conversationID: conversationIDOf([B.address, C.address])},
+			{...message, namespace: 'other'},
+			{...message, senderKeyRef: C.keyRef},
 		];
-		for (const message of tampered) {
-			expect((await openMessageCopy(message, reader(B))).error?.code).toBe('unverified');
+		for (const forged of tampered) {
+			expect((await openMessage(forged, reader(B), h.api)).error?.code).toBe('unverified');
 		}
 	});
 
-	it("refuses a copy whose sender key set is not the sender's (a server forging a sender)", async () => {
-		const copy = await sentByA('from A');
-		// C's key set and proof, under A's name; C's key set with A's proof
-		for (const forged of [
-			{...copy, senderKeySet: publicOf(C.keySet), senderOwnershipSignature: C.ownershipSignature},
-			{...copy, senderKeySet: publicOf(C.keySet)},
-		]) {
-			expect((await openMessageCopy(forged, reader(B))).error?.code).toBe('unverified');
-		}
+	it('refuses a clear message from a conversation the reader is not in, though its sender signed it', async () => {
+		await h.send({from: A, to: C, content: 'for C only', scheme: 'clear'});
+		const [toC] = await h.messages(C, conversationIDOf([A.address, C.address]));
+		expect(await openMessage(toC, reader(C), h.api)).toMatchObject({content: 'for C only'});
+		expect((await openMessage(toC, reader(B), h.api)).error?.code).toBe('unverified');
 	});
 
-	it("refuses a copy not signed by the sender's signing key", async () => {
-		const copy = await sentByA('from A');
-		const resigned = await signMessageCopy(
-			{
-				domain: DOMAIN,
-				namespace: NAMESPACE,
-				conversationID: copy.conversationID,
-				messageType: 'encrypted',
-				from: A.address,
-				to: B.address,
-				toPublicKey: copy.recipientPublicKey,
-				content: copy.content,
-			},
-			C.keySet.signing.privateKey,
-		);
-		expect((await openMessageCopy({...copy, signature: resigned}, reader(B))).error?.code).toBe('unverified');
-	});
-
-	it('shows an undecryptable copy as such and the rest of the thread as text', async () => {
+	it('shows a message the server serves from another namespace or conversation as unverified in the thread', async () => {
 		const conversationID = conversationIDOf([A.address, B.address]);
+		await sentByA('in the thread');
+		await h.send({from: A, to: B, content: 'elsewhere', scheme: 'pairwise-v1', namespace: 'other'});
+		const [elsewhere] = await h.messages(B, conversationID, {namespace: 'other'});
+		await h.send({from: A, to: C, content: 'for C only', scheme: 'clear'});
+		const [toC] = await h.messages(C, conversationIDOf([A.address, C.address]));
+		// the server answers B's thread with both foreign messages added, under new seqs
+		const relabelling = (async (input: any, init?: any) => {
+			const response: Response = await h.app.request(input, init);
+			if (String(input).endsWith('/api/private/listMessages') && response.ok) {
+				const body = await response.json();
+				const top = Math.max(0, ...body.messages.map((m: Message & {seq: number}) => m.seq));
+				if (body.messages.length > 0) {
+					body.messages.push({...elsewhere, seq: top + 1}, {...toC, seq: top + 2});
+				}
+				return new Response(JSON.stringify(body), {status: 200, headers: {'content-type': 'application/json'}});
+			}
+			return response;
+		}) as typeof fetch;
+
+		const conversation = conversationOf(B, A, relabelling);
+		const state = await until(conversation, (s) => s.step === 'Fetched' && s.messages.length === 3);
+		if (state.step !== 'Fetched') throw new Error('unreachable');
+		expect(state.messages.map((m) => m.content ?? m.error?.code)).toEqual([
+			'in the thread',
+			'unverified',
+			'unverified',
+		]);
+		expect(conversationID).toBe(state.conversationID);
+	});
+
+	it('shows an undecryptable message as such and the rest of the thread as text', async () => {
 		await sentByA('readable');
-		// a copy A signed, whose content is not a ciphertext B can open
-		const garbage = 'AAAA:BBBB';
-		const signed = async (to: TestUser) =>
-			signMessageCopy(
-				{
-					domain: DOMAIN,
-					namespace: NAMESPACE,
-					conversationID,
-					messageType: 'encrypted',
-					from: A.address,
-					to: to.address,
-					toPublicKey: B.keySet.encryption.publicKey,
-					content: garbage,
-				},
-				A.keySet.signing.privateKey,
-			);
-		await h.api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: DOMAIN,
-				namespace: NAMESPACE,
-				conversationID,
-				lastMessageReadTimestampMS: 0,
-				messageType: 'encrypted',
-				messages: [
-					{to: A.address, toPublicKey: B.keySet.encryption.publicKey, content: garbage, signature: await signed(A)},
-					{to: B.address, toPublicKey: B.keySet.encryption.publicKey, content: garbage, signature: await signed(B)},
-				],
-			},
-			{privateKey: A.keySet.signing.privateKey},
-		);
+		// a message A signed, whose content is not a ciphertext B can open: the
+		// server stores it (the signature is A's), the reader cannot decrypt it
+		const composed = await h.compose({from: A, to: B, scheme: 'pairwise-v1'});
+		const {signature: _, ...unsigned} = {...composed, content: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'};
+		await h.sendMessage(A, {...unsigned, signature: await signMessage(unsigned, A.keySet.signing.privateKey)});
 
 		const conversation = conversationOf(B, A);
 		const state = await until(conversation, (s) => s.step === 'Fetched' && s.messages.length === 2);

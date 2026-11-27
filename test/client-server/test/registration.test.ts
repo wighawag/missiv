@@ -3,7 +3,7 @@
 // one account do, and the key directory a reader checks old messages against.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {deriveKeySet, keySetRef, type KeySet} from 'delegated-identity';
-import {encryptedCopies, openMessageCopy, verifyKeySet} from '@missiv/client';
+import {openMessage, verifyKeySet} from '@missiv/client';
 import {
 	APP_ORIGIN,
 	conversationIDOf,
@@ -165,8 +165,8 @@ describe('two devices of one account', () => {
 
 		// both sign as the account
 		for (const device of [first, second]) {
-			await h.api.getConversations(
-				{type: 'getConversations', domain: DOMAIN, namespace: NAMESPACE},
+			await h.api.listConversations(
+				{type: 'listConversations', domain: DOMAIN, namespace: NAMESPACE},
 				{privateKey: device.signing.privateKey},
 			);
 		}
@@ -232,30 +232,13 @@ describe('the key directory', () => {
 	it("a message stays verifiable and readable after its sender's key set is replaced", async () => {
 		await h.registerAll([A, B]);
 		const conversationID = conversationIDOf([A.address, B.address]);
-		const messages = await encryptedCopies({
-			scope: {domain: DOMAIN, namespace: NAMESPACE, conversationID},
-			sender: {address: A.address, keySet: A.keySet},
-			recipient: {address: B.address, encryptionKey: B.keySet.encryption.publicKey},
-			text: 'before the replacement',
-		});
-		await h.api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: DOMAIN,
-				namespace: NAMESPACE,
-				conversationID,
-				lastMessageReadTimestampMS: 0,
-				messageType: 'encrypted',
-				messages,
-			},
-			{privateKey: A.keySet.signing.privateKey},
-		);
+		await h.send({from: A, to: B, content: 'before the replacement', scheme: 'pairwise-v1'});
 		const replacement = newKeySet();
 		await registerKeySet(A, replacement, await A.signPublication(replacement));
 
-		const [copy] = await h.messages(B, conversationID);
-		expect(copy).toMatchObject({senderKeyRef: A.keyRef, senderKeySet: publicOf(A.keySet)});
-		expect(await openMessageCopy(copy, {address: B.address, domain: DOMAIN, keySet: B.keySet})).toMatchObject({
+		const [message] = await h.messages(B, conversationID);
+		expect(message).toMatchObject({senderKeyRef: A.keyRef});
+		expect(await openMessage(message, {address: B.address, domain: DOMAIN, keySet: B.keySet}, h.api)).toMatchObject({
 			content: 'before the replacement',
 		});
 	});

@@ -5,24 +5,10 @@
 // decrypted on its own, into a content or an error, never a verdict thrown
 // that would stop the rest of the thread.
 //
-// Two formats live here while the server moves over:
-//
-// - The missiv message (ADR-0004, ADR-0006 "The message"; `@missiv/common`'s
-//   `Message`): one ciphertext per message, signed once, `pairwise-v1` or
-//   `clear`. `composeMessage` / `composeIntroduction` build one to send,
-//   `openMessage` reads one, fetching the sender's key set by `senderKeyRef`.
-// - 0.5's per-copy format on 0.6's keys (`encryptedCopies`, `clearCopies`,
-//   `openMessageCopy`), what the server stores and the stores use until
-//   `sqlite-conversation-store-and-api` moves them to the new API and removes
-//   it: each copy signed by the sender's Ed25519 key and encrypted with
-//   xchacha20poly1305 under keccak256 of the X25519 agreement of the two key
-//   sets' encryption keys.
-import { x25519 } from '@noble/curves/ed25519';
-import { keccak_256 } from '@noble/hashes/sha3';
-import { hexToBytes, randomBytes } from '@noble/hashes/utils';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
-import { base64 } from '@scure/base';
+// The missiv message (ADR-0004, ADR-0006 "The message"; `@missiv/common`'s
+// `Message`): one ciphertext per message, signed once, `pairwise-v1` or
+// `clear`. `composeMessage` / `composeIntroduction` build one to send,
+// `openMessage` reads one, fetching the sender's key set by `senderKeyRef`.
 import { keySetRef, recoverAccount } from 'delegated-identity';
 import {
 	conversationIDOf,
@@ -30,19 +16,15 @@ import {
 	encryptPairwise,
 	isOriginOfDomain,
 	keyRefsOfPairwiseKeyID,
+	membersOfConversationID,
 	MESSAGE_SCHEMES,
 	MessageSchema,
 	newULID,
 	pairwiseKeyID,
 	signMessage,
 	verifyMessage,
-	signMessageCopy,
-	verifyMessageCopy,
 	type ActionGetKeySet,
-	type ActionSendEncryptedMessage,
-	type ActionSendInClearMessage,
 	type Address,
-	type ConversationMessage,
 	type DomainUser,
 	type KeySet,
 	type Message,
@@ -167,212 +149,11 @@ export function verifyDomainUser(
 	return verifyKeySet(domainUser, expected);
 }
 
-const sharedKeyCache = new Map<string, Uint8Array>();
-
-/** keccak256 of the X25519 agreement of this encryption private key and the other's encryption key. */
-function sharedKey(privateKey: string, otherPublicKey: PublicKey): Uint8Array {
-	const cacheID = privateKey.toLowerCase() + ':' + otherPublicKey.toLowerCase();
-	let key = sharedKeyCache.get(cacheID);
-	if (!key) {
-		key = keccak_256(
-			x25519.getSharedSecret(hexToBytes(strip0x(privateKey)), hexToBytes(strip0x(otherPublicKey)))
-		);
-		sharedKeyCache.set(cacheID, key);
-	}
-	return key;
-}
-
-function strip0x(hex: string): string {
-	return hex.startsWith('0x') ? hex.slice(2) : hex;
-}
-
-/** Where a message is: what both the AEAD's associated data and the copy's signature bind. */
-export type MessageScope = { domain: string; namespace: string; conversationID: string };
-
-/**
- * The associated data of an encrypted message: its scope and the two X25519
- * keys of the exchange, so a ciphertext moved to another conversation,
- * namespace, domain or pair of keys fails to decrypt.
- */
-function associatedData(
-	scope: MessageScope,
-	senderEncryptionKey: PublicKey,
-	recipientEncryptionKey: PublicKey
-) {
-	return utf8ToBytes(
-		[
-			'missiv encrypted v2',
-			scope.domain,
-			scope.namespace,
-			scope.conversationID,
-			senderEncryptionKey.toLowerCase(),
-			recipientEncryptionKey.toLowerCase()
-		].join('\n')
-	);
-}
-
-/**
- * The two signed copies of an encrypted direct message: the recipient's, and the
- * sender's own, both encrypted to the recipient's X25519 key (the sender reads
- * its copy with the same shared secret). `recipient.encryptionKey` must be the
- * encryption key of a verified key set (`verifyDomainUser`).
- */
-export async function encryptedCopies(params: {
-	scope: MessageScope;
-	sender: { address: Address } & AccountKeys;
-	recipient: { address: Address; encryptionKey: PublicKey };
-	text: string;
-}): Promise<ActionSendEncryptedMessage['messages']> {
-	const { keySet } = params.sender;
-	const toPublicKey = params.recipient.encryptionKey.toLowerCase() as PublicKey;
-	const nonce = randomBytes(24);
-	const ciphertext = xchacha20poly1305(
-		sharedKey(keySet.encryption.privateKey, toPublicKey),
-		nonce,
-		associatedData(params.scope, keySet.encryption.publicKey, toPublicKey)
-	).encrypt(utf8ToBytes(params.text));
-	const content = `${base64.encode(nonce)}:${base64.encode(ciphertext)}`;
-	return Promise.all(
-		[params.recipient.address, params.sender.address].map(async (to) => ({
-			to: to.toLowerCase() as Address,
-			toPublicKey,
-			content,
-			signature: await signMessageCopy(
-				{
-					...params.scope,
-					messageType: 'encrypted',
-					from: params.sender.address,
-					to,
-					toPublicKey,
-					content
-				},
-				keySet.signing.privateKey
-			)
-		}))
-	);
-}
-
-/** The signed copies of a clear message (an introduction): the server and anyone it shows them to can read them. */
-export async function clearCopies(params: {
-	scope: MessageScope;
-	sender: { address: Address } & AccountKeys;
-	recipients: Address[];
-	text: string;
-}): Promise<ActionSendInClearMessage['messages']> {
-	const members = [...params.recipients, params.sender.address];
-	return Promise.all(
-		members.map(async (to) => ({
-			to: to.toLowerCase() as Address,
-			content: params.text,
-			signature: await signMessageCopy(
-				{
-					...params.scope,
-					messageType: 'clear',
-					from: params.sender.address,
-					to,
-					content: params.text
-				},
-				params.sender.keySet.signing.privateKey
-			)
-		}))
-	);
-}
-
 export type MessageErrorCode =
-	/** the sender's key set is not proven by the sender's wallet, or this message (copy) is not signed by it */
+	/** the sender's key set is not proven by the sender's wallet, or this message is not signed by it */
 	| 'unverified'
 	/** it is signed, but its content cannot be decrypted with this account's key set */
 	| 'undecryptable';
-
-/** A copy as the client shows it: its text, or why it cannot be shown. Never thrown. */
-export type OpenedMessageCopy = Omit<ConversationMessage, 'content'> &
-	(
-		| { content: string; error?: undefined }
-		| { content?: undefined; error: { code: MessageErrorCode; message: string } }
-	);
-
-const openedCopyCache = new Map<string, OpenedMessageCopy>();
-
-/**
- * Check one copy and decrypt it for the reader: the sender's key set against
- * the sender's ownership proof, the copy's signature against its signing key
- * and this copy's scope, recipient and content, then the ciphertext with its
- * associated data. Each copy on its own, so one bad copy never hides the others.
- */
-export async function openMessageCopy(
-	message: ConversationMessage,
-	reader: { address: Address; domain: string } & AccountKeys
-): Promise<OpenedMessageCopy> {
-	const readerKeys = reader.keySet;
-	const cacheID = `${message.id}:${message.recipient}:${message.signature}:${readerKeys.encryption.publicKey}`;
-	const cached = openedCopyCache.get(cacheID);
-	if (cached) {
-		return cached;
-	}
-	const { content, ...rest } = message;
-	const fail = (code: MessageErrorCode, text: string): OpenedMessageCopy => ({
-		...rest,
-		error: { code, message: text }
-	});
-	const scope = {
-		domain: message.domain,
-		namespace: message.namespace,
-		conversationID: message.conversationID
-	};
-
-	let opened: OpenedMessageCopy;
-	const proven =
-		message.domain === reader.domain &&
-		message.recipient.toLowerCase() === reader.address.toLowerCase() &&
-		(await verifyOwnership({
-			address: message.sender,
-			domain: message.domain,
-			keySet: message.senderKeySet,
-			appOrigin: message.senderAppOrigin,
-			ownershipSignature: message.senderOwnershipSignature
-		}));
-	const signed =
-		proven &&
-		(await verifyMessageCopy(
-			{
-				...scope,
-				messageType: message.messageType,
-				from: message.sender,
-				to: message.recipient,
-				toPublicKey: message.recipientPublicKey,
-				content,
-				signature: message.signature
-			},
-			message.senderKeySet.signing.publicKey
-		));
-	if (!signed) {
-		opened = fail('unverified', 'this message is not signed by its sender');
-	} else if (message.messageType === 'clear') {
-		opened = { ...rest, content };
-	} else {
-		const mine = message.sender.toLowerCase() === reader.address.toLowerCase();
-		try {
-			if (!message.recipientPublicKey) {
-				throw new Error(`no key`);
-			}
-			const senderEncryptionKey = message.senderKeySet.encryption.publicKey;
-			const other = mine ? message.recipientPublicKey : senderEncryptionKey;
-			const [nonce, ciphertext] = content.split(/:(.*)/s);
-			const text = bytesToUtf8(
-				xchacha20poly1305(
-					sharedKey(readerKeys.encryption.privateKey, other),
-					base64.decode(nonce),
-					associatedData(scope, senderEncryptionKey, message.recipientPublicKey)
-				).decrypt(base64.decode(ciphertext))
-			);
-			opened = { ...rest, content: text };
-		} catch {
-			opened = fail('undecryptable', 'this message cannot be decrypted with this key set');
-		}
-	}
-	openedCopyCache.set(cacheID, opened);
-	return opened;
-}
 
 // ------------------------------------------------------------------------------------------------
 // the missiv message: one ciphertext per message (ADR-0004, ADR-0006)
@@ -508,12 +289,6 @@ function fetchKeySet(
 	return keySet;
 }
 
-/** The two members of a 1:1 conversationID (`getConversationID`'s form), or undefined for another form. */
-function membersOf(conversationID: string): [Address, Address] | undefined {
-	const match = /^(0x[0-9a-f]{40})(0x[0-9a-f]{40})$/.exec(conversationID);
-	return match ? [match[1] as Address, match[2] as Address] : undefined;
-}
-
 /** A message as the client shows it: its text, or why it cannot be shown. */
 export type OpenedMessage = Omit<Message, 'content'> &
 	(
@@ -584,8 +359,10 @@ export async function openMessage(
 			return unverified();
 		}
 		const valid = parsed.data;
-		const members = membersOf(valid.conversationID);
-		if (members && !members.includes(valid.sender)) {
+		// a 1:1 conversationID (two addresses, in getConversationID's order) names its sender
+		const pair = /^0x[0-9a-f]{40}0x[0-9a-f]{40}$/.test(valid.conversationID);
+		const members = membersOfConversationID(valid.conversationID);
+		if (pair && !members?.includes(valid.sender)) {
 			return unverified();
 		}
 		const senderKeySet = await fetchKeySet(keySets, valid.domain, valid.senderKeyRef);
@@ -601,6 +378,12 @@ export async function openMessage(
 			return unverified();
 		}
 		if (valid.scheme === 'clear') {
+			// a clear message is shown only to a member of its conversation: one the
+			// server moved in from a conversation the reader is not in is refused, as
+			// 0.5's recipient check did (an encrypted one is undecryptable there anyway)
+			if (pair && !members?.includes(reader.address.toLowerCase() as Address)) {
+				return unverified();
+			}
 			return { ...rest, content: valid.content };
 		}
 		const keyRefs = keyRefsOfPairwiseKeyID(valid.keyID);

@@ -51,22 +51,22 @@ export function getUserAPI<CustomEnv extends Env>(options: ServerOptions<CustomE
 
 			await refuseReplay(c);
 			const keyRef = await keySetRef(action.keySet);
-			await c.get('config').storage.register(action.address, keyRef, Date.now(), action);
+			await c.get('config').stores.keys.register(action.address, keyRef, Date.now(), action);
 			return c.json({ok: true, message: 'Registered'} as const, 201);
 		})
 		.post('/editUser', validateJSON(ActionEditDomainUserSchema), async (c) => {
 			const action = c.req.valid('json');
 			const {account} = requireAccount(c, action.domain);
-			await c.get('config').storage.editUser(account, Date.now(), action);
+			await c.get('config').stores.keys.editUser(account, Date.now(), action);
 			return c.json({ok: true, message: 'Edited'} as const);
 		})
 		.post('/getDomainUser', validateJSON(ActionGetDomainUserSchema), async (c) => {
 			const action = c.req.valid('json');
-			return c.json(await c.get('config').storage.getDomainUser(action.domain, action.address));
+			return c.json(await c.get('config').stores.keys.getDomainUser(action.domain, action.address));
 		})
 		.post('/getKeySet', validateJSON(ActionGetKeySetSchema), async (c) => {
 			const action = c.req.valid('json');
-			return c.json(await c.get('config').storage.getKeySet(action.domain, action.keyRef));
+			return c.json(await c.get('config').stores.keys.getKeySet(action.domain, action.keyRef));
 		});
 
 	return app;

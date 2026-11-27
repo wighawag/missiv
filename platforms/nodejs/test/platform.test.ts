@@ -4,7 +4,7 @@
 import {describe, it, expect} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
 import {deriveKeySet, originPublicKeyPublicationMessage} from 'delegated-identity';
-import {API, clearCopies} from '@missiv/client';
+import {API, composeMessage} from '@missiv/client';
 import {conversationIDOf} from '@missiv/common';
 import {createNodeServer} from '../src/index.js';
 
@@ -22,7 +22,7 @@ async function createUser() {
 }
 
 describe('nodejs platform', () => {
-	it('builds its app on a fresh database and serves the HTTP API', async () => {
+	it('builds its app on a fresh database and serves the 0.6 messaging API', async () => {
 		const {app} = await createNodeServer({db: ':memory:', env: {SESSION_SECRET: 'test-session-secret'}});
 		const api = new API('http://localhost', {fetch: app.request as any});
 		const [a, b] = await Promise.all([createUser(), createUser()]);
@@ -43,28 +43,25 @@ describe('nodejs platform', () => {
 			);
 		}
 		const conversationID = conversationIDOf([a.address, b.address]);
-		await api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain: DOMAIN,
-				namespace: '',
-				conversationID,
-				lastMessageReadTimestampMS: 0,
-				messageType: 'clear',
-				messages: await clearCopies({
-					scope: {domain: DOMAIN, namespace: '', conversationID},
-					sender: {address: a.address, keySet: a.keySet},
-					recipients: [b.address],
-					text: 'hello',
-				}),
-			},
-			{privateKey: a.keySet.signing.privateKey},
-		);
-		const {messages} = await api.getMessages(
-			{type: 'getMessages', domain: DOMAIN, namespace: '', conversationID},
+		const message = await composeMessage({
+			destination: {domain: DOMAIN, namespace: ''},
+			sender: {address: a.address, keySet: a.keySet},
+			recipient: {address: b.address, keySet: b.keySet},
+			text: 'hello',
+		});
+		expect(
+			await api.sendMessage({type: 'sendMessage', message}, {privateKey: a.keySet.signing.privateKey}),
+		).toMatchObject({seq: 1});
+		const {messages} = await api.listMessages(
+			{type: 'listMessages', domain: DOMAIN, namespace: '', conversationID, after: 0},
 			{privateKey: b.keySet.signing.privateKey},
 		);
-		expect(messages.map((m) => m.content)).toEqual(['hello']);
+		const {conversations} = await api.listConversations(
+			{type: 'listConversations', domain: DOMAIN, namespace: '', status: 'unaccepted'},
+			{privateKey: b.keySet.signing.privateKey},
+		);
+		expect(conversations.map((c) => c.lastSeq)).toEqual([1]);
+		expect(messages.map((m) => [m.seq, m.content])).toEqual([[1, message.content]]);
 	});
 
 	it('refuses a room name that does not start with @', async () => {

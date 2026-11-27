@@ -5,7 +5,6 @@ import {Env} from '../../env.js';
 import {Room} from '../../Room.js';
 
 export type {ServerObject, ServerObjectId} from '../../types.js';
-export type {Storage} from '../../storage/index.js';
 export {Room} from '../../Room.js';
 
 type WebsocketResponse = MiddlewareHandler<

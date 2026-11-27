@@ -1,15 +1,31 @@
 import type { Readable } from 'svelte/store';
-import { getConversationID, type Address, type KeySet, type PublicKeySet } from '@missiv/common';
+import {
+	getConversationID,
+	ulidAt,
+	type Address,
+	type KeySet,
+	type Message,
+	type PublicKeySet
+} from '@missiv/common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
-import { API, type FetchFunction } from '$lib/API.js';
+import { API, MissivAPIError, type FetchFunction } from '$lib/API.js';
 import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
 import {
-	clearCopies,
-	encryptedCopies,
-	openMessageCopy,
+	composeIntroduction,
+	composeMessage,
+	openMessage,
 	verifyDomainUser,
-	type OpenedMessageCopy
+	type OpenedMessage
 } from '$lib/messages.js';
+
+/** A message the server returned for another scope than the thread asked for: never opened. */
+function notThisConversation(message: Message): OpenedMessage {
+	const { content: _, ...rest } = message;
+	return {
+		...rest,
+		error: { code: 'unverified', message: 'this message is not from this conversation' }
+	};
+}
 
 export type OtherUser = {
 	address: Address;
@@ -26,17 +42,24 @@ export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
 	{ step: 'Idle'; conversationID: undefined }
 	// fetching the messages for the first time
 	| { step: 'Fetching'; conversationID: string }
-	// fetched, and polled again while subscribed; newest last; each copy opened on its own
-	| { step: 'Fetched'; conversationID: string; messages: OpenedMessageCopy[] }
+	// fetched, and polled again while subscribed for what is new (by seq); in seq
+	// order, newest last; each message opened on its own
+	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[] }
 );
 
 export type CurrentConversation = Readable<ConversationState> & {
-	/** send encrypted to the other user's verified key set; refused when there is none */
+	/** send encrypted (`pairwise-v1`) to the other user's verified key set; refused when there is none */
 	sendMessage(text: string): Promise<void>;
 	/** send in clear, readable by the server: only when asked, to reach a user with no verified key set */
 	sendIntroduction(text: string): Promise<void>;
 };
 
+/**
+ * One conversation of two, while subscribed: the newest page first, then every
+ * poll fetches only the messages after the last seq it has (`listMessages`
+ * with `after`), opening each new one once (`openMessage`). Polling stays until
+ * the live inbox channel (task `live-inbox-channel`).
+ */
 export function openOneConversation(params: {
 	registration: MissivRegistrationStore;
 	endpoint: string;
@@ -45,7 +68,7 @@ export function openOneConversation(params: {
 	/** seconds between two fetches (default 2) */
 	pollingInterval?: number;
 	otherUser: { address: Address; name?: string };
-	/** accept the conversation and mark it read each time a newer message is shown */
+	/** accept the conversation (once) and mark it read up to each newer message shown */
 	markAsAcceptedAndRead?: boolean;
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
@@ -81,6 +104,10 @@ export function openOneConversation(params: {
 			const reader = { address, domain, keySet };
 			ctx.set({ step: 'Fetching', conversationID, otherUser: initialOther });
 			let lastMarked = 0;
+			let accepted = false;
+			/** the newest seq this run has, the cursor of the next fetch */
+			let lastSeq: number | undefined;
+			let opened: OpenedMessage[] = [];
 
 			async function resolveOtherKey() {
 				const { otherUser } = ctx.get();
@@ -111,33 +138,59 @@ export function openOneConversation(params: {
 
 			async function fetchMessages() {
 				await resolveOtherKey();
-				const { messages: copies } = await api.getMessages(
-					{ type: 'getMessages', domain, namespace, conversationID },
-					{ privateKey }
-				);
-				const messages = (
-					await Promise.all(copies.map((copy) => openMessageCopy(copy, reader)))
-				).reverse();
-				if (!ctx.active) {
-					return;
+				// the first fetch is the newest page (older ones are not paged in here);
+				// every later one each page after the newest seq this run has, so a burst
+				// larger than a page is not skipped
+				let more = true;
+				while (more) {
+					const page = await api.listMessages(
+						{
+							type: 'listMessages',
+							domain,
+							namespace,
+							conversationID,
+							...(lastSeq !== undefined ? { after: lastSeq } : {})
+						},
+						{ privateKey }
+					);
+					// a key set fetch that fails throws here: the cursor stays, the next poll retries
+					// a message the server returns for another scope (domain, namespace or
+					// conversation) is not this thread's: shown as unverified, never opened
+					const fresh = await Promise.all(
+						page.messages.map((message) =>
+							message.domain === domain &&
+							message.namespace === namespace &&
+							message.conversationID === conversationID
+								? openMessage(message, reader, api)
+								: Promise.resolve(notThisConversation(message))
+						)
+					);
+					if (!ctx.active) {
+						return;
+					}
+					more = lastSeq !== undefined && page.hasMore;
+					// a refresh after a send may overlap a poll: each seq once, in order
+					const known = new Set(opened.map((message) => message.seq));
+					opened = [...opened, ...fresh.filter((message) => !known.has(message.seq))].sort(
+						(a, b) => a.seq - b.seq
+					);
+					lastSeq = Math.max(lastSeq ?? 0, ...page.messages.map((message) => message.seq));
 				}
 				ctx.update((state) => ({
 					step: 'Fetched',
 					conversationID,
 					otherUser: state.otherUser,
-					messages
+					messages: opened
 				}));
-				const newest = messages[messages.length - 1];
-				if (params.markAsAcceptedAndRead && newest && newest.timestamp > lastMarked) {
-					lastMarked = newest.timestamp;
-					await api.acceptConversation(
-						{
-							type: 'acceptConversation',
-							domain,
-							namespace,
-							conversationID,
-							lastMessageReadTimestampMS: newest.timestamp
-						},
+				const newest = opened[opened.length - 1];
+				if (params.markAsAcceptedAndRead && newest && newest.seq > lastMarked) {
+					lastMarked = newest.seq;
+					if (!accepted) {
+						await api.accept({ type: 'accept', domain, namespace, conversationID }, { privateKey });
+						accepted = true;
+					}
+					await api.markRead(
+						{ type: 'markRead', domain, namespace, conversationID, seq: newest.seq },
 						{ privateKey }
 					);
 				}
@@ -165,55 +218,64 @@ export function openOneConversation(params: {
 		return current;
 	}
 
-	function action(conversationID: string) {
-		return {
-			type: 'sendMessage' as const,
-			domain,
-			namespace,
-			conversationID,
-			lastMessageReadTimestampMS: Date.now()
-		};
+	/**
+	 * Send a composed message; when the server refuses its messageID as `stale`
+	 * (this device's clock is off), compose it once more under a messageID of
+	 * the server's time.
+	 */
+	async function send(
+		run: NonNullable<typeof current>,
+		compose: (messageID?: string) => ReturnType<typeof composeMessage>
+	) {
+		const options = { privateKey: run.keySet.signing.privateKey };
+		try {
+			await api.sendMessage({ type: 'sendMessage', message: await compose() }, options);
+		} catch (err) {
+			const serverTime = (err as MissivAPIError)?.details as { serverTime?: number } | undefined;
+			if (!(err instanceof MissivAPIError && err.code === 'stale' && serverTime?.serverTime)) {
+				throw err;
+			}
+			await api.sendMessage(
+				{ type: 'sendMessage', message: await compose(ulidAt(serverTime.serverTime)) },
+				options
+			);
+		}
+		await run.refresh().catch(() => {});
 	}
 
 	async function sendMessage(text: string) {
 		const run = requireRun();
 		const { otherUser } = store.get();
-		if (!otherUser.keySet) {
+		const keySet = otherUser.keySet;
+		if (!keySet) {
 			throw new Error(
 				otherUser.unverifiedKey
 					? `the other user's key set is not proven by their wallet: nothing is sent`
 					: `the other user has no key set yet: send an introduction in clear with sendIntroduction`
 			);
 		}
-		const messages = await encryptedCopies({
-			scope: { domain, namespace, conversationID: run.conversationID },
-			sender: run,
-			recipient: {
-				address: otherUser.address,
-				encryptionKey: otherUser.keySet.encryption.publicKey
-			},
-			text
-		});
-		await api.sendMessage(
-			{ ...action(run.conversationID), messageType: 'encrypted', messages },
-			{ privateKey: run.keySet.signing.privateKey }
+		await send(run, (messageID) =>
+			composeMessage({
+				destination: { domain, namespace },
+				sender: run,
+				recipient: { address: otherUser.address, keySet },
+				text,
+				messageID
+			})
 		);
-		await run.refresh().catch(() => {});
 	}
 
 	async function sendIntroduction(text: string) {
 		const run = requireRun();
-		const messages = await clearCopies({
-			scope: { domain, namespace, conversationID: run.conversationID },
-			sender: run,
-			recipients: [params.otherUser.address],
-			text
-		});
-		await api.sendMessage(
-			{ ...action(run.conversationID), messageType: 'clear', messages },
-			{ privateKey: run.keySet.signing.privateKey }
+		await send(run, (messageID) =>
+			composeIntroduction({
+				destination: { domain, namespace },
+				sender: run,
+				recipient: { address: params.otherUser.address },
+				text,
+				messageID
+			})
 		);
-		await run.refresh().catch(() => {});
 	}
 
 	return { subscribe: store.subscribe, sendMessage, sendIntroduction };

@@ -41,11 +41,11 @@
 <ImgBlockie address={otherUser.address} style="width: 24px; height: 24px;" />
 
 {#if $conversation.step === 'Fetched'}
-	{#each $conversation.messages as message}
+	{#each $conversation.messages as message (message.seq)}
 		{#if message.error}
 			<p class="error">({message.error.message})</p>
 		{:else}
-			<p>{message.messageType === 'clear' ? '(in clear) ' : ''}{message.content}</p>
+			<p>{message.scheme === 'clear' ? '(in clear) ' : ''}{message.content}</p>
 		{/if}
 	{/each}
 {:else}

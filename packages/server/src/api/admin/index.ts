@@ -4,6 +4,7 @@ import {setup} from '../../setup.js';
 import {Env} from '../../env.js';
 import {MissivError, validateJSON} from '../../errors.js';
 import {timingSafeEqual} from '../../utils/timing-safe-equal.js';
+import {resetDatabase} from '../../schema/migrate.js';
 
 export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
 	const app = new Hono<{Bindings: CustomEnv}>()
@@ -24,7 +25,7 @@ export function getAdminAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 		.post('/db-reset', validateJSON(ActionResetSchema), async (c) => {
 			const action = c.req.valid('json');
 			if (action.reset) {
-				await c.get('config').storage.reset();
+				await resetDatabase(options.services.getDB(c.get('config').env as CustomEnv));
 				return c.json({success: true});
 			}
 			return c.json({success: false});

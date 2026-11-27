@@ -3,6 +3,7 @@ import {Bindings, MiddlewareHandler} from 'hono/types';
 import {WSEvents} from 'hono/ws';
 import {RemoteSQL} from 'remote-sql';
 import type {PushNotifier} from './push.js';
+import type {Stores} from './stores/ports.js';
 
 export type ServerObjectStorage = {
 	get<T = unknown>(key: string): Promise<T | undefined>;
@@ -55,6 +56,12 @@ export type ServerObjectId = {
 
 export type Services<Env extends Bindings = Bindings> = {
 	getDB: (env: Env) => RemoteSQL;
+	/**
+	 * The store ports (ADR-0005) a request runs on; by default the SQL ones over
+	 * `getDB` (`createSQLStores`). A platform with its own implementation (Durable
+	 * Objects on Cloudflare) supplies them here.
+	 */
+	getStores?: (env: Env) => Stores;
 	getRoom: (env: Env, idOrName: ServerObjectId | string) => ServerObject;
 	getRateLimiter: (env: Env, idOrName: ServerObjectId | string) => ServerObject;
 };
@@ -109,18 +116,16 @@ export type ServerObject = {
 
 // The request schemas are @missiv/common's (one source for the server and the client).
 export {
-	ActionAcceptConversationSchema,
+	ActionAcceptSchema,
 	ActionEditDomainUserSchema,
-	ActionGetAcceptedConversationsSchema,
 	ActionGetDomainUserSchema,
 	ActionGetKeySetSchema,
-	ActionGetConversationsSchema,
-	ActionGetMessagesSchema,
-	ActionGetUnacceptedConversationsSchema,
-	ActionMarkAsReadSchema,
+	ActionListConversationsSchema,
+	ActionListMessagesSchema,
+	ActionMarkReadSchema,
 	ActionOpenSessionSchema,
 	ActionRegisterDomainUserSchema,
-	ActionRejectConversationSchema,
+	ActionRejectSchema,
 	ActionResetSchema,
 	ActionSendMessageSchema,
 	ActionUnblockSchema,

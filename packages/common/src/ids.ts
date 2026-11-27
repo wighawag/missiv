@@ -37,3 +37,29 @@ export function newULID(now: number = Date.now()): string {
 	}
 	return encodeTime(now) + lastRandom.map((v) => ALPHABET[v]).join('');
 }
+
+/** The time (ms since the epoch) a ULID carries in its first 10 characters; NaN for a malformed one. */
+export function ulidTime(id: string): number {
+	if (id.length !== 26) {
+		return NaN;
+	}
+	let time = 0;
+	for (let i = 0; i < 10; i++) {
+		const value = ALPHABET.indexOf(id[i].toUpperCase());
+		if (value < 0) {
+			return NaN;
+		}
+		time = time * 32 + value;
+	}
+	return time;
+}
+
+/**
+ * A ULID of `time`, not monotonic with `newULID`: for a message signed again
+ * under the server's time after a `stale` refusal, when this device's clock
+ * is off.
+ */
+export function ulidAt(time: number): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(16));
+	return encodeTime(time) + Array.from(bytes, (b) => ALPHABET[b % 32]).join('');
+}

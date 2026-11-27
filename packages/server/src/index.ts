@@ -2,6 +2,7 @@ import {Hono} from 'hono';
 import {cors} from 'hono/cors';
 import {ServerOptions} from './types.js';
 import {getPrivateChatAPI} from './api/private/index.js';
+import {getMessagesAPI} from './api/messages/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
@@ -25,7 +26,17 @@ export type {
 	InProcessRoom,
 } from './types.js';
 
-export type {Storage} from './storage/index.js';
+export type {
+	AppendResult,
+	ConversationKey,
+	ConversationStore,
+	Inbox,
+	InboxUpdate,
+	KeyDirectory,
+	PushRecipient,
+	Stores,
+} from './stores/index.js';
+export {createSQLStores, SQLConversationStore, SQLInbox, SQLKeyDirectory} from './stores/index.js';
 export {Room} from './Room.js';
 export {RateLimiter} from './RateLimiter.js';
 export {migrate, resetDatabase} from './schema/migrate.js';
@@ -55,6 +66,7 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 
 	const userAPI = getUserAPI(options);
 	const privateChatAPI = getPrivateChatAPI(options);
+	const messagesAPI = getMessagesAPI(options);
 	const publicChatAPI = getPublicChatAPI(options);
 	const adminAPI = getAdminAPI(options);
 	const sessionAPI = getSessionAPI(options);
@@ -65,6 +77,7 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 		.route('/api/session', sessionAPI)
 		.route('/api/user', userAPI)
 		.route('/api/private', privateChatAPI)
+		.route('/api/messages', messagesAPI)
 		.route('/api/admin', adminAPI)
 		.onError((err, c) => {
 			const config = c.get('config');

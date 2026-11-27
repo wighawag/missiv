@@ -1,9 +1,6 @@
 #!/usr/bin/env bun
 import 'named-logs-context';
-import {createInProcessRooms, createServer, migrate} from '@missiv/server';
-import {createBunWebSocket} from 'hono/bun';
-import {Database} from 'bun:sqlite';
-import {RemoteBunSQL} from './remote-sql-bun/index.js';
+import {createBunServer} from './server.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Command} from 'commander';
@@ -33,24 +30,7 @@ async function main() {
 	const port = options.port ? parseInt(options.port) : 2000;
 
 	const env = process.env as BunEnv;
-	const db = new RemoteBunSQL(new Database(env.DB || ':memory:', {strict: true}));
-	// the schema: the migrations this database has not had
-	await migrate(db);
-
-	const {upgradeWebSocket, websocket} = createBunWebSocket();
-	const rooms = createInProcessRooms<BunEnv>({getDB: () => db});
-
-	const app = createServer<BunEnv>({
-		services: {getDB: () => db, getRoom: rooms.getRoom, getRateLimiter: rooms.getRateLimiter},
-		inProcessRooms: {
-			getRoom: rooms.getRoom,
-			// TODO behind a proxy, a forwarded address once the proxy is trusted
-			getIP: (c) =>
-				(c.env as {requestIP?(r: Request): {address: string} | null} | undefined)?.requestIP?.(c.req.raw)?.address,
-		},
-		getEnv: () => env,
-		upgradeWebSocket: upgradeWebSocket as any,
-	});
+	const {app, websocket} = await createBunServer({db: env.DB || ':memory:', env});
 
 	Bun.serve({port, fetch: app.fetch, websocket});
 	console.log(`Server is running on :${port}`);

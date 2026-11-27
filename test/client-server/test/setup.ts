@@ -13,11 +13,17 @@ import {
 	type KeySet,
 	type PublicKeySet,
 } from 'delegated-identity';
-import {conversationIDOf, signMessageCopy, type ConversationMessage} from '@missiv/common';
+import {
+	conversationIDOf,
+	type ConversationStatus,
+	type Message,
+	type MessageToSend,
+	type ResponseSendMessage,
+} from '@missiv/common';
 import {createServer, migrate, type PushNotifier} from '@missiv/server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
-import {API} from '@missiv/client';
+import {API, composeIntroduction, composeMessage} from '@missiv/client';
 import {hmac} from '@noble/hashes/hmac';
 import {sha256} from '@noble/hashes/sha256';
 
@@ -27,8 +33,6 @@ export const NAMESPACE = 'test';
 export const SERVER_URL = 'http://localhost';
 /** the SESSION_SECRET every harness runs with unless its env says otherwise */
 export const SESSION_SECRET = 'test-session-secret';
-/** a well-formed copy signature: the server stores a copy's signature and never checks it (its reader does) */
-export const UNCHECKED_SIGNATURE = `0x${'11'.repeat(64)}` as `0x${string}`;
 
 export type TestUser = {
 	address: `0x${string}`;
@@ -186,12 +190,25 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 export type Actions = ReturnType<typeof createActions>;
 
 /**
+ * The actions over real HTTP to a server at `url` (or through `fetch`): for a
+ * platform's own tests and the load harness, which have no @missiv/client of
+ * their own to build an `API` with.
+ */
+export function createRemoteActions(url: string, options?: {fetch?: typeof fetch}) {
+	const api = new API(url, options?.fetch ? {fetch: options.fetch} : undefined);
+	return {api, ...createActions(api)};
+}
+
+/**
  * The actions a test (or the load harness, `test/load`) takes as its users, over
- * any @missiv/client `API`: in process (`app.request`) or over real HTTP. Each
- * request is signed by the acting user's signing key, each copy by the sender's.
+ * any @missiv/client `API`: in process (`app.request`) or over real HTTP. A
+ * registration is signed by the acting user's signing key; a message is
+ * composed and signed as @missiv/client composes it (`composeMessage`,
+ * `composeIntroduction`); everything else is on the user's session.
  */
 export function createActions(api: API, options?: {before?: () => Promise<unknown>}) {
 	const before = options?.before ?? (() => Promise.resolve());
+	const as = (user: TestUser) => ({privateKey: user.keySet.signing.privateKey});
 
 	async function register(user: TestUser, options?: {domain?: string; name?: string}) {
 		await before();
@@ -205,7 +222,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 				appOrigin: APP_ORIGIN,
 				name: options?.name,
 			},
-			{privateKey: user.keySet.signing.privateKey},
+			as(user),
 		);
 	}
 
@@ -215,120 +232,118 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 		}
 	}
 
-	async function send({
+	/** A message from `from` to `to`, composed and signed as the client does: an introduction (`clear`) by default. */
+	function compose({
 		from,
 		to,
 		content = 'Test message',
-		conversationID,
-		messageType = 'clear',
-		timestamp = Date.now(),
+		scheme = 'clear',
 		domain = DOMAIN,
+		namespace = NAMESPACE,
+		messageID,
 	}: {
 		from: TestUser;
-		to: TestUser | TestUser[];
+		to: TestUser;
 		content?: string;
-		conversationID?: string;
-		messageType?: 'clear' | 'encrypted';
-		timestamp?: number;
+		scheme?: 'clear' | 'pairwise-v1';
 		domain?: string;
-	}) {
-		const recipients = Array.isArray(to) ? to : [to];
-		const all = recipients.some((r) => r.address === from.address) ? recipients : [from, ...recipients];
-		const id = conversationID || conversationIDOf(all.map((v) => v.address));
-		const messages = await Promise.all(
-			all.map(async (recipient) => ({
-				content,
-				to: recipient.address,
-				toPublicKey: recipient.keySet.encryption.publicKey,
-				// each copy signed by the sender, as @missiv/client signs it
-				signature: await signMessageCopy(
-					{
-						domain,
-						namespace: NAMESPACE,
-						conversationID: id,
-						messageType,
-						from: from.address,
-						to: recipient.address,
-						toPublicKey: messageType === 'encrypted' ? recipient.keySet.encryption.publicKey : undefined,
-						content,
-					},
-					from.keySet.signing.privateKey,
-				),
-			})),
-		);
-		return api.sendMessage(
-			{
-				type: 'sendMessage',
-				domain,
-				namespace: NAMESPACE,
-				messages,
-				messageType,
-				conversationID: id,
-				lastMessageReadTimestampMS: timestamp,
-			},
-			{privateKey: from.keySet.signing.privateKey},
-		);
+		namespace?: string;
+		messageID?: string;
+	}): Promise<MessageToSend> {
+		const params = {
+			destination: {domain, namespace},
+			sender: {address: from.address, keySet: from.keySet},
+			text: content,
+			messageID,
+		};
+		return scheme === 'pairwise-v1'
+			? composeMessage({...params, recipient: {address: to.address, keySet: publicOf(to.keySet)}})
+			: composeIntroduction({...params, recipient: {address: to.address}});
 	}
 
-	async function accept(user: TestUser, conversationID: string, timestamp = Date.now()) {
-		await api.acceptConversation(
-			{
-				type: 'acceptConversation',
-				domain: DOMAIN,
-				namespace: NAMESPACE,
-				conversationID,
-				lastMessageReadTimestampMS: timestamp,
-			},
-			{privateKey: user.keySet.signing.privateKey},
-		);
+	/** Send a message as `from` (on `from`'s session); a composed one, or `compose`'s. */
+	async function sendMessage(from: TestUser, message: MessageToSend): Promise<ResponseSendMessage> {
+		return api.sendMessage({type: 'sendMessage', message}, as(from));
 	}
 
-	async function reject(user: TestUser, conversationID: string) {
-		await api.rejectConversation(
-			{type: 'rejectConversation', domain: DOMAIN, namespace: NAMESPACE, conversationID},
-			{privateKey: user.keySet.signing.privateKey},
-		);
+	async function send(params: Parameters<typeof compose>[0]): Promise<ResponseSendMessage & {message: MessageToSend}> {
+		const message = await compose(params);
+		return {...(await sendMessage(params.from, message)), message};
 	}
 
-	async function messages(user: TestUser, conversationID: string, domain = DOMAIN): Promise<ConversationMessage[]> {
-		const result = await api.getMessages(
-			{type: 'getMessages', domain, namespace: NAMESPACE, conversationID},
-			{privateKey: user.keySet.signing.privateKey},
+	const scope = (conversationID: string, where?: {domain?: string; namespace?: string}) => ({
+		domain: where?.domain ?? DOMAIN,
+		namespace: where?.namespace ?? NAMESPACE,
+		conversationID,
+	});
+
+	async function accept(user: TestUser, conversationID: string, where?: {domain?: string; namespace?: string}) {
+		await api.accept({type: 'accept', ...scope(conversationID, where)}, as(user));
+	}
+
+	async function reject(user: TestUser, conversationID: string, where?: {domain?: string; namespace?: string}) {
+		await api.reject({type: 'reject', ...scope(conversationID, where)}, as(user));
+	}
+
+	async function markRead(
+		user: TestUser,
+		conversationID: string,
+		seq: number,
+		where?: {domain?: string; namespace?: string},
+	) {
+		await api.markRead({type: 'markRead', ...scope(conversationID, where), seq}, as(user));
+	}
+
+	/** The messages `user` lists, in seq order: the newest page, or a page `after` / `before` a seq. */
+	async function messages(
+		user: TestUser,
+		conversationID: string,
+		page?: {domain?: string; namespace?: string; after?: number; before?: number; limit?: number},
+	): Promise<Message[]> {
+		const {domain, namespace, ...cursor} = page ?? {};
+		const result = await api.listMessages(
+			{type: 'listMessages', ...scope(conversationID, {domain, namespace}), ...cursor},
+			as(user),
 		);
 		return result.messages;
 	}
 
-	async function contents(user: TestUser, conversationID: string) {
-		return (await messages(user, conversationID)).map((m) => m.content);
+	async function contents(user: TestUser, conversationID: string, where?: {domain?: string; namespace?: string}) {
+		return (await messages(user, conversationID, where)).map((m) => m.content);
 	}
 
-	async function accepted(user: TestUser) {
+	async function conversations(
+		user: TestUser,
+		status?: ConversationStatus,
+		where?: {domain?: string; namespace?: string},
+	) {
 		return (
-			await api.getAcceptedConversations(
-				{type: 'getAcceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
-				{privateKey: user.keySet.signing.privateKey},
+			await api.listConversations(
+				{
+					type: 'listConversations',
+					domain: where?.domain ?? DOMAIN,
+					namespace: where?.namespace ?? NAMESPACE,
+					...(status ? {status} : {}),
+				},
+				as(user),
 			)
-		).acceptedConversations;
-	}
-
-	async function unaccepted(user: TestUser) {
-		return (
-			await api.getUnacceptedConversations(
-				{type: 'getUnacceptedConversations', domain: DOMAIN, namespace: NAMESPACE},
-				{privateKey: user.keySet.signing.privateKey},
-			)
-		).unacceptedConversations;
+		).conversations;
 	}
 
 	return {
 		register,
 		registerAll,
+		compose,
+		sendMessage,
 		send,
 		accept,
 		reject,
+		markRead,
 		messages,
 		contents,
-		accepted,
-		unaccepted,
+		conversations,
+		accepted: (user: TestUser, where?: {domain?: string; namespace?: string}) => conversations(user, 'accepted', where),
+		unaccepted: (user: TestUser, where?: {domain?: string; namespace?: string}) =>
+			conversations(user, 'unaccepted', where),
 	};
 }

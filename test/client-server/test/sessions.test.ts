@@ -1,7 +1,8 @@
 // Sessions (ADR-0004 decision 5, ADR-0006 "Sessions and replay"): one Ed25519
 // signed request to POST /api/session opens a session, and its HMAC token
-// authenticates every later request but `register` and `sendMessage`, with no
-// signature check and no database read.
+// authenticates every later request but `register` (sends included, whose
+// message carries its own signature), with no signature check and no database
+// read.
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import {signRequest} from 'delegated-identity';
 import {API, MissivAPIError} from '@missiv/client';
@@ -42,12 +43,12 @@ function claimsOf(user: TestUser, overrides: Partial<SessionClaims> = {}): Sessi
 	return {account: user.address, domain: DOMAIN, keyRef: user.keyRef, exp: Date.now() + HOUR, ...overrides};
 }
 
-/** getConversations in DOMAIN, authenticated by `token` alone. */
+/** listConversations in DOMAIN, authenticated by `token` alone. */
 async function withToken(token: string, harness: Harness = h, domain = DOMAIN) {
-	const response = await harness.app.request(`${SERVER_URL}/api/private/getConversations`, {
+	const response = await harness.app.request(`${SERVER_URL}/api/private/listConversations`, {
 		method: 'POST',
 		headers: {'content-type': 'application/json', Authorization: `Bearer ${token}`},
-		body: JSON.stringify({type: 'getConversations', domain, namespace: NAMESPACE}),
+		body: JSON.stringify({type: 'listConversations', domain, namespace: NAMESPACE}),
 	});
 	return {status: response.status, body: (await response.json()) as any};
 }
@@ -132,7 +133,8 @@ describe('a session token', () => {
 		await h.send({from: B, to: A, content: 'hi'});
 		const {token} = await h.api.openSession({domain: DOMAIN}, {privateKey: A.keySet.signing.privateKey});
 		const {body} = await withToken(token);
-		expect(body.conversations.map((c: any) => c.user)).toEqual([A.address]);
+		// A's side of the conversation (B's, the sender's, is accepted)
+		expect(body.conversations.map((c: any) => c.status)).toEqual(['unaccepted']);
 	});
 
 	it('is refused, unauthenticated, when expired, tampered, for another domain or under another secret', async () => {
@@ -166,12 +168,12 @@ describe('a session token', () => {
 	});
 
 	it('is the only authentication of a read: a request signature there is refused', async () => {
-		const body = JSON.stringify({type: 'getConversations', domain: DOMAIN, namespace: NAMESPACE});
+		const body = JSON.stringify({type: 'listConversations', domain: DOMAIN, namespace: NAMESPACE});
 		const signature = await signRequest(
-			{serverOrigin: SERVER_URL, method: 'POST', path: '/api/private/getConversations', body},
+			{serverOrigin: SERVER_URL, method: 'POST', path: '/api/private/listConversations', body},
 			A.keySet.signing.privateKey,
 		);
-		const response = await h.app.request(`${SERVER_URL}/api/private/getConversations`, {
+		const response = await h.app.request(`${SERVER_URL}/api/private/listConversations`, {
 			method: 'POST',
 			headers: {'content-type': 'application/json', SIGNATURE: signature},
 			body,
@@ -227,8 +229,8 @@ describe("the client's sessions", () => {
 		return {api, counts};
 	}
 	const list = (api: API) =>
-		api.getConversations(
-			{type: 'getConversations', domain: DOMAIN, namespace: NAMESPACE},
+		api.listConversations(
+			{type: 'listConversations', domain: DOMAIN, namespace: NAMESPACE},
 			{privateKey: A.keySet.signing.privateKey},
 		);
 
@@ -263,10 +265,25 @@ describe("the client's sessions", () => {
 		expect(counts).toEqual({sessions: 2, unauthenticated: 2, calls: 2});
 	});
 
-	it('still signs sends and registrations (no session)', async () => {
-		const {api, counts} = countingAPI();
+	it('signs registrations (no session), and sends on the session with no request signature', async () => {
+		const signed: boolean[] = [];
+		const api = new API(SERVER_URL, {
+			fetch: (async (url: string, init: RequestInit) => {
+				if (!url.endsWith('/api/session')) {
+					signed.push('SIGNATURE' in (init.headers as Record<string, string>));
+				}
+				return h.app.request(url, init);
+			}) as any,
+		});
 		const actions = createActions(api);
-		await actions.send({from: A, to: B, content: 'signed'});
-		expect(counts.sessions).toBe(0);
+		const C = await createUser();
+		await actions.register(C);
+		await actions.send({from: A, to: B, content: 'signed once, in the message'});
+		await actions.send({from: A, to: B, content: 'twice'});
+		expect(signed).toEqual([true, false, false]);
+		expect(await h.contents(B, (await h.unaccepted(B))[0].conversationID)).toEqual([
+			'signed once, in the message',
+			'twice',
+		]);
 	});
 });

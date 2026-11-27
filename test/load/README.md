@@ -13,9 +13,9 @@ pnpm load --help
 
 ## Scenarios
 
-- `send`: every client sends direct messages in its conversations, one after another (an `encrypted` send, so the server checks the recipients' keys; the content is a placeholder of `--size` characters, so the client's encryption is not in the numbers, its signing is).
-- `read`: every client reads its conversations as an open conversation view does. In 0.5 that is the newest page (`getMessages`, up to 100 messages, the 2 s poll); each conversation is first filled with `--history` messages.
-- `list`: every client fetches its conversation list (`getConversations`, the 20 s poll).
+- `send`: every client sends direct messages in its conversations, one after another (0.6: one `clear` message signed by the sender, whose signature the server verifies against the sender's current key set; the content is a placeholder of `--size` characters, so the client's encryption is not in the numbers, its signing is, and the server's work is that of any scheme).
+- `read`: every client reads its conversations as an open conversation view does; each conversation is first filled with `--history` messages. In 0.6 (`--api 0.6`) that is the catch-up by seq (`listMessages` after the last seq the user has, so once caught up only what is new, usually nothing); `--api 0.6-page` reads the newest page (up to 100) every time, what opening a conversation costs and what every 0.5 read (`getMessages`) cost.
+- `list`: every client fetches its conversation list (`listConversations`, the 20 s poll).
 - `room`: `--room-size` sockets join one room (`room-join`: each socket's connect and login), then `--rate` messages a second for `--duration` seconds, the sockets taking turns to send. `room` is each message's time to its LAST delivery (every socket, the sender's included), `room-delivery` every single delivery; a message refused (`error:rate_limited`) or not delivered to every socket counts as `incomplete`.
 - `all`: the four in turn; `send`, `read` and `list` share one set of users and conversations.
 
@@ -33,7 +33,7 @@ Whatever the harness starts it stops, at the end of the run, on an error, and on
 
 ## API adapters
 
-The scenarios speak only `src/adapters/types.ts`'s `Adapter`; `src/adapters/v0-5.ts` is missiv 0.5's API (`--api 0.5`, the default; on 0.6's Ed25519/X25519 key sets since `messaging-keys-and-registration`, so a run today is not the secp256k1 baseline's), built on `test/client-server/test/setup.ts`'s `createUser` and `createActions` over a real-HTTP `@missiv/client` `API`. A later API is one more adapter registered in `src/cli.ts`'s `ADAPTERS`, run against the same scenarios.
+The scenarios speak only `src/adapters/types.ts`'s `Adapter`; `src/adapters/v0-6.ts` is missiv 0.6's API (`--api 0.6`, the default, and `--api 0.6-page`), built on `test/client-server/test/setup.ts`'s `createUser` and `createRemoteActions` over a real-HTTP `@missiv/client` `API`; rooms (`src/adapters/rooms.ts`) are unchanged since 0.5. 0.5's adapter was removed with 0.5's API (it is in the history before `sqlite-conversation-store-and-api`; its numbers are `work/notes/findings/load-baseline-0-5.md`, 0.6's `load-0-6-sql-stores.md`). A later API is one more adapter registered in `src/cli.ts`'s `ADAPTERS`, run against the same scenarios.
 
 ## Decisions
 

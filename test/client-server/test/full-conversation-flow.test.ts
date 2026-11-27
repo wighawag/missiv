@@ -1,4 +1,5 @@
 import {describe, it, expect, beforeEach} from 'vitest';
+import {isUnread} from '@missiv/common';
 import {createHarness, createUser, conversationIDOf, type Harness, type TestUser} from './setup.js';
 
 let h: Harness;
@@ -16,10 +17,13 @@ describe('full conversation flow', () => {
 	it('sending a message first time ends up in conversation request only', async () => {
 		const time = Date.now();
 		const sent = await h.send({from: B, to: A, content: 'Yo !'});
-		expect(sent.timestampMS).toBeGreaterThanOrEqual(time);
+		expect(sent.seq).toBe(1);
+		expect(sent.serverTimestamp).toBeGreaterThanOrEqual(time);
 
 		expect((await h.accepted(A)).length).toBe(0);
 		expect((await h.unaccepted(A)).length).toBe(1);
+		// the sender's own side is accepted
+		expect((await h.accepted(B)).length).toBe(1);
 	});
 
 	it('accepting a conversation request make it end up in conversations', async () => {
@@ -36,66 +40,42 @@ describe('full conversation flow', () => {
 		const conversationID = conversationIDOf([A.address, B.address]);
 		await h.send({from: B, to: A, content: 'Yo !'});
 		await h.accept(A, conversationID);
-		await h.send({from: B, to: A, content: 'Yo again !'});
+		await h.send({from: B, to: A, content: 'Yo again !', scheme: 'pairwise-v1'});
 
 		expect((await h.accepted(A)).length).toBe(1);
-		expect((await h.messages(A, conversationID)).length).toBe(2);
-		expect(await h.contents(A, conversationID)).toEqual(await h.contents(B, conversationID));
+		const messages = await h.messages(A, conversationID);
+		expect(messages.map((m) => [m.seq, m.scheme])).toEqual([
+			[1, 'clear'],
+			[2, 'pairwise-v1'],
+		]);
+		// one row per message, the same for both members
+		expect(await h.messages(B, conversationID)).toEqual(messages);
 	});
 
-	it('reply show up as unread', async () => {
+	it('a reply shows up as unread, from lastReadSeq', async () => {
 		const conversationID = conversationIDOf([A.address, B.address]);
-		await h.send({from: B, to: A, content: 'Yo !', timestamp: Date.now()});
-		expect((await h.unaccepted(A)).length).toBe(1);
+		await h.send({from: B, to: A, content: 'Yo !'});
+		await h.accept(A, conversationID);
+		await h.markRead(A, conversationID, 1);
+		expect(isUnread((await h.accepted(A))[0])).toBe(false);
 
-		await h.accept(A, conversationID, Date.now());
+		await h.send({from: B, to: A, content: 'How are you?'});
+		const [unread] = await h.accepted(A);
+		expect([unread.lastSeq, unread.lastReadSeq, isUnread(unread)]).toEqual([2, 1, true]);
 
-		const readingTimeB = Date.now();
-		await h.send({from: B, to: A, content: 'How are you?', timestamp: readingTimeB});
-		const readingTimeA = Date.now();
-		await h.send({from: A, to: B, content: 'I am good thanks', timestamp: readingTimeA});
-
-		const conversationsB = await h.accepted(B);
-		expect(conversationsB.length).toBe(1);
-		expect(conversationsB[0].accepted).toBeTruthy();
-		expect(conversationsB[0].lastRead).toBe(readingTimeB);
-		expect(conversationsB[0].lastRead).toBeLessThanOrEqual(readingTimeA);
-
-		const conversationsA = await h.accepted(A);
-		expect(conversationsA.length).toBe(1);
-		expect(conversationsA[0].accepted).toBeTruthy();
-		// replying to B counts as A having read B's messages
-		expect(conversationsA[0].lastRead).toBe(readingTimeA);
+		await h.send({from: A, to: B, content: 'I am good thanks'});
+		// replying counts as A having read B's messages
+		const [replied] = await h.accepted(A);
+		expect([replied.lastSeq, replied.lastReadSeq, isUnread(replied)]).toEqual([3, 3, false]);
+		const [forB] = await h.accepted(B);
+		expect([forB.lastSeq, forB.lastReadSeq, isUnread(forB)]).toEqual([3, 2, true]);
 	});
 
-	it('group conversations with multiple participants', async () => {
+	it('a conversation is of two: a group conversationID is refused', async () => {
 		await h.register(C);
 		const group = conversationIDOf([A.address, B.address, C.address]);
-
-		await h.send({from: A, to: [B, C], content: 'Group chat started!'});
-		expect((await h.unaccepted(B)).length).toBe(1);
-		expect((await h.unaccepted(C)).length).toBe(1);
-
-		await h.accept(B, group);
-		expect((await h.accepted(B)).length).toBe(1);
-		expect((await h.unaccepted(C)).length).toBe(1);
-
-		await h.send({from: B, to: [A, C], content: 'Hi everyone!'});
-		expect((await h.messages(A, group)).length).toBe(2);
-		expect((await h.messages(B, group)).length).toBe(2);
-		// C has not accepted, and still receives the messages
-		expect((await h.messages(C, group)).length).toBe(2);
-	});
-
-	it('conversation with different message types', async () => {
-		const conversationID = conversationIDOf([A.address, B.address]);
-		await h.send({from: A, to: B, content: 'Initial clear message'});
-		await h.accept(B, conversationID);
-		await h.send({from: A, to: B, content: '{"encrypted":"content"}', messageType: 'encrypted'});
-
-		const messages = await h.messages(B, conversationID);
-		expect(messages.length).toBe(2);
-		expect(messages[0].messageType).toBe('encrypted');
+		const message = await h.compose({from: A, to: B});
+		await expect(h.sendMessage(A, {...message, conversationID: group})).rejects.toMatchObject({status: 400});
 	});
 
 	it('rejecting conversation requests', async () => {
@@ -107,6 +87,7 @@ describe('full conversation flow', () => {
 
 		await h.reject(A, unacceptedA[0].conversationID);
 		expect((await h.unaccepted(A)).length).toBe(0);
+		expect((await h.conversations(A, 'rejected')).length).toBe(1);
 
 		const fromC = await h.accepted(C);
 		expect(await h.contents(C, fromC[0].conversationID)).toContain('Hello there!');

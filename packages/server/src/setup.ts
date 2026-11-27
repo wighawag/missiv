@@ -1,7 +1,8 @@
 import {MiddlewareHandler} from 'hono/types';
 import {ServerOptions} from './types.js';
 import {Env} from './env.js';
-import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
+import {createSQLStores} from './stores/sql/index.js';
+import type {Stores} from './stores/ports.js';
 import {Address, DomainUser, PublicKey, String0x} from '@missiv/common';
 import {Context} from 'hono';
 import {
@@ -18,7 +19,8 @@ export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
 };
 
 export type Config = {
-	storage: RemoteSQLStorage;
+	/** the KeyDirectory, ConversationStore and Inbox of this request (ADR-0005) */
+	stores: Stores;
 	env: Env;
 };
 
@@ -115,8 +117,8 @@ export function requireAccount(c: Context, domain: string): {account: Address; k
 /**
  * Refuse a request whose signature was already accepted: for the routes that must
  * not run twice (a replayed session request would hand out a second token, a
- * replayed registration could make a replaced key set current again, a replayed
- * send would store the message again). The signature is kept until its time
+ * replayed registration could make a replaced key set current again). A send
+ * needs none: its messageID is its replay guard (ADR-0006). The signature is kept until its time
  * window has passed; delegated-identity keeps no such store.
  */
 export async function refuseReplay(c: Context): Promise<void> {
@@ -126,7 +128,7 @@ export async function refuseReplay(c: Context): Promise<void> {
 	}
 	const accepted = await c
 		.get('config')
-		.storage.acceptRequestSignature(
+		.stores.keys.acceptRequestSignature(
 			requestSignature.signature,
 			requestSignature.timestamp + DEFAULT_MAX_REQUEST_AGE_MS,
 			Date.now(),
@@ -138,12 +140,12 @@ export async function refuseReplay(c: Context): Promise<void> {
 
 export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): MiddlewareHandler {
 	const {services, getEnv} = options.serverOptions;
-	const {getDB} = services;
+	const {getDB, getStores} = services;
 
 	return async (c, next) => {
 		const env = getEnv(c);
-		const storage = new RemoteSQLStorage(getDB(env));
-		c.set('config', {storage, env});
+		const stores = getStores ? getStores(env) : createSQLStores(getDB(env));
+		c.set('config', {stores, env});
 
 		// a session token: an HMAC and a comparison, nothing read. A route that needs
 		// it refuses the request (`requireAccount`); one that does not ignores it
@@ -185,7 +187,7 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 			}
 			c.set('publicKey', checked.publicKey);
 			c.set('requestSignature', {signature, timestamp: checked.timestamp});
-			const {domainUser} = await storage.getDomainUserBySigningKey(checked.publicKey);
+			const {domainUser} = await stores.keys.getDomainUserBySigningKey(checked.publicKey);
 			if (domainUser) {
 				c.set('domainUser', domainUser);
 			}

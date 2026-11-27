@@ -1,10 +1,9 @@
 // The missiv message on the client (ADR-0004, ADR-0006 "The message"): one
 // ciphertext composed and signed once, read by both members, each reader
 // fetching the sender's key set by `senderKeyRef` through `getKeySet` and
-// checking it before the signature. The store and the send route are not on
-// this format yet (`sqlite-conversation-store-and-api`): messages here go from
-// `composeMessage` straight to `openMessage`, the key sets from the in-process
-// server's directory.
+// checking it before the signature. Messages here go from `composeMessage`
+// straight to `openMessage` (the stored path is `messaging.test.ts` and
+// `trust.test.ts`), the key sets from the in-process server's directory.
 import {describe, it, expect, beforeEach} from 'vitest';
 import {composeIntroduction, composeMessage, openMessage, type KeySetSource} from '@missiv/client';
 import {MessageToSendSchema, signMessage, type Message, type MessageToSend} from '@missiv/common';
