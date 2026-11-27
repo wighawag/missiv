@@ -177,6 +177,9 @@ export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 export const app = createServer<CloudflareWorkerEnv>({
 	services,
 	getEnv: (c: Context<{Bindings: CloudflareWorkerEnv}>) => c.env,
+	// set by Cloudflare's edge: the client's address. The token buckets are this
+	// isolate's (an approximation until the Inbox Durable Object holds the send's)
+	getIP: (c) => c.req.header('CF-Connecting-IP'),
 	// the pushes of a new message run after the response
 	waitUntil: (c, promise) => c.executionCtx.waitUntil(promise),
 	upgradeWebSocket,

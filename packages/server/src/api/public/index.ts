@@ -33,7 +33,7 @@ export function getPublicChatAPI<CustomEnv extends Env>(options: ServerOptions<C
 			},
 			upgradeWebSocket((c) => {
 				const room = inProcessRooms.getRoom(options.getEnv(c), c.req.param('name') as string);
-				const ip = inProcessRooms.getIP?.(c);
+				const ip = options.getIP?.(c);
 				// the runtime's own socket: stable for the connection's life (a WSContext may
 				// be created per event), with send and close
 				const socket = (ws: {raw?: unknown}) => (ws.raw ?? ws) as WebSocket;

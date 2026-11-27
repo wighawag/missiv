@@ -21,12 +21,10 @@ export async function createBunServer(options: {db: string | Database; env: BunE
 
 	const app = createServer<BunEnv>({
 		services: {getDB: () => db, getRoom: rooms.getRoom, getRateLimiter: rooms.getRateLimiter},
-		inProcessRooms: {
-			getRoom: rooms.getRoom,
-			// TODO behind a proxy, a forwarded address once the proxy is trusted
-			getIP: (c) =>
-				(c.env as {requestIP?(r: Request): {address: string} | null} | undefined)?.requestIP?.(c.req.raw)?.address,
-		},
+		inProcessRooms: {getRoom: rooms.getRoom},
+		// TODO behind a proxy, a forwarded address once the proxy is trusted
+		getIP: (c) =>
+			(c.env as {requestIP?(r: Request): {address: string} | null} | undefined)?.requestIP?.(c.req.raw)?.address,
 		liveInbox,
 		getEnv: () => env,
 		upgradeWebSocket: upgradeWebSocket as any,

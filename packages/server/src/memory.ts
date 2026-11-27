@@ -180,11 +180,20 @@ export class InMemoryRateLimiter<CustomEnv extends Env> extends RateLimiter<Cust
 	}
 }
 
+/** How often, at most, a process sweeps its idle room rate limiters. */
+const LIMITER_SWEEP_INTERVAL_MS = 1000;
+
 /**
  * The rooms and rate limiters of one process, one per name, created on first
  * use. Room names are free-form, so the number of rooms is bounded by
  * `maxRooms`: past it, the room with no socket that was used least recently is
  * dropped (its in-memory history with it).
+ *
+ * A rate limiter (one per IP) is dropped once it is idle (`isIdleAt`: its
+ * limit has caught up with the clock, so a new one would answer the same), by a
+ * sweep at most once a second as limiters are used. The stub a room is given
+ * looks its limiter up at each call, so a room holding it across an eviction
+ * charges the same limiter as a new connection from that IP.
  */
 export function createInProcessRooms<CustomEnv extends Env>(options: {
 	getDB(env: CustomEnv): RemoteSQL;
@@ -193,15 +202,29 @@ export function createInProcessRooms<CustomEnv extends Env>(options: {
 	const maxRooms = options.maxRooms ?? 10_000;
 	const rooms = new Map<string, InMemoryRoom<CustomEnv>>();
 	const limiters = new Map<string, InMemoryRateLimiter<CustomEnv>>();
+	let lastSweep = Date.now();
 
-	function getRateLimiter(env: CustomEnv, idOrName: ServerObjectId | string): ServerObject {
-		const name = idOrName.toString();
+	function limiterOf(env: CustomEnv, name: string): InMemoryRateLimiter<CustomEnv> {
+		const now = Date.now();
+		if (now - lastSweep >= LIMITER_SWEEP_INTERVAL_MS) {
+			lastSweep = now;
+			for (const [key, candidate] of limiters) {
+				if (candidate.isIdleAt(now)) {
+					limiters.delete(key);
+				}
+			}
+		}
 		let limiter = limiters.get(name);
 		if (!limiter) {
 			limiter = new InMemoryRateLimiter(env);
 			limiters.set(name, limiter);
 		}
 		return limiter;
+	}
+
+	function getRateLimiter(env: CustomEnv, idOrName: ServerObjectId | string): ServerObject {
+		const name = idOrName.toString();
+		return {fetch: (input, init) => limiterOf(env, name).fetch(input, init)};
 	}
 
 	function getRoom(env: CustomEnv, idOrName: ServerObjectId | string): InMemoryRoom<CustomEnv> {
@@ -224,5 +247,10 @@ export function createInProcessRooms<CustomEnv extends Env>(options: {
 		return room;
 	}
 
-	return {getRoom, getRateLimiter};
+	return {
+		getRoom,
+		getRateLimiter,
+		/** how many room rate limiters the process holds (the IPs not yet idle) */
+		rateLimiterCount: () => limiters.size,
+	};
 }

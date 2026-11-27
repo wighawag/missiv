@@ -1,6 +1,7 @@
 import {Hono} from 'hono';
 import {cors} from 'hono/cors';
-import {ServerOptions} from './types.js';
+import {RouteOptions, ServerOptions} from './types.js';
+import {createInProcessTokenBuckets} from './rate-limit.js';
 import {getPrivateChatAPI} from './api/private/index.js';
 import {getMessagesAPI} from './api/messages/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
@@ -11,7 +12,7 @@ import {getInboxAPI} from './api/inbox/index.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
-import type {ErrorResponse} from '@missiv/common';
+import type {ErrorResponse, RateLimitedDetails} from '@missiv/common';
 
 export {MissivError};
 
@@ -54,6 +55,19 @@ export {
 	type NewMessageNotification,
 	type PushNotifier,
 } from './push.js';
+export {
+	charge,
+	createInProcessTokenBuckets,
+	createTokenBuckets,
+	DEFAULT_TOKEN_BUCKETS,
+	limitPerIP,
+	tokenBucketConfigsFromEnv,
+	type InProcessTokenBuckets,
+	type ServerTokenBuckets,
+	type TokenBucketConfig,
+	type TokenBucketResult,
+	type TokenBuckets,
+} from './rate-limit.js';
 export {createInProcessRooms, InMemoryRoom, InMemoryRateLimiter, InMemoryObjectStorage} from './memory.js';
 
 const corsSetup = cors({
@@ -64,7 +78,12 @@ const corsSetup = cors({
 	maxAge: 600,
 });
 
-export function createServer<CustomEnv extends Env>(options: ServerOptions<CustomEnv>) {
+export function createServer<CustomEnv extends Env>(serverOptions: ServerOptions<CustomEnv>) {
+	// one set of buckets for every route (/session and register share the IP's)
+	const options: RouteOptions<CustomEnv> = {
+		...serverOptions,
+		getTokenBuckets: serverOptions.getTokenBuckets ?? createInProcessTokenBuckets(),
+	};
 	const app = new Hono<{Bindings: CustomEnv}>().get('/', (c) => {
 		return c.text('missiv');
 	});
@@ -93,6 +112,10 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 			const config = c.get('config');
 			const env = config?.env || {};
 			if (err instanceof MissivError) {
+				if (err.code === 'rate_limited') {
+					const {retryAfterMs} = err.details as RateLimitedDetails;
+					c.header('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+				}
 				return c.json(err.toResponseBody(), err.status);
 			}
 			if (err instanceof HTTPException) {

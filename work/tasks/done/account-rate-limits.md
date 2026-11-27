@@ -44,3 +44,9 @@ git fetch <remote> && git switch -c work/account-rate-limits <remote>/main
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/account-rate-limits.md work/tasks/done/account-rate-limits.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-account-rate-limits-decisions.md](../../notes/observations/2026-11-27-account-rate-limits-decisions.md)

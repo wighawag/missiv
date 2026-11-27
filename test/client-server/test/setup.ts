@@ -139,13 +139,20 @@ export function mintSessionToken(secret: string, claims: SessionClaims): string 
 /**
  * The in-process server, its SESSION_SECRET set (pass `SESSION_SECRET: undefined`
  * for a server without), and `queries`: every SQL statement it prepared, in order.
+ * Its send budget is raised (`RATE_LIMIT_SEND_BURST`), so a test that sends a
+ * long history from one account is not rate limited; a test of the limits passes
+ * its own. `getIP` is the caller's IP as a platform finds it (none by default,
+ * and an unknown IP is not limited per IP).
  * Its live inbox is held in process as on Node.js (`liveInbox`); `listen()` serves
  * the same app on a loopback port (with `@hono/node-ws`, as the Node.js platform
  * does) for the tests that need a real WebSocket, the live channel's, and
  * answers its URL.
  */
-export function createHarness(env: Record<string, string | undefined> = {}, options?: {notifier?: PushNotifier}) {
-	env = {SESSION_SECRET, ...env};
+export function createHarness(
+	env: Record<string, string | undefined> = {},
+	options?: {notifier?: PushNotifier; getIP?: () => string | undefined},
+) {
+	env = {SESSION_SECRET, RATE_LIMIT_SEND_BURST: '1000', ...env};
 	const db = new RemoteLibSQL(createClient({url: ':memory:'}));
 	const queries: string[] = [];
 	// the database as the server sees it, recording each statement it prepares
@@ -183,6 +190,7 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 			return env as any;
 		},
 		getPushNotifier: options?.notifier ? () => options.notifier : undefined,
+		getIP: options?.getIP,
 		liveInbox,
 		upgradeWebSocket: nodeWebSocket.upgradeWebSocket as any,
 	});

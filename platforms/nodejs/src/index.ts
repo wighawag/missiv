@@ -39,10 +39,9 @@ export async function createNodeServer(options: {db: string | Client; env: NodeJ
 			getRoom: rooms.getRoom,
 			getRateLimiter: rooms.getRateLimiter,
 		},
-		inProcessRooms: {
-			getRoom: rooms.getRoom,
-			getIP: (c) => (c.env as {incoming?: IncomingMessage} | undefined)?.incoming?.socket?.remoteAddress,
-		},
+		inProcessRooms: {getRoom: rooms.getRoom},
+		// the socket's address: behind a proxy, every client is the proxy's (one IP budget)
+		getIP: (c) => (c.env as {incoming?: IncomingMessage} | undefined)?.incoming?.socket?.remoteAddress,
 		liveInbox,
 		getEnv: () => env,
 		upgradeWebSocket: upgradeWebSocket as any,

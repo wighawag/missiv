@@ -96,7 +96,14 @@ export async function startBun(bun = 'bun'): Promise<RunningTarget> {
 	const port = await freePort();
 	const child = spawn(bun, ['src/cli.ts', '--port', String(port)], {
 		cwd: path.join(repoRoot, 'platforms/bun'),
-		env: {SESSION_SECRET: 'load-harness-session-secret', ...process.env, DB: ':memory:'},
+		// the rate limits raised out of reach, as the node target's (`node-server.ts`)
+		env: {
+			SESSION_SECRET: 'load-harness-session-secret',
+			RATE_LIMIT_SEND_BURST: '1000000000',
+			RATE_LIMIT_IP_BURST: '1000000000',
+			...process.env,
+			DB: ':memory:',
+		},
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const handle = {kill: () => void child.kill('SIGKILL')};
