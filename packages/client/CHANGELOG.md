@@ -1,5 +1,70 @@
 # @missiv/client
 
+## 0.5.0
+
+### Minor Changes
+
+- 3def73c: The live inbox channel (ADR-0006 "Live channel"): one WebSocket per signed-in client, and no more polling.
+
+  - `@missiv/server`: `GET /api/inbox/ws` where the platform holds the sockets (`ServerOptions.liveInbox`, `createInProcessLiveInbox()`), the session token offered at the upgrade as `Sec-WebSocket-Protocol: missiv-inbox, <token>` and refused 401 before any socket otherwise. Every new message is pushed to both members' open sockets (the sender's other devices included, never to a member who blocked the sender) with each member's inbox row; `accept`, `reject` and `markRead` push the changed row to the user's own sockets; a `sync` is answered with what the client missed, then `ready`; at the token's expiry the socket is closed with 4001 `session-expired`. `PUSH_SKIP_WHEN_ONLINE=true` sends no Web Push to a recipient with the channel open (off by default; the push itself is unchanged). New port method `Inbox.getConversation`, new `LiveInbox` port.
+  - `missiv` (Node.js) and `@missiv/bun`: serve the live inbox channel.
+  - `@missiv/common`: the channel's wire (`INBOX_WS_PATH`, `INBOX_WS_PROTOCOL`, `INBOX_CLOSE_SESSION_EXPIRED`, `InboxSyncSchema`, `InboxServerFrame`, `inboxConversationKey`).
+  - `@missiv/client`: `openConversationList` and `openOneConversation` run on one shared socket (`openInboxChannel`) and no longer poll; breaking: their `pollingInterval` is removed (`retryDelayMs` and `createWebSocket` are new). `API.getSession`. On cf-worker, which has no live channel yet, the stores update only when opened again.
+
+- ab69a57: missiv on delegated-identity 0.2's key sets (ADR-0004 decision 1): an account registers, per domain, a key set (an Ed25519 signing key and an X25519 encryption key, derived from `@etherplay/connect`'s origin key, so every device of the account has the same) with the wallet's ownership signature of it. Breaking, and the database starts empty (the 0.6 schema, `0001_v0_6`; a 0.5 database fails to migrate).
+
+  - `register` takes `keySet` and `ownershipSignature` (was `signature`, over a secp256k1 key) and must be signed by the key set's signing key; a key set or key registered for another account or domain is refused (409), a replayed registration too.
+  - `DomainUser` carries `keySet`, `keyRef` and `ownershipSignature` (was `publicKey` and `signature`); `getKeySet {domain, keyRef}` returns any registered key set, current or replaced.
+  - Every request, the room login included, is signed with delegated-identity's Ed25519 envelope by the signing key; `@missiv/common` no longer re-exports delegated-identity's helpers (import them from `delegated-identity`).
+  - Messages keep 0.5's per-copy format: each copy signed with the sender's Ed25519 key (`signMessageCopy`, `verifyMessageCopy`, replacing `recoverMessageCopySigner`) and encrypted under the X25519 agreement of the two key sets. A message names its sender's `senderKeyRef` and carries `senderKeySet` (was `senderPublicKey`).
+  - `@missiv/client`: the account is `{address, keySet, savedPublicKeyPublicationSignature?}` (`@etherplay/connect`'s signed-in account), `register(ownershipSignature?)` defaults to the saved signature, `otherUser.keySet` replaces `otherUser.publicKey`, `verifyKeySet` checks a key set against its wallet.
+
+- f7e0ee5: The missiv message format (ADR-0004 decisions 2 and 3, ADR-0006 "The message"): one ciphertext per message, signed once. Not yet stored or sent by the server (that is the next release step); the per-copy format keeps working meanwhile.
+
+  - `@missiv/common`: the `Message` type and its zod schemas (`MessageToSendSchema`, `MessageSchema`), the signing payload (`messageSigningPayload`, `signMessage`, `verifyMessage`: Ed25519 over `missiv message` with the content's SHA-256), `pairwise-v1` (`pairwiseKeyID`, `encryptPairwise`, `decryptPairwise`: HKDF-SHA256 of the X25519 shared secret, AES-256-GCM), through WebCrypto when `crypto.subtle` exists and `@noble` otherwise, pinned by test vectors; `newULID`.
+  - `@missiv/client`: `composeMessage` (`pairwise-v1`), `composeIntroduction` (`clear`) and `openMessage`, which fetches the sender's key set by `senderKeyRef` through `getKeySet`. Breaking: the per-copy reader is renamed `openMessageCopy` (and `OpenedMessage` of a copy `OpenedMessageCopy`).
+  - `@missiv/server`: its ULIDs come from `@missiv/common`.
+
+- 57b5d26: Sessions (ADR-0004 decision 5, ADR-0006): `POST /api/session {domain}`, a request signed by the signing key of the caller's current key set in the domain, answers `{token, expiresAt, keyRef}`, an HMAC-SHA256 token (`SESSION_SECRET`) valid an hour. Every route but `register` and `sendMessage` now takes `Authorization: Bearer <token>` instead of a request signature (a signed request there is refused 401), and checks it without reading the database. Breaking.
+
+  - The server needs `SESSION_SECRET`: every route that authenticates its caller is refused (403 `forbidden`) while it is unset. `SESSION_SECRET_PREVIOUS` keeps tokens of a rotated-out secret valid until they expire.
+  - A replayed session request is refused (409), as a replayed registration or send.
+  - `@missiv/client`'s `API` opens a session per domain and signing key on its own, renews it five minutes before it expires and opens a new one once when a token is refused (`unauthenticated`); `openSession` opens one explicitly. Calls keep their signature (`{privateKey}`).
+  - CORS allows the `Authorization` header.
+
+- eeff070: A heartbeat on every missiv socket (the live inbox channel and the rooms), so an idle socket that a proxy or a mobile network dropped silently is noticed and replaced.
+
+  - `@missiv/common`: the heartbeat's wire (`HEARTBEAT_PING`, `HEARTBEAT_PONG`, `HEARTBEAT_INTERVAL_MS` 30 s, `HEARTBEAT_TIMEOUT_MS` 10 s, `HEARTBEAT_IDLE_INTERVALS` 3, `HEARTBEAT_CLOSE_TIMEOUT` 4002 with `HEARTBEAT_TIMEOUT_REASON` `heartbeat-timeout`).
+  - `@missiv/client`: `openInboxChannel` and `openRoom` send the text frame `ping` every interval and, when no frame arrives within the timeout, close the socket `heartbeat-timeout` and reconnect with their backoff (then sync, or log in again). New options `heartbeatIntervalMs` and `heartbeatTimeoutMs`, also on `openConversationList` and `openOneConversation`.
+  - `@missiv/server`: the live inbox's sockets and the rooms answer `ping` with `pong` (ahead of a sync and of a room's rate limiter), and on Node.js and Bun a socket that sent nothing for three intervals (90 s) is closed `heartbeat-timeout`. A client from before this release sends no ping, so against an upgraded Node.js or Bun server its idle socket is closed every 90 s and reconnects: upgrade `@missiv/client` together with the server.
+  - cf-worker (a deployment): the Inbox and Room Durable Objects answer `ping` by WebSocket auto-response, which neither wakes the object nor bills its duration.
+
+- 72dd105: Direct messaging on the 0.6 API and store ports (ADR-0005, ADR-0006). Breaking: 0.5's messaging routes, actions and the per-copy format are removed, and `0002_v0_6_conversations` replaces the message tables.
+
+  - `@missiv/server`: the store ports `KeyDirectory`, `ConversationStore` and `Inbox` (`Stores`, `services.getStores`), and one SQL implementation over `remote-sql` (`createSQLStores`) for libSQL, bun:sqlite and D1: one row per message under a per-conversation seq, one inbox row per member with `lastSeq` / `lastReadSeq`. `POST /api/messages/send` stores a message authorized by the session token and its own Ed25519 signature against the sender's current key set (no request signature, no replay set), its messageID within 10 minutes of the server's clock (else `stale`, with the server's time); a retry answers the stored seq, another signature under the same messageID is `conflict`. A send is one transaction of five statements whatever the history. `/api/private/listMessages` (`after` / `before` by seq), `listConversations` (by status, from the inbox index), `accept`, `reject` (blocks the other member in the domain; their messages are acknowledged and stored hidden from you), `unblock`, `markRead {seq}`. `RemoteSQLStorage` and the `Storage` type are gone.
+  - `@missiv/common`: the 0.6 actions and responses (`ActionSendMessage` with a `MessageToSend`, `ActionListMessages`, `ActionListConversations`, `ActionAccept`, `ActionReject`, `ActionMarkRead`), `Conversation` with `status`, `lastSeq`, `lastReadSeq`, `lastMessageAt`, `isUnread`, `membersOfConversationID`, `MESSAGE_ID_WINDOW_MS`, the `stale` error code, `ulidTime`, `ulidAt`. Removed: the copy signature (`signMessageCopy`, `verifyMessageCopy`, `messageCopyMessage`) and 0.5's conversation actions.
+  - `@missiv/client`: the `API`'s `sendMessage` (on the session), `listMessages`, `listConversations`, `accept`, `reject`, `unblock`, `markRead`; the conversation store fetches only what is after the last seq it has and sends `pairwise-v1` messages, composing a `stale` one again under the server's time; the list counts unread from `lastReadSeq`. Removed: `encryptedCopies`, `clearCopies`, `openMessageCopy`.
+  - `@missiv/bun`: declares Bun 1.3.13 or later; `createBunServer`; its tests (the store contract on bun:sqlite, the platform's boot) run under `bun test`.
+
+- 197bb22: A switchable inbox transport: direct messages can be delivered on the live inbox socket (as before) or by polling a cheap "changed since", and a client in `auto` falls back from one to the other.
+
+  - `@missiv/common`: the inbox version, `Conversation.version` (the version at which the row last changed), `INBOX_CHANGES_PATH`, `INBOX_TRANSPORTS`, `ActionInboxChangesSchema` and `ResponseInboxChanges` (`{version, unchanged: true}` or `{version, conversations, hasMore}`).
+  - `@missiv/server`: `POST /api/inbox/changes {domain, since}` on a session token, new port method `Inbox.changes` (SQL: migration `0003_inbox_version`, a `version` column on `Inbox`), `INBOX_TRANSPORTS` (`socket,poll` by default; a transport left out answers 404; `poll` alone for several Node.js or Bun instances behind one load balancer). On Node.js and Bun an unchanged poll is answered from the process's memory, with no database read, while the socket is offered (`createInboxVersionCache`). Accept, reject and markRead that change nothing no longer write.
+  - `@missiv/client`: `openInboxChannel` (and `openConversationList`, `openOneConversation`) take `transport: 'socket' | 'poll' | 'auto'` (default `auto`) and `pollIntervalMs` (default 5 s); `auto` polls after three sockets in a row failed and tries the socket again every minute. New `API.inboxChanges`.
+  - cf-worker (a deployment): the Inbox Durable Object keeps the version with its rows (an existing object gets the column on its next start) and answers a poll from its own storage. Polling still costs a Worker and a Durable Object request per poll; the socket stays the cheaper transport there.
+
+### Patch Changes
+
+- Updated dependencies [5ea6e6c]
+- Updated dependencies [3def73c]
+- Updated dependencies [ab69a57]
+- Updated dependencies [f7e0ee5]
+- Updated dependencies [57b5d26]
+- Updated dependencies [eeff070]
+- Updated dependencies [72dd105]
+- Updated dependencies [197bb22]
+  - @missiv/common@0.6.0
+
 ## 0.4.1
 
 ### Patch Changes

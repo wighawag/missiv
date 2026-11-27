@@ -1,8 +1,0 @@
----
-'@missiv/server': minor
----
-
-Cloudflare's direct messaging on Durable Objects (ADR-0005, ADR-0006): the cf-worker keeps D1 for the key directory only, behind an in-isolate cache of its lookups, and holds each conversation in a Conversation Durable Object and each (domain, user)'s inbox, blocks and live sockets in an Inbox Durable Object (SQLite storage, hibernatable WebSockets). A send's inbox updates are retried by the Conversation object's alarm until acknowledged; a block is owned by the blocker's Inbox and propagated to every conversation it shares with the blocked member, in every namespace of the domain. The cf-worker now serves the live inbox channel (`GET /api/inbox/ws`), so the client's stores update live there too. The store contract runs on the Workers runtime (`@cloudflare/vitest-pool-workers`, `pnpm --filter @missiv/cf-worker test`).
-
-- `@missiv/server`: `ServerOptions.getLiveInboxRouter` and the `LiveInboxRouter` port (a live inbox whose sockets another object holds and pushes to: the server checks the token at the upgrade and hands the request over); `cachedKeyDirectory` (a KeyDirectory answering found lookups from a cache for a time to live); `answerSync` and `checkInboxUpgrade` exported; `signSessionToken` and `verifySessionToken` exported. A `sync` now also heals the account's inbox row when the newest message it sends is above the row's `lastSeq` (never the case on the SQL stores, whose rows are written with the message).
-- cf-worker (a deployment): new Durable Object classes `ServerObjectConversation` and `ServerObjectInbox` (wrangler migration `v3`, `new_sqlite_classes`), compatibility date 2025-03-10 (Durable Object RPC); the D1 database keeps the shared migrations, of which only the key directory's tables are used.
