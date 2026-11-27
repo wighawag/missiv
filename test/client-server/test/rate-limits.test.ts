@@ -92,6 +92,8 @@ describe('the budget of an IP on sessions and registrations', () => {
 		const response = await unsignedSession(h);
 		expect(response.status).toBe(429);
 		expect(response.headers.get('Retry-After')).toBe('4');
+		// readable by a browser on another origin
+		expect(response.headers.get('Access-Control-Expose-Headers')?.split(',')).toContain('Retry-After');
 
 		// another IP has its own budget; refill restores this one
 		ip = '198.51.100.2';

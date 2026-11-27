@@ -9,6 +9,9 @@ function fakeClock(start = 1_000_000) {
 		advance(ms: number) {
 			time += ms;
 		},
+		back(ms: number) {
+			time -= ms;
+		},
 	};
 }
 
@@ -33,6 +36,23 @@ describe('a token bucket', () => {
 		for (let i = 0; i < 3; i++) {
 			expect(buckets.take('a').allowed).toBe(true);
 		}
+		expect(buckets.take('a').allowed).toBe(false);
+	});
+
+	it('credits no refill twice when the clock steps back', () => {
+		const clock = fakeClock();
+		const buckets = createTokenBuckets({burst: 2, refillPerSecond: 1, now: clock.now});
+		expect(buckets.take('a').allowed).toBe(true);
+		// the clock steps back 1 s: the token left is taken, charged at the latest time seen
+		clock.back(1000);
+		expect(buckets.take('a').allowed).toBe(true);
+		// the wait counts from that time, not from the earlier one
+		expect(buckets.take('a')).toStrictEqual({allowed: false, retryAfterMs: 2000});
+		// back where the clock was: the second it stepped back is not credited again
+		clock.advance(1000);
+		expect(buckets.take('a')).toStrictEqual({allowed: false, retryAfterMs: 1000});
+		clock.advance(1000);
+		expect(buckets.take('a')).toStrictEqual({allowed: true});
 		expect(buckets.take('a').allowed).toBe(false);
 	});
 
