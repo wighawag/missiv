@@ -160,13 +160,14 @@ describe('a second key set for the same wallet (re-registering-a-new-key-keeps-t
 });
 
 describe('the request envelope (S3-6)', () => {
-	async function signedGetConversations(serverOrigin: string, timestamp?: number) {
-		const body = JSON.stringify({type: 'getConversations', domain: DOMAIN, namespace: 'test'});
+	// a signed request opens a session (the routes after it take its token)
+	async function signedOpenSession(serverOrigin: string, timestamp?: number) {
+		const body = JSON.stringify({domain: DOMAIN});
 		const signature = await signRequest(
-			{serverOrigin, method: 'POST', path: '/api/private/getConversations', body, timestamp},
+			{serverOrigin, method: 'POST', path: '/api/session', body, timestamp},
 			A.keySet.signing.privateKey,
 		);
-		return h.app.request('http://localhost/api/private/getConversations', {
+		return h.app.request('http://localhost/api/session', {
 			method: 'POST',
 			headers: {'content-type': 'application/json', SIGNATURE: signature},
 			body,
@@ -174,15 +175,15 @@ describe('the request envelope (S3-6)', () => {
 	}
 
 	it('accepts a request signed for this server', async () => {
-		expect((await signedGetConversations('http://localhost')).status).toBe(200);
+		expect((await signedOpenSession('http://localhost')).status).toBe(200);
 	});
 
 	it('refuses a request signed for another server', async () => {
-		expect((await signedGetConversations('https://elsewhere.example')).status).toBe(401);
+		expect((await signedOpenSession('https://elsewhere.example')).status).toBe(401);
 	});
 
 	it('refuses a request signed more than 60 s ago', async () => {
-		expect((await signedGetConversations('http://localhost', Date.now() - 61_000)).status).toBe(401);
+		expect((await signedOpenSession('http://localhost', Date.now() - 61_000)).status).toBe(401);
 	});
 
 	it('refuses a registration whose origin is not the domain', async () => {

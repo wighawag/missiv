@@ -11,7 +11,7 @@ import {
 	ActionUnblockSchema,
 	ServerOptions,
 } from '../../types.js';
-import {refuseReplay, requireAccount, setup} from '../../setup.js';
+import {refuseReplay, requireAccount, requireSignedAccount, setup} from '../../setup.js';
 import {MissivError, validateJSON} from '../../errors.js';
 import {conversationIDOf} from '@missiv/common';
 import {pushNotifierFromEnv} from '../../push.js';
@@ -22,7 +22,9 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 		.use(setup({serverOptions: options}))
 		.post('/sendMessage', validateJSON(ActionSendMessageSchema), async (c) => {
 			const action = c.req.valid('json');
-			const {account, domainUser} = requireAccount(c, action.domain);
+			// still a signed request, replay-checked, until the message signature
+			// authorizes a send (ADR-0004 decision 4, task sqlite-conversation-store-and-api)
+			const {account, domainUser} = requireSignedAccount(c, action.domain);
 			const storage = c.get('config').storage;
 
 			// the conversation is its members: the recipients, the sender among them

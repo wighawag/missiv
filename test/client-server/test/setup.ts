@@ -18,11 +18,15 @@ import {createServer, migrate, type PushNotifier} from '@missiv/server';
 import {RemoteLibSQL} from 'remote-sql-libsql';
 import {createClient} from '@libsql/client';
 import {API} from '@missiv/client';
+import {hmac} from '@noble/hashes/hmac';
+import {sha256} from '@noble/hashes/sha256';
 
 export const DOMAIN = 'test.com';
 export const APP_ORIGIN = 'https://test.com';
 export const NAMESPACE = 'test';
 export const SERVER_URL = 'http://localhost';
+/** the SESSION_SECRET every harness runs with unless its env says otherwise */
+export const SESSION_SECRET = 'test-session-secret';
 /** a well-formed copy signature: the server stores a copy's signature and never checks it (its reader does) */
 export const UNCHECKED_SIGNATURE = `0x${'11'.repeat(64)}` as `0x${string}`;
 
@@ -109,12 +113,48 @@ export {conversationIDOf};
 
 export type Harness = ReturnType<typeof createHarness>;
 
+/** The claims of a session token (ADR-0006): the account, its domain, its key set and the expiry (ms). */
+export type SessionClaims = {account: string; domain: string; keyRef: string; exp: number};
+
+/**
+ * A session token minted here, independently of the server, from ADR-0006's
+ * format: base64url of the claims' JSON, a dot, base64url of the HMAC-SHA256 of
+ * that first part under the secret. A token the server accepts from this is one
+ * a holder of the secret could forge, and nobody else.
+ */
+export function mintSessionToken(secret: string, claims: SessionClaims): string {
+	const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+	const mac = Buffer.from(hmac(sha256, new TextEncoder().encode(secret), new TextEncoder().encode(payload))).toString(
+		'base64url',
+	);
+	return `${payload}.${mac}`;
+}
+
+/**
+ * The in-process server, its SESSION_SECRET set (pass `SESSION_SECRET: undefined`
+ * for a server without), and `queries`: every SQL statement it prepared, in order.
+ */
 export function createHarness(env: Record<string, string | undefined> = {}, options?: {notifier?: PushNotifier}) {
+	env = {SESSION_SECRET, ...env};
 	const db = new RemoteLibSQL(createClient({url: ':memory:'}));
+	const queries: string[] = [];
+	// the database as the server sees it, recording each statement it prepares
+	const recorded = new Proxy(db, {
+		get(target, property) {
+			if (property === 'prepare') {
+				return (sql: string) => {
+					queries.push(sql);
+					return target.prepare(sql);
+				};
+			}
+			const value = Reflect.get(target, property);
+			return typeof value === 'function' ? value.bind(target) : value;
+		},
+	});
 	const app = createServer({
 		services: {
 			getDB() {
-				return db;
+				return recorded;
 			},
 			getRoom() {
 				throw new Error(`no getRoom implemented in test`);
@@ -140,7 +180,7 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 		return ready;
 	}
 
-	return {app, api, db, env, setupDatabase, ...createActions(api, {before: setupDatabase})};
+	return {app, api, db, env, queries, setupDatabase, ...createActions(api, {before: setupDatabase})};
 }
 
 export type Actions = ReturnType<typeof createActions>;

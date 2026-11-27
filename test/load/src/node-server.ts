@@ -7,7 +7,11 @@ import {performance} from 'node:perf_hooks';
 import {serve} from '@hono/node-server';
 import {createNodeServer} from 'missiv';
 
-const {app, injectWebSocket} = await createNodeServer({db: ':memory:', env: {}});
+// a session secret of its own: the harness's clients open sessions like any client
+const {app, injectWebSocket} = await createNodeServer({
+	db: ':memory:',
+	env: {SESSION_SECRET: 'load-harness-session-secret'},
+});
 const server = serve({fetch: app.fetch, port: 0, hostname: '127.0.0.1'}, (info) => {
 	parentPort?.postMessage({port: info.port});
 });

@@ -96,7 +96,7 @@ export async function startBun(bun = 'bun'): Promise<RunningTarget> {
 	const port = await freePort();
 	const child = spawn(bun, ['src/cli.ts', '--port', String(port)], {
 		cwd: path.join(repoRoot, 'platforms/bun'),
-		env: {...process.env, DB: ':memory:'},
+		env: {SESSION_SECRET: 'load-harness-session-secret', ...process.env, DB: ':memory:'},
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const handle = {kill: () => void child.kill('SIGKILL')};

@@ -20,7 +20,7 @@
   },
   "scripts": {
     "init:db": "wrangler d1 migrations apply missiv-db --local",
-    "dev": "wrangler dev --port 34003",
+    "dev": "wrangler dev --port 34003 --var SESSION_SECRET:missiv-dev-only-session-secret",
     "deploy": "wrangler deploy",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",

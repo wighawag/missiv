@@ -51,7 +51,7 @@
   },
   "scripts": {
     "prepare": "set-defaults .env.default",
-    "dev": "tsx watch src/cli.ts --port 30042",
+    "dev": "SESSION_SECRET=${SESSION_SECRET:-missiv-dev-only-session-secret} tsx watch src/cli.ts --port 30042",
     "build": "tsc",
     "build:watch": "as-soon -w src tsc",
     "format:check": "prettier --check .",
