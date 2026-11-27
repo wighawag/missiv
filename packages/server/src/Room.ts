@@ -1,7 +1,7 @@
 import {AbstractServerObject, ServerObject, ServerObjectId, Services} from './types.js';
 import {SQLKeyDirectory} from './stores/sql/KeyDirectory.js';
 import {RateLimiterClient} from './RateLimiter.js';
-import {ClientMessageType, ServerMessageType} from '@missiv/common';
+import {ClientMessageType, HEARTBEAT_PING, HEARTBEAT_PONG, ServerMessageType} from '@missiv/common';
 import {verifyRequestSignature} from 'delegated-identity';
 import {Env} from './env.js';
 import {createCurriedJSONRPC} from 'remote-procedure-call';
@@ -230,6 +230,12 @@ export abstract class Room<CustomEnv extends Env> extends AbstractServerObject {
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+		if (message === HEARTBEAT_PING) {
+			// the heartbeat (`@missiv/common`'s heartbeat.ts), ahead of the rate limiter. On
+			// Cloudflare the object's WebSocket auto-response answers it and it never gets here.
+			ws.send(HEARTBEAT_PONG);
+			return;
+		}
 		try {
 			const storage = this.getStorage();
 

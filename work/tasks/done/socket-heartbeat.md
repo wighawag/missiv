@@ -48,3 +48,17 @@ git fetch <remote> && git switch -c work/<slug> <remote>/main
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/<slug>.md work/tasks/done/<slug>.md
 ```
+
+## Decisions
+
+These are in the module comment of `packages/common/src/heartbeat.ts` and in `work/notes/observations/2026-11-27-socket-heartbeat-decisions.md` (link it from the done record). The two most likely to need your call:
+1. **Server idle limit is fixed**: it is 90 s and not configurable. A client configured with an interval above 90 s will be closed as idle by Node/Bun.
+2. **One close code**: 4002 `heartbeat-timeout` is used whichever side closes, because browsers can only send 1000 or 3000-4999 and 4001 is already `session-expired`.
+
+The others:
+3. `ping`/`pong` are plain text rather than JSON, because the Cloudflare auto-response matches the exact text.
+4. Any frame counts as the answer to a ping in both directions.
+5. A socket the client gives up on is treated as lost at once.
+6. Cloudflare closes no socket as idle, since a hibernated socket costs nothing.
+7. The heartbeat options are also on `openConversationList` and `openOneConversation`.
+8. The `inboxSocketEvents` refactor described above.

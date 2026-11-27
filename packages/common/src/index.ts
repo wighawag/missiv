@@ -466,3 +466,13 @@ export {
 	type InboxClientFrame,
 	type InboxServerFrame,
 } from './inbox.js';
+
+export {
+	HEARTBEAT_PING,
+	HEARTBEAT_PONG,
+	HEARTBEAT_INTERVAL_MS,
+	HEARTBEAT_TIMEOUT_MS,
+	HEARTBEAT_IDLE_INTERVALS,
+	HEARTBEAT_CLOSE_TIMEOUT,
+	HEARTBEAT_TIMEOUT_REASON,
+} from './heartbeat.js';

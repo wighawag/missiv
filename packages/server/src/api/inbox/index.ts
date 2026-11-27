@@ -1,5 +1,10 @@
 import {Hono} from 'hono';
+import type {WSEvents} from 'hono/ws';
 import {
+	HEARTBEAT_CLOSE_TIMEOUT,
+	HEARTBEAT_PING,
+	HEARTBEAT_PONG,
+	HEARTBEAT_TIMEOUT_REASON,
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_SESSION_EXPIRED_REASON,
 	INBOX_WS_PROTOCOL,
@@ -16,6 +21,7 @@ import type {Env} from '../../env.js';
 import {sessionSecrets, setup} from '../../setup.js';
 import {MissivError} from '../../errors.js';
 import {verifySessionToken, type SessionClaims} from '../../session.js';
+import {watchIdle, type IdleWatch} from '../../heartbeat.js';
 import type {ConversationStore, Inbox, LiveConnection, LiveInboxHost, LiveInboxRouter} from '../../stores/ports.js';
 
 /** What answering a `sync` needs of the stores: a conversation's messages, and the account's inbox rows. */
@@ -157,8 +163,10 @@ export function getRoutedInboxAPI<CustomEnv extends Env>(
  * absent, invalid or expired one is refused 401 (`unauthenticated`), as every
  * other route refuses it, and no socket is opened. An accepted socket is added
  * to the user's live inbox (every new message it can see and every change of
- * its inbox rows is pushed to it), answers `sync` frames, and is closed with
- * `session-expired` (4001) when its token expires.
+ * its inbox rows is pushed to it), answers `sync` frames and the heartbeat's
+ * `ping`, and is closed with `session-expired` (4001) when its token expires,
+ * `heartbeat-timeout` (4002) when it sent nothing for three heartbeat
+ * intervals (`inboxSocketEvents`).
  */
 export function getInboxAPI<CustomEnv extends Env>(options: ServerOptions<CustomEnv>, live: LiveInboxHost) {
 	const {upgradeWebSocket} = options;
@@ -170,81 +178,102 @@ export function getInboxAPI<CustomEnv extends Env>(options: ServerOptions<Custom
 			c.set('session', checkInboxUpgrade(c.req.header('Sec-WebSocket-Protocol'), secrets, Date.now()));
 			return next();
 		},
-		upgradeWebSocket((c) => {
-			const claims = c.get('session') as SessionClaims;
-			const {stores} = c.get('config');
-			let connection: LiveConnection | undefined;
-			let remove: (() => void) | undefined;
-			let expiry: ReturnType<typeof setTimeout> | undefined;
-			let open = false;
-			// each sync is answered in turn, so each `ready` follows its own sync's frames
-			let queue: Promise<void> = Promise.resolve();
-
-			function closed() {
-				open = false;
-				remove?.();
-				remove = undefined;
-				if (expiry) {
-					clearTimeout(expiry);
-					expiry = undefined;
-				}
-			}
-
-			return {
-				onOpen(_event, ws) {
-					open = true;
-					connection = {
-						send: (data) => ws.send(data),
-						close: (code, reason) => ws.close(code, reason),
-					};
-					remove = live.connect(claims.domain, claims.account, connection);
-					expiry = setTimeout(
-						() => {
-							connection?.close(INBOX_CLOSE_SESSION_EXPIRED, INBOX_SESSION_EXPIRED_REASON);
-							closed();
-						},
-						Math.max(0, claims.exp - Date.now()),
-					);
-				},
-				onMessage(event) {
-					const data = event.data;
-					queue = queue
-						.then(async () => {
-							if (!open || !connection) {
-								return;
-							}
-							let frame: unknown;
-							try {
-								frame = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer));
-							} catch {
-								frame = undefined;
-							}
-							const sync = InboxSyncSchema.safeParse(frame);
-							if (!sync.success) {
-								// 1008: policy violation; nothing but a sync is expected
-								connection.close(1008, 'expected a sync frame');
-								closed();
-								return;
-							}
-							const target = connection;
-							await answerSync(
-								stores,
-								claims,
-								sync.data,
-								(frame) => target.send(JSON.stringify(frame)),
-								() => open,
-							);
-						})
-						.catch((err) => console.error(`live inbox: a sync failed`, err));
-				},
-				onClose() {
-					closed();
-				},
-				onError() {
-					closed();
-				},
-			};
-		}),
+		upgradeWebSocket((c) => inboxSocketEvents(c.get('config').stores, c.get('session') as SessionClaims, live)),
 	);
 	return app;
+}
+
+/**
+ * The events of one accepted socket of the live inbox held in this process
+ * (`getInboxAPI`): added to `live` on open, answering each `sync` in turn and
+ * `ping` with `pong` at once (the heartbeat, `@missiv/common`'s heartbeat.ts),
+ * closed `session-expired` at the token's expiry and `heartbeat-timeout` once
+ * it sent nothing for three heartbeat intervals.
+ */
+export function inboxSocketEvents(stores: SyncStores, claims: SessionClaims, live: LiveInboxHost): WSEvents {
+	let connection: LiveConnection | undefined;
+	let remove: (() => void) | undefined;
+	let expiry: ReturnType<typeof setTimeout> | undefined;
+	let idle: IdleWatch | undefined;
+	let open = false;
+	// each sync is answered in turn, so each `ready` follows its own sync's frames
+	let queue: Promise<void> = Promise.resolve();
+
+	function closed() {
+		open = false;
+		remove?.();
+		remove = undefined;
+		idle?.stop();
+		idle = undefined;
+		if (expiry) {
+			clearTimeout(expiry);
+			expiry = undefined;
+		}
+	}
+
+	return {
+		onOpen(_event, ws) {
+			open = true;
+			connection = {
+				send: (data) => ws.send(data),
+				close: (code, reason) => ws.close(code, reason),
+			};
+			remove = live.connect(claims.domain, claims.account, connection);
+			expiry = setTimeout(
+				() => {
+					connection?.close(INBOX_CLOSE_SESSION_EXPIRED, INBOX_SESSION_EXPIRED_REASON);
+					closed();
+				},
+				Math.max(0, claims.exp - Date.now()),
+			);
+			idle = watchIdle(() => {
+				connection?.close(HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON);
+				closed();
+			});
+		},
+		onMessage(event) {
+			const data = event.data;
+			idle?.touch();
+			if (data === HEARTBEAT_PING) {
+				if (open && connection) {
+					connection.send(HEARTBEAT_PONG);
+				}
+				return;
+			}
+			queue = queue
+				.then(async () => {
+					if (!open || !connection) {
+						return;
+					}
+					let frame: unknown;
+					try {
+						frame = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer));
+					} catch {
+						frame = undefined;
+					}
+					const sync = InboxSyncSchema.safeParse(frame);
+					if (!sync.success) {
+						// 1008: policy violation; nothing but a sync (or a ping) is expected
+						connection.close(1008, 'expected a sync frame');
+						closed();
+						return;
+					}
+					const target = connection;
+					await answerSync(
+						stores,
+						claims,
+						sync.data,
+						(frame) => target.send(JSON.stringify(frame)),
+						() => open,
+					);
+				})
+				.catch((err) => console.error(`live inbox: a sync failed`, err));
+		},
+		onClose() {
+			closed();
+		},
+		onError() {
+			closed();
+		},
+	};
 }

@@ -72,6 +72,10 @@ export function openConversationList(params: {
 	createWebSocket?: CreateInboxSocket;
 	/** the first delay before a retry (a failed fetch, a lost socket), doubled up to 30 s (default 1 s) */
 	retryDelayMs?: number;
+	/** how often the live channel's socket sends its heartbeat `ping` (default 30 s) */
+	heartbeatIntervalMs?: number;
+	/** how long it waits for an answer before it gives the socket up and reconnects (default 10 s) */
+	heartbeatTimeoutMs?: number;
 }) {
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 	const { domain, namespace } = params;
@@ -146,7 +150,9 @@ export function openConversationList(params: {
 				privateKey,
 				api,
 				createWebSocket: params.createWebSocket,
-				reconnectDelayMs: params.retryDelayMs
+				reconnectDelayMs: params.retryDelayMs,
+				heartbeatIntervalMs: params.heartbeatIntervalMs,
+				heartbeatTimeoutMs: params.heartbeatTimeoutMs
 			});
 			const unsubscribe = channel.subscribe({
 				onOpen() {

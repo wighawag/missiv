@@ -26,9 +26,15 @@
 //   sockets' `exp` and of its pending propagations), since a timer does not
 //   survive hibernation; at the alarm an expired socket is closed with
 //   `session-expired` (4001), as on Node/Bun.
+// - The heartbeat's `ping` (`@missiv/common`'s heartbeat.ts) is answered `pong`
+//   by the runtime (`setWebSocketAutoResponse`), so it neither wakes this
+//   object nor bills its duration. An idle socket is not closed here, as it is
+//   on Node/Bun: a hibernated socket costs nothing.
 import {DurableObject} from 'cloudflare:workers';
 import {
 	conversationIDOf,
+	HEARTBEAT_PING,
+	HEARTBEAT_PONG,
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_SESSION_EXPIRED_REASON,
 	INBOX_WS_PROTOCOL,
@@ -142,6 +148,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		super(ctx, env);
 		this.sql = ctx.storage.sql;
 		this.sql.exec(SCHEMA);
+		// the heartbeat, answered without waking this object
+		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(HEARTBEAT_PING, HEARTBEAT_PONG));
 	}
 
 	/** The Conversation object of `key` (a seam for tests). */
