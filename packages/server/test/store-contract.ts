@@ -198,7 +198,8 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 					const {message} = await send(a, b);
 					expect({statements: recorder.statements.length, batches: recorder.batches}).toEqual(small);
 					expect(recorder.batches).toBe(1);
-					expect(recorder.statements.length).toBeLessThanOrEqual(5);
+					// the dedup read, the append, two inbox rows, the lift of the sender's block, the read of what is stored
+					expect(recorder.statements.length).toBeLessThanOrEqual(6);
 					// every statement a lookup on a key (or a constant row), none a scan of the conversation or a sort
 					for (const statement of recorder.statements) {
 						const {results} = await db
@@ -463,6 +464,40 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 					[3, 'seen'],
 				]);
 				expect((await list(b)).conversations.map((c) => c.lastSeq)).toEqual([3]);
+			});
+
+			it("a message the blocker sends to the blocked member unblocks them in the domain, and accepts the blocker's row", async () => {
+				const {send, list, stores} = await setup();
+				const [a, b] = [address(), address()];
+				await send(a, b);
+				await stores.inbox.reject(b, scope(a, b), a, 1);
+				await send(a, b, {content: 'hidden'});
+				await send(a, b, {namespace: 'other', content: 'hidden elsewhere'});
+				const reply = await send(b, a, {content: 'reply'});
+				expect(reply.result.status === 'appended' && reply.result.hiddenFrom).toBeUndefined();
+				expect((await list(b)).conversations.map((c) => [c.status, c.lastSeq])).toEqual([['accepted', 3]]);
+				// a's next messages reach b again, in this namespace and in another one
+				const after = await send(a, b, {content: 'seen'});
+				expect(after.result.status === 'appended' && after.result.hiddenFrom).toBeUndefined();
+				const elsewhere = await send(a, b, {namespace: 'other', content: 'seen elsewhere'});
+				expect(elsewhere.result.status === 'appended' && elsewhere.result.hiddenFrom).toBeUndefined();
+				const forB = await stores.conversations.listMessages(b, scope(a, b), {limit: 10});
+				expect(forB.messages.map((m) => m.content)).toEqual(['hello', 'reply', 'seen']);
+				const otherForB = await stores.conversations.listMessages(b, scope(a, b, DOMAIN, 'other'), {limit: 10});
+				expect(otherForB.messages.map((m) => m.content)).toEqual(['seen elsewhere']);
+				expect((await list(b)).conversations.map((c) => c.lastSeq)).toEqual([4]);
+			});
+
+			it('a retry of a message sent before a newer block does not lift it', async () => {
+				const {send, stores} = await setup();
+				const [a, b] = [address(), address()];
+				await send(a, b);
+				const {message} = await send(b, a, {content: 'before the block'});
+				await stores.inbox.reject(b, scope(a, b), a, 2_000_000);
+				const retry = await stores.conversations.append(message, {sender: b, recipient: a}, 2_000_010);
+				expect(retry.status).toBe('duplicate');
+				const after = await send(a, b, {content: 'still hidden'});
+				expect(after.result.status === 'appended' && after.result.hiddenFrom).toBe(b);
 			});
 		});
 

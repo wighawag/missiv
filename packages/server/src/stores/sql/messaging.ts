@@ -2,8 +2,10 @@
 // (libSQL) and Bun (bun:sqlite): `Messages`,
 // `Inbox` and `Blocks` of one database, so a send is ONE transaction (one
 // `batch`): the dedup read, the append under the next seq with the block check,
-// both members' inbox rows, and the read of what was stored (with the
-// recipient's app origin, for the push). Five statements, whatever the size of
+// both members' inbox rows, the lift of the sender's block of the recipient
+// (a message the blocker sends unblocks, ADR-0006 "Sending"), and the read of
+// what was stored (with the recipient's app origin, for the push). Six
+// statements, whatever the size of
 // the conversation or of the inboxes: each one is a lookup on a primary key or
 // a unique index (the next seq is the last one, read backwards on the
 // messages' primary key).
@@ -100,7 +102,7 @@ export class SQLConversationStore implements ConversationStore {
 	): Promise<AppendResult> {
 		const {domain, namespace, conversationID, messageID} = message;
 		const key = [domain, namespace, conversationID] as const;
-		const [before, , , , after] = await this.db.batch([
+		const [before, , , , , after] = await this.db.batch([
 			// 1. a message already stored under this messageID (a retry, or a conflict)
 			this.db
 				.prepare(
@@ -152,7 +154,17 @@ export class SQLConversationStore implements ConversationStore {
 					${INBOX_UPSERT}`,
 				)
 				.bind(...key, messageID, members.recipient, message.signature),
-			// 5. what is stored, with the recipient's app origin (their current key set's) for the push
+			// 5. the sender's block of the recipient in the domain, lifted by this
+			// message when it was set before it (an older message retried after a
+			// newer block lifts nothing; nothing on a conflict)
+			this.db
+				.prepare(
+					`DELETE FROM Blocks WHERE domain = ?1 AND user = ?5 AND blocked = ?7
+					AND timestamp <= (SELECT serverTimestamp FROM Messages
+						WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND messageID = ?4 AND signature = ?6)`,
+				)
+				.bind(...key, messageID, members.sender, message.signature, members.recipient),
+			// 6. what is stored, with the recipient's app origin (their current key set's) for the push
 			this.db
 				.prepare(
 					`SELECT m.*, k.appOrigin AS recipientAppOrigin FROM Messages m

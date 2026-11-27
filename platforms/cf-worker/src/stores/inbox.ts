@@ -13,6 +13,11 @@
 //   before `reject` / `unblock` answers, and retried by alarm until each
 //   acknowledges. Each change has a version (one more than the last), so a
 //   propagation that arrives late or twice changes nothing.
+// - The user's own message to a member it blocks lifts the block (ADR-0006
+//   "Sending"): when this object applies the user's own update, from a message
+//   stored after the block was set, it unblocks as `unblock` does (versioned,
+//   propagated and awaited), so an own update retried by alarm after a newer
+//   block lifts nothing.
 // - An update from a member this user blocks is refused (`{blocked: true}`),
 //   whatever the Conversation object believed: the refusal makes it hide the
 //   message from this user. Node/Bun's `Inbox.update` has no such check, as the
@@ -152,18 +157,17 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	 * An inbox update from a Conversation object, with its message: applied when
 	 * its seq is above the row's `lastSeq`, then the message and the row pushed to
 	 * the user's sockets; refused when the update is another member's and this
-	 * user blocks them.
+	 * user blocks them. The user's own update, of a message stored after this
+	 * user blocked the other member, lifts the block.
 	 */
 	async apply(owner: InboxOwner, update: InboxUpdate, message?: Message): Promise<InboxApplyAnswer> {
 		this.remember(owner);
 		const key = conversationKeyOf(update);
 		this.share(key);
-		if (!update.own) {
-			const other = this.otherMember(key.conversationID);
-			const block = other ? this.block(other) : undefined;
-			if (block?.blocking) {
-				return {blocked: true, version: block.version};
-			}
+		const other = this.otherMember(key.conversationID);
+		const block = other ? this.block(other) : undefined;
+		if (!update.own && block?.blocking) {
+			return {blocked: true, version: block.version};
 		}
 		this.upsert(update);
 		const frames: InboxServerFrame[] = message ? [{type: 'message', message}] : [];
@@ -172,6 +176,9 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			frames.push({type: 'conversation', conversation: row});
 		}
 		this.publish(frames);
+		if (update.own && other && block?.blocking && update.lastMessageAt >= block.timestamp) {
+			await this.changeBlock(owner, other, false, block.version + 1, Date.now());
+		}
 		return {blocked: false};
 	}
 
@@ -492,11 +499,17 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		}
 	}
 
-	private block(other: Address): {blocking: boolean; version: number} | undefined {
+	private block(other: Address): {blocking: boolean; version: number; timestamp: number} | undefined {
 		const rows = this.sql
-			.exec<{blocking: number; version: number}>(`SELECT blocking, version FROM blocks WHERE blocked = ?`, other)
+			.exec<{
+				blocking: number;
+				version: number;
+				timestamp: number;
+			}>(`SELECT blocking, version, timestamp FROM blocks WHERE blocked = ?`, other)
 			.toArray();
-		return rows[0] ? {blocking: rows[0].blocking === 1, version: Number(rows[0].version)} : undefined;
+		return rows[0]
+			? {blocking: rows[0].blocking === 1, version: Number(rows[0].version), timestamp: Number(rows[0].timestamp)}
+			: undefined;
 	}
 
 	/** remember that this conversation's object holds a copy of this inbox's block state */

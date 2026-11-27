@@ -144,9 +144,9 @@ describe('a send is authorized by its session and its own signature', () => {
 			await h.send({from: i % 2 ? A : B, to: i % 2 ? B : A});
 		}
 		const late = await measure();
-		// the directory read of the sender's key set, and the append's five
+		// the directory read of the sender's key set, and the append's six (the last lifts the sender's block of the recipient)
 		expect(late).toEqual(early);
-		expect(late.length).toBeLessThanOrEqual(6);
+		expect(late.length).toBeLessThanOrEqual(7);
 		expect(late.filter((sql) => /RequestSignatures/.test(sql))).toEqual([]);
 	});
 });
@@ -238,5 +238,19 @@ describe('blocks', () => {
 		);
 		await h.send({from: A, to: B, content: 'after unblock'});
 		expect(await h.contents(B, AB)).toEqual(['first', 'after unblock']);
+	});
+
+	it('a message the blocker sends unblocks the other member in the domain', async () => {
+		await h.send({from: A, to: B, content: 'first'});
+		await h.reject(B, AB);
+		await h.send({from: A, to: B, content: 'while blocked'});
+
+		await h.send({from: B, to: A, content: 'reply'});
+		const [forB] = await h.conversations(B);
+		expect([forB.status, forB.lastSeq]).toEqual(['accepted', 3]);
+		await h.send({from: A, to: B, content: 'after the reply'});
+		await h.send({from: A, to: B, content: 'in another namespace', namespace: 'other'});
+		expect(await h.contents(B, AB)).toEqual(['first', 'reply', 'after the reply']);
+		expect((await h.conversations(B, undefined, {namespace: 'other'})).map((c) => c.lastSeq)).toEqual([1]);
 	});
 });
