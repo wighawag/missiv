@@ -11,6 +11,8 @@ import {
 	inboxConversationKey,
 	newULID,
 	INBOX_CLOSE_SESSION_EXPIRED,
+	HEARTBEAT_PING,
+	HEARTBEAT_PONG,
 	type Address,
 	type InboxServerFrame,
 	type MessageToSend,
@@ -85,9 +87,14 @@ async function openInbox(user: Address, exp = Date.now() + 60 * 60 * 1000) {
 	const ws = response.webSocket!;
 	ws.accept();
 	const frames: InboxServerFrame[] = [];
+	/** every frame as it arrived, the heartbeat's `pong` included */
+	const texts: string[] = [];
 	let closed: {code: number; reason: string} | undefined;
 	ws.addEventListener('message', (event) => {
-		frames.push(JSON.parse(event.data as string));
+		texts.push(event.data as string);
+		if (event.data !== HEARTBEAT_PONG) {
+			frames.push(JSON.parse(event.data as string));
+		}
 	});
 	ws.addEventListener('close', (event) => {
 		closed = {code: event.code, reason: event.reason};
@@ -95,6 +102,7 @@ async function openInbox(user: Address, exp = Date.now() + 60 * 60 * 1000) {
 	return {
 		ws,
 		frames,
+		texts,
 		closed: () => closed,
 		/** wait until `test` holds of what arrived (2 s at most) */
 		async until(test: () => boolean) {
@@ -358,5 +366,51 @@ describe('live sockets', () => {
 			expect(response.status).toBe(401);
 			expect(((await response.json()) as {error: {code: string}}).error.code).toBe('unauthenticated');
 		}
+	});
+});
+
+describe('the heartbeat', () => {
+	/** what a Durable Object's runtime answers on its own (`setWebSocketAutoResponse`) */
+	async function autoResponseOf(stub: DurableObjectStub) {
+		return runInDurableObject(stub, (_instance, state) => {
+			const pair = state.getWebSocketAutoResponse();
+			return pair && {request: pair.request, response: pair.response};
+		});
+	}
+
+	it("is answered by the Inbox object's auto-response, which the socket's ping gets", async () => {
+		const b = address();
+		const socket = await openInbox(b);
+		const inbox = inboxObject(cfEnv, DOMAIN, b);
+		expect(await autoResponseOf(inbox)).toEqual({request: HEARTBEAT_PING, response: HEARTBEAT_PONG});
+		socket.ws.send(HEARTBEAT_PING);
+		await socket.until(() => socket.texts.includes(HEARTBEAT_PONG));
+		// a ping is not a sync: the socket stays open
+		expect(socket.closed()).toBeUndefined();
+		socket.ws.close(1000, 'done');
+	});
+
+	it("is answered by the Room object's auto-response, which a room socket's ping gets", async () => {
+		const name = `@${DOMAIN}`;
+		const room = cfEnv.ROOMS.get(cfEnv.ROOMS.idFromName(name));
+		// the Room object's own upgrade: through the Worker a room upgrade answers 500
+		// (observation `cf-worker-room-upgrade-500-on-wrangler-dev`)
+		const response = await room.fetch(`https://missiv.test/api/public/room/${name}/ws`, {
+			headers: {Upgrade: 'websocket'},
+		});
+		expect(response.status).toBe(101);
+		const ws = response.webSocket!;
+		ws.accept();
+		const texts: string[] = [];
+		ws.addEventListener('message', (event) => {
+			texts.push(event.data as string);
+		});
+		expect(await autoResponseOf(room)).toEqual({request: HEARTBEAT_PING, response: HEARTBEAT_PONG});
+		ws.send(HEARTBEAT_PING);
+		for (let i = 0; i < 200 && !texts.includes(HEARTBEAT_PONG); i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		expect(texts).toContain(HEARTBEAT_PONG);
+		ws.close(1000, 'done');
 	});
 });

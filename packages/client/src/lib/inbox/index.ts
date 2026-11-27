@@ -3,8 +3,13 @@
 // (the conversation list, each open conversation), open while one of them
 // listens. The server pushes the account's new messages and inbox rows on it;
 // after each (re)connection a store sends a `sync` with the last seq it holds,
-// so nothing pushed while it was away is lost. No store polls.
+// so nothing pushed while it was away is lost. No store polls. A heartbeat
+// (`ping` every 30 s, `@missiv/common`'s heartbeat.ts) notices a socket that
+// died idle: one with no answer within 10 s is given up and replaced.
 import {
+	HEARTBEAT_CLOSE_TIMEOUT,
+	HEARTBEAT_PONG,
+	HEARTBEAT_TIMEOUT_REASON,
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_WS_PATH,
 	INBOX_WS_PROTOCOL,
@@ -14,6 +19,7 @@ import {
 } from '@missiv/common';
 import type { API, APIOptions } from '$lib/API.js';
 import { FIRST_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS } from '$lib/utils/lifecycle.js';
+import { startHeartbeat, type Heartbeat } from '$lib/utils/heartbeat.js';
 
 /** What the channel needs of a WebSocket: the browser's, or a test's. */
 export type InboxSocket = {
@@ -68,7 +74,11 @@ function keyOf(endpoint: string, domain: string, privateKey: APIOptions['private
  * a new one. Its token is a session token from `api` (renewed when the server
  * closes the socket as `session-expired`, or refused it); a lost socket is
  * reconnected after a delay that doubles from `reconnectDelayMs` (default 1 s)
- * up to 30 s, an expired session's at once.
+ * up to 30 s, an expired session's at once. An open socket sends a `ping`
+ * every `heartbeatIntervalMs` (default 30 s); when no frame arrives within
+ * `heartbeatTimeoutMs` (default 10 s) of one, the socket is given up (closed
+ * `heartbeat-timeout`) and reconnected as a lost one. A channel already open
+ * for the account keeps the options it was opened with.
  */
 export function openInboxChannel(params: {
 	endpoint: string;
@@ -77,6 +87,8 @@ export function openInboxChannel(params: {
 	api: API;
 	createWebSocket?: CreateInboxSocket;
 	reconnectDelayMs?: number;
+	heartbeatIntervalMs?: number;
+	heartbeatTimeoutMs?: number;
 }): InboxChannel {
 	const key = keyOf(params.endpoint, params.domain, params.privateKey);
 	const existing = channels.get(key);
@@ -96,6 +108,7 @@ export function openInboxChannel(params: {
 	let renew = false;
 	let delay = firstDelay;
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+	let heartbeat: Heartbeat | undefined;
 	/** the syncs sent and not yet answered, in order: each `ready` answers the oldest */
 	let pending: Array<() => void> = [];
 
@@ -149,10 +162,23 @@ export function openInboxChannel(params: {
 			opened = true;
 			connected = true;
 			delay = firstDelay;
+			heartbeat = startHeartbeat({
+				send: (data) => ws.send(data),
+				onTimeout: () => {
+					if (socket !== ws) return;
+					ws.close(HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON);
+					// its close event may come much later (a dead network): lost now
+					lost(ws, HEARTBEAT_CLOSE_TIMEOUT, true);
+				},
+				intervalMs: params.heartbeatIntervalMs,
+				timeoutMs: params.heartbeatTimeoutMs
+			});
 			each((l) => l.onOpen?.());
 		});
 		ws.addEventListener('message', (event: { data: unknown }) => {
 			if (socket !== ws) return;
+			heartbeat?.received();
+			if (event.data === HEARTBEAT_PONG) return;
 			let frame: InboxServerFrame;
 			try {
 				frame = JSON.parse(String(event.data));
@@ -168,30 +194,41 @@ export function openInboxChannel(params: {
 			}
 		});
 		ws.addEventListener('close', (event: { code?: number }) => {
-			if (socket !== ws) return;
-			socket = undefined;
-			connected = false;
-			settlePending();
-			if (!running) return;
-			if (event.code === INBOX_CLOSE_SESSION_EXPIRED) {
-				// the token ran out: a new one, and back at once
-				renew = true;
-				scheduleReconnect(0);
-				return;
-			}
-			// refused before it opened: the token may be stale (a rotated secret, a
-			// replaced key set), so the next attempt opens a new session
-			if (!opened) renew = true;
-			each((l) =>
-				l.onError?.(
-					new Error(
-						opened ? 'the live inbox disconnected' : 'the live inbox refused the connection'
-					)
-				)
-			);
-			scheduleReconnect(delay);
-			delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
+			lost(ws, event.code, opened);
 		});
+	}
+
+	/** the socket `ws` closed (or was given up): reconnect */
+	function lost(ws: InboxSocket, code: number | undefined, opened: boolean) {
+		if (socket !== ws) return;
+		socket = undefined;
+		connected = false;
+		heartbeat?.stop();
+		heartbeat = undefined;
+		settlePending();
+		if (!running) return;
+		if (code === INBOX_CLOSE_SESSION_EXPIRED) {
+			// the token ran out: a new one, and back at once
+			renew = true;
+			scheduleReconnect(0);
+			return;
+		}
+		// refused before it opened: the token may be stale (a rotated secret, a
+		// replaced key set), so the next attempt opens a new session
+		if (!opened) renew = true;
+		each((l) =>
+			l.onError?.(
+				new Error(
+					!opened
+						? 'the live inbox refused the connection'
+						: code === HEARTBEAT_CLOSE_TIMEOUT
+							? 'the live inbox stopped answering'
+							: 'the live inbox disconnected'
+				)
+			)
+		);
+		scheduleReconnect(delay);
+		delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
 	}
 
 	function start() {
@@ -207,6 +244,8 @@ export function openInboxChannel(params: {
 		const ws = socket;
 		socket = undefined;
 		connected = false;
+		heartbeat?.stop();
+		heartbeat = undefined;
 		settlePending();
 		ws?.close(1000, 'unsubscribed');
 		if (channels.get(key) === channel) channels.delete(key);

@@ -53,7 +53,7 @@ type Message = {
 
 ## Live channel
 
-`GET /inbox/ws`, the session token presented AT UPGRADE (the `Sec-WebSocket-Protocol` header, or a one-shot ticket from an HTTP call), so the server can verify it and route to the user's Inbox before accepting the socket (on Cloudflare the Worker must pick the Inbox object then). Server frames: `{type: 'message', message}`, `{type: 'conversation', conversation}`, `{type: 'ready'}`; the client may send `{type: 'sync', since: {[conversation]: seq}}` and receives what it missed, then `ready`. At the token's expiry the server closes the socket with a `session-expired` code and the client reconnects with a renewed token. Sends stay HTTP.
+`GET /inbox/ws`, the session token presented AT UPGRADE (the `Sec-WebSocket-Protocol` header, or a one-shot ticket from an HTTP call), so the server can verify it and route to the user's Inbox before accepting the socket (on Cloudflare the Worker must pick the Inbox object then). Server frames: `{type: 'message', message}`, `{type: 'conversation', conversation}`, `{type: 'ready'}`; the client may send `{type: 'sync', since: {[conversation]: seq}}` and receives what it missed, then `ready`. At the token's expiry the server closes the socket with a `session-expired` code and the client reconnects with a renewed token. Sends stay HTTP. The client keeps the socket alive with a heartbeat, as on every missiv socket (rooms too): the text frame `ping` every 30 s, answered `pong` (on Cloudflare by the Durable Object's WebSocket auto-response, which wakes nothing), the socket given up and reconnected when no frame arrives within 10 s, and on Node.js and Bun the server closes a socket that sent nothing for 90 s (`packages/common/src/heartbeat.ts`).
 
 ## Storage keys
 

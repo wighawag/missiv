@@ -16,6 +16,7 @@ import {
 	type KeyDirectoryCache,
 } from '@missiv/server';
 import {upgradeWebSocket} from 'hono/cloudflare-workers';
+import {HEARTBEAT_PING, HEARTBEAT_PONG} from '@missiv/common';
 import {RemoteD1} from 'remote-sql-d1';
 import {wrapWithLogger} from './logging/index.js';
 import {Context} from 'hono';
@@ -105,6 +106,9 @@ export class ServerObjectRoom extends Room<CloudflareWorkerEnv> {
 	constructor(state: DurableObjectState, env: CloudflareWorkerEnv) {
 		super(env);
 		this.state = state;
+		// the heartbeat (`@missiv/common`'s heartbeat.ts), answered by the runtime without
+		// waking this object or billing its duration
+		state.setWebSocketAutoResponse(new WebSocketRequestResponsePair(HEARTBEAT_PING, HEARTBEAT_PONG));
 		this.instantiate();
 	}
 

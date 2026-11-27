@@ -1,8 +1,16 @@
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { activeStore, type StoreError } from '$lib/utils/lifecycle.js';
 import { signRequest } from 'delegated-identity';
-import { serverOriginOf, type ClientMessageType, type ServerMessageType } from '@missiv/common';
+import {
+	HEARTBEAT_CLOSE_TIMEOUT,
+	HEARTBEAT_PONG,
+	HEARTBEAT_TIMEOUT_REASON,
+	serverOriginOf,
+	type ClientMessageType,
+	type ServerMessageType
+} from '@missiv/common';
 import { toPrivateKey } from '$lib/API.js';
+import { startHeartbeat, type Heartbeat } from '$lib/utils/heartbeat.js';
 
 /**
  * A room message. Rooms are unencrypted and relayed by the server, which
@@ -54,7 +62,7 @@ export type Room = {
 /** What `openRoom` needs of a WebSocket: the browser's, or a test's. */
 export type RoomSocket = {
 	send(data: string): void;
-	close(): void;
+	close(code?: number, reason?: string): void;
 	addEventListener(type: 'open' | 'close' | 'message', listener: (event: any) => void): void;
 	removeEventListener(type: 'open' | 'close' | 'message', listener: (event: any) => void): void;
 };
@@ -65,7 +73,10 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
  * A room: one socket while subscribed, for the registration's current account
  * (another account gets a new socket, so a fresh challenge). A lost socket is
  * reconnected, with a fresh challenge and a new login; every error the room
- * sends is shown.
+ * sends is shown. An open socket sends a heartbeat `ping` every
+ * `heartbeatIntervalMs` (default 30 s); when no frame arrives within
+ * `heartbeatTimeoutMs` (default 10 s) of one, the socket is given up (closed
+ * `heartbeat-timeout`) and reconnected as a lost one.
  */
 export function openRoom(params: {
 	url: string;
@@ -75,6 +86,10 @@ export function openRoom(params: {
 	createWebSocket?: (url: string) => RoomSocket;
 	/** the first reconnection delay, doubled each failure up to 30 s (default 1 s) */
 	reconnectDelayMs?: number;
+	/** how often an open socket sends its heartbeat `ping` (default 30 s) */
+	heartbeatIntervalMs?: number;
+	/** how long it waits for a frame after a `ping` before it gives the socket up (default 10 s) */
+	heartbeatTimeoutMs?: number;
 }) {
 	const createWebSocket =
 		params.createWebSocket ?? ((url: string) => new WebSocket(url) as unknown as RoomSocket);
@@ -106,12 +121,28 @@ export function openRoom(params: {
 			let websocket: RoomSocket | undefined;
 			let session: { id: string; challenge: string } | undefined;
 			let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+			let heartbeat: Heartbeat | undefined;
 			let failures = 0;
 
 			const withoutSession = (users: ChatUser[], id: string) => users.filter((u) => u.id !== id);
 
 			function onOpen() {
 				failures = 0;
+				const ws = websocket;
+				heartbeat?.stop();
+				heartbeat = ws
+					? startHeartbeat({
+							send: (data) => ws.send(data),
+							onTimeout() {
+								if (ws !== websocket) return;
+								ws.close(HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON);
+								// its close event may come much later (a dead network): lost now
+								onClose();
+							},
+							intervalMs: params.heartbeatIntervalMs,
+							timeoutMs: params.heartbeatTimeoutMs
+						})
+					: undefined;
 				ctx.set(
 					address
 						? { step: 'Connected', loginStatus: 'LoggedOut', address, messages: [], users: [] }
@@ -135,6 +166,8 @@ export function openRoom(params: {
 			}
 
 			function onMessage(event: { data: string }) {
+				heartbeat?.received();
+				if (event.data === HEARTBEAT_PONG) return;
 				let msg: ServerMessageType;
 				try {
 					msg = JSON.parse(event.data);
@@ -223,6 +256,8 @@ export function openRoom(params: {
 			}
 
 			function detach() {
+				heartbeat?.stop();
+				heartbeat = undefined;
 				if (!websocket) return;
 				websocket.removeEventListener('open', onOpen);
 				websocket.removeEventListener('close', onClose);

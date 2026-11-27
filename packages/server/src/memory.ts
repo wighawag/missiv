@@ -8,6 +8,8 @@ import type {Env} from './env.js';
 import {RateLimiter} from './RateLimiter.js';
 import {Room} from './Room.js';
 import type {ServerObject, ServerObjectId, ServerObjectStorage} from './types.js';
+import {HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON} from '@missiv/common';
+import {watchIdle, type IdleWatch} from './heartbeat.js';
 
 /** The ServerObjectStorage of a Durable Object, as an insertion-ordered Map (keys are written in time order). */
 export class InMemoryObjectStorage implements ServerObjectStorage {
@@ -76,10 +78,15 @@ export class InMemoryObjectStorage implements ServerObjectStorage {
 /** How many messages a room keeps in memory: the 100 its new sessions are sent, with room to spare. */
 export const ROOM_HISTORY = 200;
 
-/** A room held in process: its sockets are whatever the platform's WebSocket server hands over. */
+/**
+ * A room held in process: its sockets are whatever the platform's WebSocket
+ * server hands over. A socket that sent nothing (not even its heartbeat `ping`)
+ * for three heartbeat intervals is closed `heartbeat-timeout` and its session
+ * ends at once.
+ */
 export class InMemoryRoom<CustomEnv extends Env> extends Room<CustomEnv> {
 	private storage = new InMemoryObjectStorage(ROOM_HISTORY);
-	private sockets = new Set<WebSocket>();
+	private sockets = new Map<WebSocket, IdleWatch>();
 
 	constructor(
 		env: CustomEnv,
@@ -108,15 +115,35 @@ export class InMemoryRoom<CustomEnv extends Env> extends Room<CustomEnv> {
 	}
 
 	getWebSockets(): WebSocket[] {
-		return [...this.sockets];
+		return [...this.sockets.keys()];
 	}
 
 	/** The platform hands over each socket it accepted, and takes it back when it closes. */
 	addWebSocket(ws: WebSocket) {
-		this.sockets.add(ws);
+		if (this.sockets.has(ws)) {
+			return;
+		}
+		const idle = watchIdle(() => {
+			try {
+				ws.close(HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON);
+			} catch (err) {
+				console.error(`room: closing an idle socket failed`, err);
+			}
+			// its close event may come much later (a dead network): its session ends now
+			this.webSocketClose(ws, HEARTBEAT_CLOSE_TIMEOUT, HEARTBEAT_TIMEOUT_REASON, false).catch((err) =>
+				console.error(err),
+			);
+		});
+		this.sockets.set(ws, idle);
 	}
 	removeWebSocket(ws: WebSocket) {
+		this.sockets.get(ws)?.stop();
 		this.sockets.delete(ws);
+	}
+
+	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+		this.sockets.get(ws)?.touch();
+		return super.webSocketMessage(ws, message);
 	}
 
 	async upgradeWebsocket(): Promise<Response> {
