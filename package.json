@@ -25,6 +25,7 @@
     "---------------------- TEST ----------------------": "",
     "client:test": "pnpm --filter @missiv/client test",
     "cf-worker:test": "pnpm --filter @missiv/cf-worker test",
+    "load": "pnpm --filter missiv-test-load run load",
     "test": "pnpm -r test run",
     "---------------------- DEV ----------------------": "",
     "client:dev": "pnpm --filter @missiv/client dev",

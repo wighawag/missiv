@@ -378,6 +378,45 @@ importers:
         specifier: ^3.0.9
         version: 3.0.9(@types/node@22.13.10)(supports-color@8.1.1)(terser@5.39.0)(tsx@4.19.3)(yaml@2.7.0)
 
+  test/load:
+    devDependencies:
+      '@hono/node-server':
+        specifier: ^1.19.11
+        version: 1.19.19(hono@4.7.5)
+      '@missiv/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@missiv/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.13.10
+      '@types/ws':
+        specifier: ^8.18.0
+        version: 8.18.0
+      delegated-identity:
+        specifier: ^0.1.1
+        version: 0.1.1
+      missiv:
+        specifier: workspace:*
+        version: link:../../platforms/nodejs
+      prettier:
+        specifier: ^3.5.3
+        version: 3.5.3
+      tsx:
+        specifier: ^4.19.3
+        version: 4.19.3
+      typescript:
+        specifier: ^5.8.2
+        version: 5.8.2
+      vitest:
+        specifier: ^3.0.9
+        version: 3.0.9(@types/node@22.13.10)(supports-color@8.1.1)(terser@5.39.0)(tsx@4.19.3)(yaml@2.7.0)
+      ws:
+        specifier: ^8.18.0
+        version: 8.18.1
+
 packages:
 
   '@aa-sdk/core@4.15.3':

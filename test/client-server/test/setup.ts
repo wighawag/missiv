@@ -138,8 +138,21 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 		return ready;
 	}
 
+	return {app, api, db, env, setupDatabase, ...createActions(api, {before: setupDatabase})};
+}
+
+export type Actions = ReturnType<typeof createActions>;
+
+/**
+ * The actions a test (or the load harness, `test/load`) takes as its users, over
+ * any @missiv/client `API`: in process (`app.request`) or over real HTTP. Each
+ * request is signed by the acting user's delegate key, each copy by the sender's.
+ */
+export function createActions(api: API, options?: {before?: () => Promise<unknown>}) {
+	const before = options?.before ?? (() => Promise.resolve());
+
 	async function register(user: TestUser, options?: {domain?: string; name?: string}) {
-		await setupDatabase();
+		await before();
 		return api.register(
 			{
 				type: 'register',
@@ -265,11 +278,6 @@ export function createHarness(env: Record<string, string | undefined> = {}, opti
 	}
 
 	return {
-		app,
-		api,
-		db,
-		env,
-		setupDatabase,
 		register,
 		registerAll,
 		send,
