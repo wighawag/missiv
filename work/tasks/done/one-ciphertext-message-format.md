@@ -46,3 +46,9 @@ git fetch <remote> && git switch -c work/one-ciphertext-message-format <remote>/
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/one-ciphertext-message-format.md work/tasks/done/one-ciphertext-message-format.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-one-ciphertext-message-format-decisions.md](../../notes/observations/2026-11-27-one-ciphertext-message-format-decisions.md)

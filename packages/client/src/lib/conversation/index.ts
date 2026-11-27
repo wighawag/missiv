@@ -6,9 +6,9 @@ import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lif
 import {
 	clearCopies,
 	encryptedCopies,
-	openMessage,
+	openMessageCopy,
 	verifyDomainUser,
-	type OpenedMessage
+	type OpenedMessageCopy
 } from '$lib/messages.js';
 
 export type OtherUser = {
@@ -27,7 +27,7 @@ export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
 	// fetching the messages for the first time
 	| { step: 'Fetching'; conversationID: string }
 	// fetched, and polled again while subscribed; newest last; each copy opened on its own
-	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[] }
+	| { step: 'Fetched'; conversationID: string; messages: OpenedMessageCopy[] }
 );
 
 export type CurrentConversation = Readable<ConversationState> & {
@@ -116,7 +116,7 @@ export function openOneConversation(params: {
 					{ privateKey }
 				);
 				const messages = (
-					await Promise.all(copies.map((copy) => openMessage(copy, reader)))
+					await Promise.all(copies.map((copy) => openMessageCopy(copy, reader)))
 				).reverse();
 				if (!ctx.active) {
 					return;
