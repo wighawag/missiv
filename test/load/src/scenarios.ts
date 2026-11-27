@@ -7,10 +7,17 @@
 // out at a fixed rate whatever the answers, and each is timed until its last
 // delivery.
 import {performance} from 'node:perf_hooks';
-import type {Adapter, InboxConnection, LoadConversation, LoadUser, RoomConnection} from './adapters/types.js';
+import type {
+	Adapter,
+	InboxConnection,
+	InboxPoller,
+	LoadConversation,
+	LoadUser,
+	RoomConnection,
+} from './adapters/types.js';
 import {summarize, type Summary} from './stats.js';
 
-export const SCENARIOS = ['send', 'read', 'list', 'live', 'room'] as const;
+export const SCENARIOS = ['send', 'read', 'list', 'live', 'poll', 'room'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export type Parameters = {
@@ -28,6 +35,10 @@ export type Parameters = {
 	roomSize: number;
 	/** room messages per second, all sockets taking turns to send */
 	rate: number;
+	/** `poll`: how often each client polls its inbox (ms) */
+	pollInterval: number;
+	/** `poll`: direct messages sent per second while the clients poll */
+	sendRate: number;
 };
 
 /**
@@ -247,6 +258,133 @@ export async function runLive(
 	} finally {
 		await Promise.all(sockets.map((s) => s.close()));
 	}
+}
+
+/**
+ * The polling transport (`POST /api/inbox/changes`), in two phases. First
+ * `poll-empty`: every user of the world polls its inbox back to back (a closed
+ * loop) while nothing changes, so every poll is the cheap `unchanged`: its
+ * throughput is what the server sustains of them. Then `poll`: every user polls
+ * every `pollInterval` ms (each from a random point of the interval), while
+ * `sendRate` messages a second go out (an open loop, from random senders); each is timed from the start of its
+ * send until the recipient's poll read it (`poll`, about half an interval plus
+ * the reads), and every poll of that phase is `poll-request` (with how many
+ * found a change). A message not read within 5 s of the last delivery after
+ * the sends stop is `incomplete`. Each message is named by its content.
+ */
+export async function openPollers(adapter: Adapter, world: World, log: (s: string) => void): Promise<InboxPoller[]> {
+	if (!adapter.openPoller) {
+		throw new Error(`the ${adapter.name} adapter has no polling transport`);
+	}
+	const pollers: InboxPoller[] = world.users.map((u) => adapter.openPoller!(u));
+	const t = performance.now();
+	// each client's first look at its inbox
+	await mapLimit(pollers, 16, (poller) => poller.poll());
+	log(`setup: ${pollers.length} pollers learned their inbox in ${ms(t)}`);
+	return pollers;
+}
+
+/** `poll`'s first phase (see `runPoll`): empty polls, back to back. */
+export async function runPollEmpty(pollers: InboxPoller[], p: Parameters): Promise<Summary> {
+	let changedWhileEmpty = 0;
+	const empty = await closedLoop(pollers.length, p.duration * 1000, async (client) => {
+		if ((await pollers[client].poll()).changed) changedWhileEmpty++;
+	});
+	return summarize('poll-empty', empty.latencies, empty.elapsed, empty.errorCount, {
+		pollers: pollers.length,
+		changed: changedWhileEmpty,
+		...codes(empty.errors),
+	});
+}
+
+/** `poll`'s second phase (see `runPoll`): polls at an interval, sends at a rate, each message timed to its recipient's poll. */
+export async function runPoll(
+	adapter: Adapter,
+	world: World,
+	pollers: InboxPoller[],
+	p: Parameters,
+	log: (s: string) => void,
+): Promise<Summary[]> {
+	log(`running poll: every ${p.pollInterval} ms, ${p.sendRate} messages/s for ${p.duration} s`);
+	const run = Math.random().toString(36).slice(2, 8);
+	const pattern = new RegExp(`^poll-${run}-(\\d+):`);
+	const index = new Map(world.users.map((u, i) => [u, i]));
+	const sent = new Map<number, {at: number; to: number}>();
+	const delivered: number[] = [];
+	const requests: number[] = [];
+	const errors: Record<string, number> = {};
+	let errorCount = 0;
+	let changedPolls = 0;
+	const start = performance.now();
+	const end = start + p.duration * 1000;
+	const record = (err: unknown) => {
+		errorCount++;
+		const code = errorCode(err);
+		errors[code] = (errors[code] || 0) + 1;
+	};
+	let polling = true;
+	const loops = pollers.map(async (poller, i) => {
+		// at a random point of the interval, as independent clients poll
+		await sleep(Math.random() * p.pollInterval);
+		for (let next = performance.now(); polling; next += p.pollInterval) {
+			const at = performance.now();
+			try {
+				const {changed, messages} = await poller.poll();
+				requests.push(performance.now() - at);
+				if (changed) changedPolls++;
+				for (const {content, receivedAt} of messages) {
+					const match = pattern.exec(content);
+					const entry = match && sent.get(Number(match[1]));
+					if (entry && entry.to === i) {
+						delivered.push(receivedAt - entry.at);
+						sent.delete(Number(match[1]));
+					}
+				}
+			} catch (err) {
+				record(err);
+			}
+			await sleep(Math.max(0, next + p.pollInterval - performance.now()));
+		}
+	});
+	const sends: Promise<unknown>[] = [];
+	let count = 0;
+	for (let due = start; due < end; due += 1000 / p.sendRate) {
+		await sleep(Math.max(0, due - performance.now()));
+		const n = count++;
+		// a random sender and conversation: a sender's turn would line up with its recipient's polls
+		const client = Math.floor(Math.random() * world.users.length);
+		const mine = world.byUser[client];
+		const conversation = mine[Math.floor(Math.random() * mine.length)];
+		const other = conversation.members[0] === world.users[client] ? conversation.members[1] : conversation.members[0];
+		sent.set(n, {at: performance.now(), to: index.get(other)!});
+		sends.push(adapter.send(world.users[client], conversation, content(p.size, `poll-${run}-${n}`)).catch(record));
+	}
+	const sendElapsed = performance.now() - start;
+	await Promise.all(sends);
+	// the deliveries still in flight: until every message was read, or 5 s (plus an interval) without one
+	let idleSince = performance.now();
+	let seen = delivered.length;
+	while (sent.size > 0 && performance.now() - idleSince < 5000 + p.pollInterval) {
+		await sleep(100);
+		if (delivered.length !== seen) {
+			seen = delivered.length;
+			idleSince = performance.now();
+		}
+	}
+	polling = false;
+	await Promise.all(loops);
+	return [
+		summarize('poll', delivered, sendElapsed, 0, {
+			sent: count,
+			incomplete: sent.size,
+			intervalMs: p.pollInterval,
+		}),
+		summarize('poll-request', requests, sendElapsed, errorCount, {changed: changedPolls, ...codes(errors)}),
+	];
+}
+
+function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function codes(errors: Record<string, number>) {

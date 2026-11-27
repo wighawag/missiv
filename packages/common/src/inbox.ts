@@ -22,12 +22,38 @@
 // - Frames may arrive in any order and more than once (a live frame and a
 //   sync's answer can carry the same message): a client applies messages by seq
 //   (each seq once) and conversations by `lastSeq` (never back).
+//
+// The inbox version and the polling transport (ADR-0006 "Amendment: the inbox
+// version and polling"):
+// - The INBOX VERSION is a counter per (domain, user): every change of one of
+//   the user's inbox rows in the domain (a message's update that moves it,
+//   accept, reject, markRead that move it) gives that row the next version, and
+//   the inbox's version is its highest row's. An update that changes nothing (a
+//   repeated or reordered `Inbox.update`, an accept of an accepted row) takes
+//   none, and `unblock` takes none: it changes no row (the block list is not
+//   rows a client lists). Every row carries its version (`Conversation.version`),
+//   so a `conversation` frame carries it and a client that moves from the
+//   socket to polling polls from the highest one it saw.
+// - `POST /api/inbox/changes {domain, since}` answers `{version, unchanged:
+//   true}` when no row changed after `since`, else the rows that did, oldest
+//   change first, a page at a time (`hasMore`: poll again at once from the
+//   answered `version`, the last row's). A `since` above the inbox's version
+//   (a server whose database was reset) is answered as `since` 0: every row.
+//   The client then reads the messages it lacks with `listMessages {after}`.
+// - Which transports a deployment offers is `INBOX_TRANSPORTS` (`socket,poll`
+//   by default): a route that is off answers 404, and a client in `auto`
+//   adapts.
 import {z} from 'zod';
 import type {Message} from './message.js';
 import type {Conversation} from './index.js';
 
 /** The path of the live channel, below the server's endpoint. */
 export const INBOX_WS_PATH = '/api/inbox/ws';
+/** The path of the polling transport (`ActionInboxChanges`), below the server's endpoint. */
+export const INBOX_CHANGES_PATH = '/api/inbox/changes';
+/** How a deployment may deliver the live inbox: the socket (`INBOX_WS_PATH`) and polling (`INBOX_CHANGES_PATH`). */
+export const INBOX_TRANSPORTS = ['socket', 'poll'] as const;
+export type InboxTransport = (typeof INBOX_TRANSPORTS)[number];
 /** The protocol the server selects; the client offers it first, its session token second. */
 export const INBOX_WS_PROTOCOL = 'missiv-inbox';
 /** The close code of a socket whose session token expired: renew the token and reconnect. */

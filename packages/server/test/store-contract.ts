@@ -414,6 +414,131 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 			});
 		});
 
+		describe('the inbox version (Inbox.changes)', () => {
+			const changes = (stores: Stores, user: Address, since: number, limit = 100, domain = DOMAIN) =>
+				stores.inbox.changes(user, domain, {since, limit});
+			const idsOf = (answer: Awaited<ReturnType<typeof changes>>) =>
+				'unchanged' in answer ? 'unchanged' : answer.conversations.map((c) => c.conversationID);
+
+			it('answers unchanged at the current version, and exactly the rows changed after `since`, oldest change first', async () => {
+				const {stores, send} = await setup();
+				const [me, a, b, c] = [address(), address(), address(), address()];
+				expect(await changes(stores, me, 0)).toEqual({version: 0, unchanged: true});
+				await send(a, me);
+				await send(b, me, {namespace: 'another'});
+				const first = await changes(stores, me, 0);
+				expect(idsOf(first)).toEqual([scope(a, me).conversationID, scope(b, me).conversationID]);
+				if ('unchanged' in first) return;
+				expect(first.hasMore).toBe(false);
+				const [rowA, rowB] = first.conversations;
+				expect(rowA.version).toBeLessThan(rowB.version);
+				expect(first.version).toBe(rowB.version);
+				// a row as the list has it
+				expect(await stores.inbox.getConversation(me, scope(a, me))).toEqual(rowA);
+				expect(await changes(stores, me, first.version)).toEqual({version: first.version, unchanged: true});
+
+				// another domain's rows are another inbox
+				await send(c, me, {domain: 'other.com'});
+				expect(await changes(stores, me, first.version)).toEqual({version: first.version, unchanged: true});
+
+				await send(c, me);
+				await stores.inbox.accept(me, scope(a, me));
+				const second = await changes(stores, me, first.version);
+				expect(idsOf(second)).toEqual([scope(c, me).conversationID, scope(a, me).conversationID]);
+				if ('unchanged' in second) return;
+				expect(second.conversations.map((row) => row.status)).toEqual(['unaccepted', 'accepted']);
+				expect(second.version).toBeGreaterThan(first.version);
+				// everything, from 0: each row once, at its last change
+				expect(idsOf(await changes(stores, me, 0))).toEqual([
+					scope(b, me, DOMAIN, 'another').conversationID,
+					scope(c, me).conversationID,
+					scope(a, me).conversationID,
+				]);
+			});
+
+			it('never goes back, nor moves for an update or a status change that changes nothing', async () => {
+				const {stores, send} = await setup();
+				const [me, a] = [address(), address()];
+				const key = scope(a, me);
+				const version = async () => (await changes(stores, me, Number.MAX_SAFE_INTEGER)).version;
+				const unchangedFrom = async (since: number) =>
+					expect(await changes(stores, me, since)).toEqual({version: since, unchanged: true});
+				const update = (seq: number) =>
+					stores.inbox.update({...key, user: me, seq, lastMessageAt: seq * 100, own: false});
+
+				await send(a, me);
+				const first = await version();
+				expect(first).toBeGreaterThan(0);
+				await update(1); // repeated
+				await unchangedFrom(first);
+				await send(a, me);
+				const afterUpdate = await version();
+				expect(afterUpdate).toBeGreaterThan(first);
+				await update(1); // reordered
+				await update(2); // repeated
+				await unchangedFrom(afterUpdate);
+
+				await stores.inbox.accept(me, key);
+				const accepted = await version();
+				expect(accepted).toBeGreaterThan(afterUpdate);
+				await stores.inbox.accept(me, key);
+				await unchangedFrom(accepted);
+
+				await stores.inbox.markRead(me, key, 1);
+				const read = await version();
+				expect(read).toBeGreaterThan(accepted);
+				await stores.inbox.markRead(me, key, 1);
+				await stores.inbox.markRead(me, key, 0);
+				await unchangedFrom(read);
+
+				await stores.inbox.reject(me, key, a, 1);
+				const rejected = await version();
+				expect(rejected).toBeGreaterThan(read);
+				// unblock changes no row; a message hidden from the blocker moves none of its rows
+				await send(a, me, {content: 'hidden'});
+				await unchangedFrom(rejected);
+				await stores.inbox.unblock(me, DOMAIN, a);
+				await unchangedFrom(rejected);
+				await send(a, me, {content: 'seen'});
+				expect(await version()).toBeGreaterThan(rejected);
+				// the sender's own message moves the sender's version too
+				const mine = await stores.inbox.changes(a, DOMAIN, {since: 0, limit: 10});
+				expect(idsOf(mine)).toEqual([key.conversationID]);
+			});
+
+			it('pages the changes: every changed row once, in order, polling from each answered version', async () => {
+				const {stores, send} = await setup();
+				const me = address();
+				const others = [address(), address(), address(), address(), address()];
+				for (const other of others) {
+					await send(other, me);
+				}
+				const seen: string[] = [];
+				const pages: boolean[] = [];
+				let since = 0;
+				for (;;) {
+					const page = await changes(stores, me, since, 2);
+					if ('unchanged' in page) break;
+					seen.push(...page.conversations.map((row) => row.conversationID));
+					pages.push(page.hasMore);
+					since = page.version;
+					if (!page.hasMore) break;
+				}
+				expect(seen).toEqual(others.map((other) => scope(other, me).conversationID));
+				expect(pages).toEqual([true, true, false]);
+				expect(await changes(stores, me, since, 2)).toEqual({version: since, unchanged: true});
+			});
+
+			it('answers every row for a `since` above its version (a reset database)', async () => {
+				const {stores, send} = await setup();
+				const [me, a] = [address(), address()];
+				await send(a, me);
+				const answer = await changes(stores, me, 1_000_000);
+				expect(idsOf(answer)).toEqual([scope(a, me).conversationID]);
+				expect(answer.version).toBeLessThan(1_000_000);
+			});
+		});
+
 		describe('blocks', () => {
 			it('reject blocks the other member across the domain; their messages are stored hidden from the blocker', async () => {
 				const {send, list, stores} = await setup();

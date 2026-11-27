@@ -5,6 +5,7 @@ import {RemoteSQL} from 'remote-sql';
 import type {PushNotifier} from './push.js';
 import type {LiveInboxHost, LiveInboxRouter, Stores} from './stores/ports.js';
 import type {ServerTokenBuckets} from './rate-limit.js';
+import type {InboxVersionCache} from './stores/versions.js';
 
 export type ServerObjectStorage = {
 	get<T = unknown>(key: string): Promise<T | undefined>;
@@ -123,6 +124,11 @@ export type ServerOptions<Env extends Bindings = Bindings> = {
 /** The options a route module receives from `createServer`: its token buckets resolved, one set for all routes. */
 export type RouteOptions<Env extends Bindings = Bindings> = ServerOptions<Env> & {
 	getTokenBuckets: (env: Env) => ServerTokenBuckets;
+	/**
+	 * the inbox versions this process knows, where it is the deployment's only
+	 * one (`liveInbox` set): see `stores/versions.ts`
+	 */
+	inboxVersionCache?: InboxVersionCache;
 };
 
 // export type UpgradeWebSocket = (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => MiddlewareHandler<any, string, {

@@ -18,7 +18,7 @@ import {
 	type MessageToSend,
 } from '@missiv/common';
 import {MissivError} from '../../errors.js';
-import type {AppendResult, ConversationKey, ConversationStore, Inbox, InboxUpdate} from '../ports.js';
+import type {AppendResult, ConversationKey, ConversationStore, Inbox, InboxChanges, InboxUpdate} from '../ports.js';
 import type {ConversationStatus} from '@missiv/common';
 
 /** Inbox.status as stored. */
@@ -87,10 +87,21 @@ const INBOX_UPSERT = `ON CONFLICT (user, domain, namespace, conversationID) DO U
 	status = CASE WHEN excluded.status = ${InboxStatus.Accepted} THEN ${InboxStatus.Accepted} ELSE Inbox.status END,
 	lastSeq = excluded.lastSeq,
 	lastReadSeq = MAX(Inbox.lastReadSeq, excluded.lastReadSeq),
-	lastMessageAt = excluded.lastMessageAt
+	lastMessageAt = excluded.lastMessageAt,
+	version = excluded.version
 	WHERE excluded.lastSeq > Inbox.lastSeq`;
 
-const INBOX_COLUMNS = `(user, domain, namespace, conversationID, status, lastSeq, lastReadSeq, lastMessageAt)`;
+const INBOX_COLUMNS = `(user, domain, namespace, conversationID, status, lastSeq, lastReadSeq, lastMessageAt, version)`;
+
+/**
+ * The next inbox version of (`user`, `domain`), the SQL parameters naming them:
+ * one more than the user's highest row's (read backwards on idx_inbox_version),
+ * computed in the statement that changes the row, so the change and its
+ * version are one write (SQLite runs one writer at a time).
+ */
+function nextVersion(user: string, domain: string): string {
+	return `(SELECT COALESCE(MAX(version), 0) + 1 FROM Inbox WHERE user = ${user} AND domain = ${domain})`;
+}
 
 export class SQLConversationStore implements ConversationStore {
 	constructor(private db: RemoteSQL) {}
@@ -139,7 +150,8 @@ export class SQLConversationStore implements ConversationStore {
 			this.db
 				.prepare(
 					`INSERT INTO Inbox ${INBOX_COLUMNS}
-					SELECT ?5, domain, namespace, conversationID, ${InboxStatus.Accepted}, seq, seq, serverTimestamp FROM Messages
+					SELECT ?5, domain, namespace, conversationID, ${InboxStatus.Accepted}, seq, seq, serverTimestamp,
+						${nextVersion('?5', '?1')} FROM Messages
 					WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND messageID = ?4 AND signature = ?6
 					${INBOX_UPSERT}`,
 				)
@@ -148,7 +160,8 @@ export class SQLConversationStore implements ConversationStore {
 			this.db
 				.prepare(
 					`INSERT INTO Inbox ${INBOX_COLUMNS}
-					SELECT ?5, domain, namespace, conversationID, ${InboxStatus.Unaccepted}, seq, 0, serverTimestamp FROM Messages
+					SELECT ?5, domain, namespace, conversationID, ${InboxStatus.Unaccepted}, seq, 0, serverTimestamp,
+						${nextVersion('?5', '?1')} FROM Messages
 					WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND messageID = ?4 AND signature = ?6
 						AND hiddenFrom IS NULL
 					${INBOX_UPSERT}`,
@@ -234,6 +247,7 @@ type InboxRow = {
 	lastSeq: number;
 	lastReadSeq: number;
 	lastMessageAt: number;
+	version: number;
 };
 
 function formatConversation(row: InboxRow): Conversation {
@@ -246,6 +260,7 @@ function formatConversation(row: InboxRow): Conversation {
 		lastSeq: Number(row.lastSeq),
 		lastReadSeq: Number(row.lastReadSeq),
 		lastMessageAt: Number(row.lastMessageAt),
+		version: Number(row.version),
 	};
 }
 
@@ -266,12 +281,28 @@ function parseCursor(cursor: string | undefined): [number, string] {
 	return [time, cursor.slice(separator + 1)];
 }
 
+/**
+ * A page of `Inbox.changes` from the rows read (oldest change first, at most
+ * `limit + 1`, the extra one saying there are more) and the inbox's version
+ * read before them: the version to poll from next is the last kept row's when
+ * there are more, else the inbox's (or a row's above it, written in between).
+ */
+export function inboxChangesOf(rows: Conversation[], version: number, limit: number): InboxChanges {
+	const conversations = rows.slice(0, limit);
+	const hasMore = rows.length > limit;
+	const last = conversations[conversations.length - 1]?.version ?? 0;
+	return {version: hasMore ? last : Math.max(version, last), conversations, hasMore};
+}
+
 export class SQLInbox implements Inbox {
 	constructor(private db: RemoteSQL) {}
 
 	async update(update: InboxUpdate): Promise<void> {
 		await this.db
-			.prepare(`INSERT INTO Inbox ${INBOX_COLUMNS} VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ${INBOX_UPSERT}`)
+			.prepare(
+				`INSERT INTO Inbox ${INBOX_COLUMNS} VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ${nextVersion('?1', '?2')})
+				${INBOX_UPSERT}`,
+			)
 			.bind(
 				update.user,
 				update.domain,
@@ -283,6 +314,24 @@ export class SQLInbox implements Inbox {
 				update.lastMessageAt,
 			)
 			.all();
+	}
+
+	async changes(user: Address, domain: string, page: {since: number; limit: number}): Promise<InboxChanges> {
+		const {results: current} = await this.db
+			.prepare(`SELECT COALESCE(MAX(version), 0) AS version FROM Inbox WHERE user = ?1 AND domain = ?2`)
+			.bind(user, domain)
+			.all<{version: number}>();
+		const version = Number(current[0]?.version ?? 0);
+		if (page.since === version) {
+			return {version, unchanged: true};
+		}
+		// above the inbox's version: the database was reset, so every row
+		const since = page.since > version ? 0 : page.since;
+		const {results} = await this.db
+			.prepare(`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND version > ?3 ORDER BY version ASC LIMIT ?4`)
+			.bind(user, domain, since, page.limit + 1)
+			.all<InboxRow>();
+		return inboxChangesOf(results.map(formatConversation), version, page.limit);
 	}
 
 	async getConversation(user: Address, key: ConversationKey): Promise<Conversation | undefined> {
@@ -329,8 +378,9 @@ export class SQLInbox implements Inbox {
 	async accept(user: Address, key: ConversationKey): Promise<void> {
 		await this.db
 			.prepare(
-				`UPDATE Inbox SET status = ${InboxStatus.Accepted}
-				WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`,
+				`UPDATE Inbox SET status = ${InboxStatus.Accepted}, version = ${nextVersion('?1', '?2')}
+				WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
+					AND status <> ${InboxStatus.Accepted}`,
 			)
 			.bind(user, key.domain, key.namespace, key.conversationID)
 			.all();
@@ -340,8 +390,9 @@ export class SQLInbox implements Inbox {
 		await this.db.batch([
 			this.db
 				.prepare(
-					`UPDATE Inbox SET status = ${InboxStatus.Rejected}
-					WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`,
+					`UPDATE Inbox SET status = ${InboxStatus.Rejected}, version = ${nextVersion('?1', '?2')}
+					WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
+						AND status <> ${InboxStatus.Rejected}`,
 				)
 				.bind(user, key.domain, key.namespace, key.conversationID),
 			this.db
@@ -360,8 +411,9 @@ export class SQLInbox implements Inbox {
 	async markRead(user: Address, key: ConversationKey, seq: number): Promise<void> {
 		await this.db
 			.prepare(
-				`UPDATE Inbox SET lastReadSeq = MAX(lastReadSeq, MIN(?5, lastSeq))
-				WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`,
+				`UPDATE Inbox SET lastReadSeq = MIN(?5, lastSeq), version = ${nextVersion('?1', '?2')}
+				WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
+					AND MIN(?5, lastSeq) > lastReadSeq`,
 			)
 			.bind(user, key.domain, key.namespace, key.conversationID, seq)
 			.all();

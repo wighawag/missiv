@@ -4,6 +4,7 @@ import type {
 	ActionEditDomainUser,
 	ActionGetDomainUser,
 	ActionGetKeySet,
+	ActionInboxChanges,
 	ActionListConversations,
 	ActionListMessages,
 	ActionMarkRead,
@@ -18,6 +19,7 @@ import type {
 	ResponseEditDomainUser,
 	ResponseGetDomainUser,
 	ResponseGetKeySet,
+	ResponseInboxChanges,
 	ResponseListConversations,
 	ResponseListMessages,
 	ResponseMarkRead,
@@ -271,6 +273,16 @@ export class API {
 	/** Mark a conversation read up to `seq`. */
 	async markRead(action: ActionMarkRead, options: APIOptions) {
 		return this.authenticatedCall<ResponseMarkRead>('/private/markRead', action, options);
+	}
+
+	/**
+	 * The account's inbox rows in the domain that changed after the inbox version
+	 * `since` (0: every row), or `unchanged`: the live inbox's polling transport
+	 * (`openInboxChannel`'s `transport: 'poll'`). Refused 404 by a server that
+	 * does not offer polling.
+	 */
+	async inboxChanges(action: ActionInboxChanges, options: APIOptions) {
+		return this.authenticatedCall<ResponseInboxChanges>('/inbox/changes', action, options);
 	}
 
 	/** Drop every table and migrate again; needs the server's ADMIN_TOKEN. */

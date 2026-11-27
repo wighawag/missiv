@@ -6,7 +6,11 @@ import {
 	toStoreError,
 	type StoreError
 } from '$lib/utils/lifecycle.js';
-import { openInboxChannel, type CreateInboxSocket } from '$lib/inbox/index.js';
+import {
+	openInboxChannel,
+	type CreateInboxSocket,
+	type InboxTransportOption
+} from '$lib/inbox/index.js';
 import { isUnread, type Conversation } from '@missiv/common';
 
 export type ConversationList = { error?: StoreError } & (
@@ -57,9 +61,10 @@ function byLastMessage(a: Conversation, b: Conversation) {
  * The account's conversations in a domain and namespace, while subscribed: the
  * newest page (`listConversations`) each time the live inbox channel opens (the
  * first time and after every reconnection, when conversations may have started
- * or changed unseen), then kept current by the inbox rows the channel pushes
+ * or changed unseen), then kept current by the inbox rows the channel passes on
  * (each new message, accept, reject, markRead, from any of the account's
- * devices and stores), applied by `lastSeq` (never back). No polling.
+ * devices and stores; pushed on its socket, or polled), applied by `lastSeq`
+ * (never back). The store itself polls nothing.
  */
 export function openConversationList(params: {
 	registration: MissivRegistrationStore;
@@ -76,6 +81,10 @@ export function openConversationList(params: {
 	heartbeatIntervalMs?: number;
 	/** how long it waits for an answer before it gives the socket up and reconnects (default 10 s) */
 	heartbeatTimeoutMs?: number;
+	/** how the live channel reaches the server: `socket`, `poll`, or `auto` (default: the socket, polling when it keeps failing) */
+	transport?: InboxTransportOption;
+	/** the live channel's polling interval (default 5 s) */
+	pollIntervalMs?: number;
 }) {
 	const api = new API(params.endpoint, params.fetch ? { fetch: params.fetch } : undefined);
 	const { domain, namespace } = params;
@@ -152,7 +161,9 @@ export function openConversationList(params: {
 				createWebSocket: params.createWebSocket,
 				reconnectDelayMs: params.retryDelayMs,
 				heartbeatIntervalMs: params.heartbeatIntervalMs,
-				heartbeatTimeoutMs: params.heartbeatTimeoutMs
+				heartbeatTimeoutMs: params.heartbeatTimeoutMs,
+				transport: params.transport,
+				pollIntervalMs: params.pollIntervalMs
 			});
 			const unsubscribe = channel.subscribe({
 				onOpen() {

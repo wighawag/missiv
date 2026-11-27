@@ -43,6 +43,14 @@ export type Env = {
 	 * the socket already; unset, every recipient is pushed, online or not
 	 */
 	PUSH_SKIP_WHEN_ONLINE?: string;
+	/**
+	 * how the live inbox may be delivered, comma-separated: `socket` (`GET
+	 * /api/inbox/ws`) and `poll` (`POST /api/inbox/changes`); default (unset or
+	 * empty) both. A transport left out answers 404, and a client in `auto`
+	 * uses the other; `poll` alone is the setting for several Node.js or Bun
+	 * instances behind one load balancer, which have no bus between their sockets
+	 */
+	INBOX_TRANSPORTS?: string;
 	/** the JSON-RPC endpoint of a chain, for contract-gated rooms */
 	[chainId: `CHAIN_${string}`]: string | undefined;
 };

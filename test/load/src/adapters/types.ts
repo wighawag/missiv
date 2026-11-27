@@ -29,6 +29,20 @@ export interface InboxConnection {
 	close(): Promise<void>;
 }
 
+/**
+ * A user's client on the live inbox's polling transport (0.6: `POST
+ * /api/inbox/changes`): it remembers the inbox version it reached and the last
+ * seq of each conversation, as `@missiv/client`'s channel does.
+ */
+export interface InboxPoller {
+	/**
+	 * one poll: `changed` when the inbox moved since the last one, with the
+	 * content of each message it then read (`listMessages {after}`) and when it
+	 * arrived. The first poll only learns the inbox (reads no message).
+	 */
+	poll(): Promise<{changed: boolean; messages: {content: string; receivedAt: number}[]}>;
+}
+
 export type Target = {
 	/** the server's HTTP origin, e.g. `http://127.0.0.1:2000` */
 	url: string;
@@ -56,6 +70,8 @@ export interface Adapter {
 	listConversations(user: LoadUser): Promise<number>;
 	/** open the user's live inbox socket, resolve once it is open (an API without one has no `live` scenario) */
 	openInbox?(user: LoadUser): Promise<InboxConnection>;
+	/** the user's client on the polling transport (an API without one has no `poll` scenario) */
+	openPoller?(user: LoadUser): InboxPoller;
 	/** open a socket to a room, log in as the user, resolve once logged in */
 	joinRoom(user: LoadUser, room: string, options?: {localAddress?: string}): Promise<RoomConnection>;
 }

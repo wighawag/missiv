@@ -12,7 +12,7 @@ Missiv is a messaging system for Ethereum accounts. It allows Ethereum accounts 
 ## Features
 
 - **Registration**: a wallet publishes its key set per domain (an Ed25519 signing key and an X25519 encryption key, derived by delegated-identity from `@etherplay/connect`'s origin key, so every device of the account has the same), with its ownership proof.
-- **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, delivered live on one WebSocket per client (the live inbox channel, Node.js and Bun), and a push to the recipient through push-notification-server.
+- **Direct messages**: encrypted, each copy signed by its sender and checked by its reader; conversation requests, blocks, read state, delivered live on one WebSocket per client (the live inbox channel) or by polling a cheap "changed since" (`INBOX_TRANSPORTS`, the client's `transport`), and a push to the recipient through push-notification-server.
 - **Rooms**: real-time public chat over WebSocket, optionally gated by a contract call.
 - **Platforms**: Node.js, Bun and Cloudflare Workers, from one platform-agnostic server (`@missiv/server`) and one schema with numbered migrations.
 - **Client**: Svelte stores (`@missiv/client`).

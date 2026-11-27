@@ -414,3 +414,52 @@ describe('the heartbeat', () => {
 		ws.close(1000, 'done');
 	});
 });
+
+describe('the inbox version and polling', () => {
+	it("answers an unchanged poll from the Inbox object's own storage, calling no Conversation object", async () => {
+		const {stores, send} = setup();
+		const [a, b] = [address(), address()];
+		await send(a, b);
+		const first = await stores.inbox.changes(b, DOMAIN, {since: 0, limit: 100});
+		expect('unchanged' in first).toBe(false);
+		let calls = 0;
+		await runInDurableObject(inboxObject(cfEnv, DOMAIN, b), (instance: ServerObjectInbox) => {
+			const target = instance as unknown as {conversationOf(key: unknown): unknown};
+			target.conversationOf = () => {
+				calls++;
+				throw new Error('injected: no other object may be called');
+			};
+		});
+		for (let i = 0; i < 3; i++) {
+			expect(await stores.inbox.changes(b, DOMAIN, {since: first.version, limit: 100})).toEqual({
+				version: first.version,
+				unchanged: true,
+			});
+		}
+		expect(calls).toBe(0);
+	});
+
+	it("serves `POST /api/inbox/changes` on a session token, and the version rides on the socket's rows", async () => {
+		const {send} = setup();
+		const [a, b] = [address(), address()];
+		const socket = await openInbox(b);
+		await send(a, b);
+		const token = signSessionToken({account: b, domain: DOMAIN, keyRef: KEY_REF, exp: Date.now() + 60_000}, SECRET);
+		const poll = async (since: number) => {
+			const response = await SELF.fetch('https://missiv.test/api/inbox/changes', {
+				method: 'POST',
+				headers: {'content-type': 'application/json', Authorization: `Bearer ${token}`},
+				body: JSON.stringify({type: 'inboxChanges', domain: DOMAIN, since}),
+			});
+			expect(response.status).toBe(200);
+			return (await response.json()) as {version: number; unchanged?: true; conversations?: {version: number}[]};
+		};
+		const changed = await poll(0);
+		expect(changed.conversations).toHaveLength(1);
+		expect(await poll(changed.version)).toEqual({version: changed.version, unchanged: true});
+		await socket.until(() => socket.frames.some((frame) => frame.type === 'conversation'));
+		const row = socket.frames.find((frame) => frame.type === 'conversation');
+		expect(row?.type === 'conversation' && row.conversation.version).toBe(changed.version);
+		socket.ws.close(1000, 'done');
+	});
+});
