@@ -84,7 +84,7 @@ const corsSetup = cors({
 	origin: '*',
 	allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE', 'Authorization'],
 	allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
-	exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
+	exposeHeaders: ['Content-Length', 'X-Kuma-Revision', 'Retry-After'],
 	maxAge: 600,
 });
 

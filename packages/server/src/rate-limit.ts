@@ -94,13 +94,16 @@ export function createTokenBuckets(
 		}
 		const bucket = buckets.get(key);
 		const tokens = bucket ? level(bucket, time) : burst;
+		// the refill's anchor never goes back with the clock: a bucket refilled up
+		// to `at` is not credited again for the time before it
+		const at = bucket ? Math.max(time, bucket.at) : time;
 		// the most recently used key goes last
 		buckets.delete(key);
 		if (tokens < 1) {
 			buckets.set(key, bucket!);
-			return {allowed: false, retryAfterMs: Math.ceil(((1 - tokens) / refillPerSecond) * 1000)};
+			return {allowed: false, retryAfterMs: Math.ceil(at - time + ((1 - tokens) / refillPerSecond) * 1000)};
 		}
-		buckets.set(key, {tokens: tokens - 1, at: time});
+		buckets.set(key, {tokens: tokens - 1, at});
 		while (buckets.size > maxKeys) {
 			buckets.delete(buckets.keys().next().value as string);
 		}
