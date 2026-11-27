@@ -1,5 +1,13 @@
 # @missiv/bun
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [43d28cb]
+  - @missiv/common@0.5.0
+  - @missiv/server@0.5.0
+
 ## 0.4.0
 
 Published as `@missiv/bun` from 0.4.0 (formerly `missiv-server-bun`, which stops at 0.3.x and is deprecated). Its command is `missiv-bun`.

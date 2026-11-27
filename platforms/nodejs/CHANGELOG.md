@@ -1,5 +1,12 @@
 # missiv
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [43d28cb]
+  - @missiv/server@0.5.0
+
 ## 0.4.0
 
 Published as `missiv` from 0.4.0 (formerly `missiv-server-nodejs`, which stops at 0.3.x and is deprecated). Its command is `missiv` (formerly `missiv-server-nodejs`).
