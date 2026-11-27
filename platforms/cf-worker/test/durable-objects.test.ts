@@ -177,6 +177,28 @@ describe('inbox updates', () => {
 		expect(await runDurableObjectAlarm(conversation)).toBe(false);
 	});
 
+	it("delivers a member's pending older update before a newer one, so the newer one does not void it", async () => {
+		const {send, rows} = setup();
+		const [a, b] = [address(), address()];
+		const key = scope(a, b);
+		let failing = true;
+		await failInboxOf(key, a, () => failing);
+
+		// A's own update (which accepts and reads A's row) fails; B's arrives
+		await send(a, b);
+		expect(await rows(a)).toEqual([]);
+		expect(await rows(b)).toEqual([[1, 0, 'unaccepted']]);
+
+		// B answers once A's Inbox is reachable again, before the alarm retried A's update
+		failing = false;
+		await send(b, a);
+		expect(await rows(a)).toEqual([[2, 1, 'accepted']]);
+		const conversation = conversationObject(cfEnv, key);
+		await runDurableObjectAlarm(conversation);
+		expect(await rows(a)).toEqual([[2, 1, 'accepted']]);
+		expect(await alarmOf(conversation)).toBeNull();
+	});
+
 	it("heals the recipient's list on the client's sync while the update is still failing", async () => {
 		const {send, rows} = setup();
 		const [a, b] = [address(), address()];

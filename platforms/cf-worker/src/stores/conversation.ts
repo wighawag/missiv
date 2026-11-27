@@ -160,7 +160,7 @@ export class ServerObjectConversation extends DurableObject<CloudflareWorkerEnv>
 		await this.schedule();
 
 		const stored = this.message(seq)!;
-		const answers = await Promise.all(rows.map((row) => this.deliver(key, row)));
+		const answers = await Promise.all(rows.map((row) => this.deliverInOrder(key, row)));
 		await this.schedule();
 		const refused = answers.some((answer, i) => answer === 'blocked' && rows[i].user === members.recipient);
 		const hiddenFrom = hidden || refused ? members.recipient : undefined;
@@ -227,6 +227,26 @@ export class ServerObjectConversation extends DurableObject<CloudflareWorkerEnv>
 		} finally {
 			await this.schedule();
 		}
+	}
+
+	/**
+	 * A new row's update, after any older one still pending for the same member
+	 * (a failed delivery the alarm has not retried yet), in seq order: the Inbox
+	 * applies only an update above its row's `lastSeq`, so a newer update first
+	 * would make the older one a no-op and lose what it carried (the sender's own
+	 * message accepts and reads its row). `failed` when an older one fails: the
+	 * new one stays in the outbox behind it, for the alarm.
+	 */
+	private async deliverInOrder(key: ConversationKey, row: OutboxRow): Promise<'delivered' | 'blocked' | 'failed'> {
+		const older = this.sql
+			.exec<OutboxRow>(`SELECT * FROM outbox WHERE user = ? AND seq < ? ORDER BY seq`, row.user, row.seq)
+			.toArray();
+		for (const pending of older) {
+			if ((await this.deliver(key, pending)) === 'failed') {
+				return 'failed';
+			}
+		}
+		return this.deliver(key, row);
 	}
 
 	/** One update to its member's Inbox: acknowledged (removed from the outbox), refused for a block, or failed (retried later). */
