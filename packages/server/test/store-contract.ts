@@ -2,8 +2,9 @@
 // KeyDirectory, ConversationStore and Inbox ports must do, as one suite
 // parameterized by the implementation and by the test runner, so the same
 // assertions run on libSQL under vitest (`store-contract.libsql.test.ts`) and
-// on bun:sqlite under `bun test` (`platforms/bun/test/store-contract.test.ts`).
-// Cloudflare's Durable Object stores join in `cloudflare-durable-object-stores`.
+// on bun:sqlite under `bun test` (`platforms/bun/test/store-contract.test.ts`)
+// and on Cloudflare's Durable Object stores under the Workers runtime
+// (`platforms/cf-worker/test/store-contract.test.ts`).
 //
 // The stores are below the route's checks: messages here carry well-formed but
 // unchecked signatures (the route verifies them, `test/client-server`).
@@ -18,13 +19,28 @@ export type Runner = {
 	expect: (value: unknown) => any;
 };
 
-/** A fresh, migrated database, and the stores of the implementation over it. */
-export type Implementation = {
+/** An implementation on ONE SQL database: a fresh, migrated database, and the stores of the implementation over it. */
+export type SQLImplementation = {
 	name: string;
 	create(db: RemoteSQL): Stores;
 	/** a new empty database, migrated */
 	database(): Promise<RemoteSQL>;
 };
+
+/**
+ * An implementation whose stores are not one SQL database (Cloudflare's: D1 for
+ * the KeyDirectory, a Durable Object per conversation and per inbox). Every
+ * assertion runs on it but the one that counts and explains a send's SQL
+ * statements, which only means something for one database. The suite keeps
+ * every test's data apart by fresh addresses, so `stores()` may answer stores
+ * over storage shared by every test.
+ */
+export type StoresImplementation = {
+	name: string;
+	stores(): Promise<Stores>;
+};
+
+export type Implementation = SQLImplementation | StoresImplementation;
 
 type Recorded = {sql: string; args: unknown[]};
 
@@ -111,10 +127,20 @@ function hexKey(n: number): `0x${string}` {
 }
 
 export function storeContract(implementation: Implementation, {describe, it, expect}: Runner) {
-	async function setup() {
-		const db = await implementation.database();
+	/** a test that does not apply to this implementation: not registered */
+	const skip = (_name: string, _body: () => Promise<void>) => {};
+	const sql = 'database' in implementation ? implementation : undefined;
+
+	async function setupSQL(sql: SQLImplementation) {
+		const db = await sql.database();
 		const recorder = recording(db);
-		const stores = implementation.create(recorder.db);
+		return {db, recorder, stores: sql.create(recorder.db)};
+	}
+
+	async function setup() {
+		const {db, recorder, stores} = sql
+			? await setupSQL(sql)
+			: {db: undefined, recorder: undefined, stores: await (implementation as StoresImplementation).stores()};
 		let now = 1_000_000;
 		async function send(from: Address, to: Address, options: Parameters<typeof messageOf>[2] = {}) {
 			const message = messageOf(from, to, options);
@@ -153,37 +179,43 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 				expect(first.result.message).toMatchObject({...first.message, seq: 1});
 			});
 
-			it('writes one message row in one transaction of a bounded number of statements, whatever the history', async () => {
-				const {db, recorder, send} = await setup();
-				const [a, b] = [address(), address()];
-				await send(a, b);
-				recorder.reset();
-				await send(a, b);
-				const small = {statements: recorder.statements.length, batches: recorder.batches};
-				for (let i = 0; i < 300; i++) {
-					await send(i % 2 ? a : b, i % 2 ? b : a);
-				}
-				recorder.reset();
-				const {message} = await send(a, b);
-				expect({statements: recorder.statements.length, batches: recorder.batches}).toEqual(small);
-				expect(recorder.batches).toBe(1);
-				expect(recorder.statements.length).toBeLessThanOrEqual(5);
-				// every statement a lookup on a key (or a constant row), none a scan of the conversation or a sort
-				for (const statement of recorder.statements) {
-					const {results} = await db
-						.prepare(`EXPLAIN QUERY PLAN ${statement.sql}`)
-						.bind(...statement.args)
-						.all<{detail: string}>();
-					for (const step of results) {
-						expect(`${step.detail}`).not.toMatch(/^SCAN (?!CONSTANT ROW)|TEMP B-TREE/);
+			// statements are only countable on one SQL database (a Durable Object's own
+			// SQL is a key lookup by construction: `platforms/cf-worker/src/stores/`)
+			(sql ? it : skip)(
+				'writes one message row in one transaction of a bounded number of statements, whatever the history',
+				async () => {
+					const {db: maybeDB, recorder: maybeRecorder, send} = await setup();
+					const [db, recorder] = [maybeDB!, maybeRecorder!];
+					const [a, b] = [address(), address()];
+					await send(a, b);
+					recorder.reset();
+					await send(a, b);
+					const small = {statements: recorder.statements.length, batches: recorder.batches};
+					for (let i = 0; i < 300; i++) {
+						await send(i % 2 ? a : b, i % 2 ? b : a);
 					}
-				}
-				const {results} = await db
-					.prepare(`SELECT count(*) AS n FROM Messages WHERE messageID = ?1`)
-					.bind(message.messageID)
-					.all<{n: number}>();
-				expect(Number(results[0].n)).toBe(1);
-			});
+					recorder.reset();
+					const {message} = await send(a, b);
+					expect({statements: recorder.statements.length, batches: recorder.batches}).toEqual(small);
+					expect(recorder.batches).toBe(1);
+					expect(recorder.statements.length).toBeLessThanOrEqual(5);
+					// every statement a lookup on a key (or a constant row), none a scan of the conversation or a sort
+					for (const statement of recorder.statements) {
+						const {results} = await db
+							.prepare(`EXPLAIN QUERY PLAN ${statement.sql}`)
+							.bind(...statement.args)
+							.all<{detail: string}>();
+						for (const step of results) {
+							expect(`${step.detail}`).not.toMatch(/^SCAN (?!CONSTANT ROW)|TEMP B-TREE/);
+						}
+					}
+					const {results} = await db
+						.prepare(`SELECT count(*) AS n FROM Messages WHERE messageID = ?1`)
+						.bind(message.messageID)
+						.all<{n: number}>();
+					expect(Number(results[0].n)).toBe(1);
+				},
+			);
 
 			it('answers a retry (same messageID, same signature) with the stored seq, storing nothing', async () => {
 				const {stores, send, list} = await setup();

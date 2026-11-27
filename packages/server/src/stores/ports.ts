@@ -1,9 +1,11 @@
 // The store ports of direct messaging (ADR-0005), to the contract of ADR-0006.
 // The routes speak only these; each platform implements them the way it scales
 // best: one SQL implementation over `remote-sql` (`sql/`) serves Node.js
-// (libSQL), Bun (bun:sqlite) and, as an interim, Cloudflare (D1). One contract
-// suite (`packages/server/test/store-contract.ts`) runs against every
-// implementation, so a platform cannot drift silently.
+// (libSQL) and Bun (bun:sqlite); Cloudflare has D1 for the KeyDirectory and a
+// Durable Object per conversation and per inbox (`platforms/cf-worker/src/stores/`).
+// One contract suite (`packages/server/test/store-contract.ts`) runs against
+// every implementation, so a platform cannot drift silently.
+import type {SessionClaims} from '../session.js';
 import type {
 	ActionEditDomainUser,
 	ActionRegisterDomainUser,
@@ -73,10 +75,12 @@ export type AppendResult =
 			/** whom to push it to: loaded in the send itself, no further read */
 			pushTo: PushRecipient[];
 			/**
-			 * the inbox updates this store did NOT apply in its own transaction, for
-			 * the caller to apply with `Inbox.update` (and retry). The SQL store applies
-			 * both members' rows in the append's transaction and returns none; a store
-			 * whose inboxes live elsewhere (Cloudflare's Inbox objects) returns them.
+			 * the inbox updates this store did NOT apply and does not own, for the
+			 * caller to apply with `Inbox.update`. The SQL store applies both members'
+			 * rows in the append's transaction and returns none; Cloudflare's
+			 * Conversation object applies them itself on the members' Inbox objects
+			 * and retries them by alarm until acknowledged, so it returns none either.
+			 * A store that leaves its members' inboxes to the caller returns them.
 			 */
 			pendingInboxUpdates: InboxUpdate[];
 	  }
@@ -150,6 +154,19 @@ export type LiveConnection = {
 	send(data: string): void;
 	close(code: number, reason: string): void;
 };
+
+/**
+ * A live inbox whose sockets are held elsewhere, by an object that also pushes
+ * its own frames whenever the inbox changes (Cloudflare: the user's Inbox
+ * Durable Object, which holds its sockets and its rows). The server checks the
+ * session token at the upgrade and hands the request over; it publishes
+ * nothing itself. `isOnline` is for the push skip (`PUSH_SKIP_WHEN_ONLINE`).
+ */
+export interface LiveInboxRouter {
+	isOnline(domain: string, user: Address): Promise<boolean>;
+	/** the response to an upgrade request whose token has been checked: the socket, accepted where the user's inbox is */
+	accept(request: Request, claims: SessionClaims): Promise<Response>;
+}
 
 /** A `LiveInbox` that also holds the sockets accepted by this process. */
 export interface LiveInboxHost extends LiveInbox {
