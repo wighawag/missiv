@@ -22,6 +22,13 @@ export interface RoomConnection {
 	close(): Promise<void>;
 }
 
+/** A user's socket on the live inbox channel (0.6: `GET /api/inbox/ws`). */
+export interface InboxConnection {
+	/** every message pushed to this socket (its content, the time it arrived) */
+	onMessage(listener: (content: string, receivedAt: number) => void): void;
+	close(): Promise<void>;
+}
+
 export type Target = {
 	/** the server's HTTP origin, e.g. `http://127.0.0.1:2000` */
 	url: string;
@@ -47,6 +54,8 @@ export interface Adapter {
 	read(user: LoadUser, conversation: LoadConversation): Promise<number>;
 	/** fetch the user's conversation list as the list view does; returns its length */
 	listConversations(user: LoadUser): Promise<number>;
+	/** open the user's live inbox socket, resolve once it is open (an API without one has no `live` scenario) */
+	openInbox?(user: LoadUser): Promise<InboxConnection>;
 	/** open a socket to a room, log in as the user, resolve once logged in */
 	joinRoom(user: LoadUser, room: string, options?: {localAddress?: string}): Promise<RoomConnection>;
 }

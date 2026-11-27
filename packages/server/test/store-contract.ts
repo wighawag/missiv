@@ -347,6 +347,17 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 				expect((await list(a)).conversations[0].lastReadSeq).toBe(2);
 			});
 
+			it('answers one inbox row by its conversation, as the list has it, and none for a non-member', async () => {
+				const {send, list, stores} = await setup();
+				const [a, b, c] = [address(), address(), address()];
+				await send(a, b);
+				await stores.inbox.markRead(b, scope(a, b), 1);
+				const [listed] = (await list(b)).conversations;
+				expect(await stores.inbox.getConversation(b, scope(a, b))).toEqual(listed);
+				expect(await stores.inbox.getConversation(c, scope(a, b))).toBeUndefined();
+				expect(await stores.inbox.getConversation(b, scope(a, b, DOMAIN, 'another namespace'))).toBeUndefined();
+			});
+
 			it('applies an update only above its lastSeq: a repeated and a reordered update change nothing', async () => {
 				const {stores, list} = await setup();
 				const [a, b] = [address(), address()];

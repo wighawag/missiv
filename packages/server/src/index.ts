@@ -7,6 +7,7 @@ import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
 import {getSessionAPI} from './api/session/index.js';
+import {getInboxAPI} from './api/inbox/index.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
@@ -33,11 +34,15 @@ export type {
 	Inbox,
 	InboxUpdate,
 	KeyDirectory,
+	LiveConnection,
+	LiveInbox,
+	LiveInboxHost,
 	PushRecipient,
 	Stores,
 } from './stores/index.js';
 export {createSQLStores, SQLConversationStore, SQLInbox, SQLKeyDirectory} from './stores/index.js';
 export {Room} from './Room.js';
+export {createInProcessLiveInbox} from './live.js';
 export {RateLimiter} from './RateLimiter.js';
 export {migrate, resetDatabase} from './schema/migrate.js';
 export {
@@ -70,6 +75,11 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 	const publicChatAPI = getPublicChatAPI(options);
 	const adminAPI = getAdminAPI(options);
 	const sessionAPI = getSessionAPI(options);
+
+	if (options.liveInbox) {
+		// the live channel, where this process holds the sockets (ADR-0006 "Live channel")
+		app.route('/api/inbox', getInboxAPI(options, options.liveInbox));
+	}
 
 	return app
 		.use('/*', corsSetup)

@@ -10,6 +10,7 @@ import type {
 	Address,
 	Conversation,
 	ConversationStatus,
+	InboxServerFrame,
 	Message,
 	MessageToSend,
 	PublicKey,
@@ -109,11 +110,13 @@ export interface ConversationStore {
 /**
  * Inbox: per user, their conversation list (ordered by last message, filtered
  * by status, with unread state from `lastReadSeq`) and their domain-level
- * blocks. Its live side (pushed frames) is task `live-inbox-channel`.
+ * blocks. Its live side (pushed frames) is `LiveInbox`.
  */
 export interface Inbox {
 	/** apply an update if its seq is above the row's `lastSeq`; a no-op otherwise */
 	update(update: InboxUpdate): Promise<void>;
+	/** one row of the user's inbox (what a `conversation` frame carries), if the user has it */
+	getConversation(user: Address, key: ConversationKey): Promise<Conversation | undefined>;
 	listConversations(
 		user: Address,
 		scope: {domain: string; namespace: string},
@@ -125,6 +128,33 @@ export interface Inbox {
 	unblock(user: Address, domain: string, blocked: Address): Promise<void>;
 	/** lastReadSeq = max(lastReadSeq, min(seq, lastSeq)) */
 	markRead(user: Address, key: ConversationKey, seq: number): Promise<void>;
+}
+
+/**
+ * The Inbox's live side (ADR-0005, ADR-0006 "Live channel"): the frames pushed
+ * to a user's open sockets in a domain. On Node.js and Bun an in-process
+ * registry of the sockets (`createInProcessLiveInbox`); this interface is the
+ * seam a fan-out bus between several instances would implement (none is built:
+ * spec `scalable-direct-messaging`, out of scope), which is why both calls are
+ * asynchronous although the in-process one is not.
+ */
+export interface LiveInbox {
+	/** push `frames` to every socket of `user` in `domain` (none open: nothing happens) */
+	publish(domain: string, user: Address, frames: InboxServerFrame[]): Promise<void>;
+	/** whether `user` has an open socket in `domain` (to skip a Web Push, `PUSH_SKIP_WHEN_ONLINE`) */
+	isOnline(domain: string, user: Address): Promise<boolean>;
+}
+
+/** A socket of the live channel, as a platform's WebSocket server hands it over. */
+export type LiveConnection = {
+	send(data: string): void;
+	close(code: number, reason: string): void;
+};
+
+/** A `LiveInbox` that also holds the sockets accepted by this process. */
+export interface LiveInboxHost extends LiveInbox {
+	/** add an accepted socket of (`domain`, `user`); returns what removes it */
+	connect(domain: string, user: Address, connection: LiveConnection): () => void;
 }
 
 /** The three ports a server runs on. */

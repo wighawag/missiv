@@ -1,9 +1,10 @@
 // @missiv/client's stores (S3-14), each driven against the in-process server: the
-// HTTP stores through app.request, the room through fake sockets wired to an
-// in-process room. No port. What is checked is the lifecycle (work only while
+// registration through app.request, the conversation stores against the same
+// app served on a loopback port (their live inbox channel is a real WebSocket),
+// the room through fake sockets wired to an in-process room. What is checked is the lifecycle (work only while
 // subscribed, for the current account), the counts, and that every server error
 // reaches the store.
-import {describe, it, expect, beforeEach} from 'vitest';
+import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {get, writable, type Readable} from 'svelte/store';
 import {
 	createMissivRegistration,
@@ -20,6 +21,8 @@ import {
 	conversationIDOf,
 	createHarness,
 	createUser,
+	mintSessionToken,
+	SESSION_SECRET,
 	newKeySet,
 	DOMAIN,
 	APP_ORIGIN,
@@ -57,8 +60,12 @@ function countingFetch(fail?: (path: string) => boolean) {
 	return {fetch, count: (path: string) => calls.get(path) ?? 0};
 }
 
-function registrationOf(account: Readable<Account>, fetch: typeof globalThis.fetch = h.app.request as any) {
-	return createMissivRegistration({endpoint: SERVER_URL, domain: DOMAIN, appOrigin: APP_ORIGIN, account, fetch});
+function registrationOf(
+	account: Readable<Account>,
+	fetch: typeof globalThis.fetch = h.app.request as any,
+	endpoint: string = SERVER_URL,
+) {
+	return createMissivRegistration({endpoint, domain: DOMAIN, appOrigin: APP_ORIGIN, account, fetch});
 }
 
 /** Keep a store subscribed; returns its unsubscriber. */
@@ -130,17 +137,44 @@ describe('registration', () => {
 	});
 });
 
+/**
+ * The stores of direct messaging against the harness served on a loopback port:
+ * their HTTP calls through `fetch` (counted per route), their live inbox
+ * channel over a real WebSocket.
+ */
+async function served(fail?: (path: string) => boolean) {
+	const url = await h.listen();
+	const calls = new Map<string, number>();
+	const bodies = new Map<string, any[]>();
+	const fetch = (async (input: any, init?: any) => {
+		const path = new URL(String(input)).pathname;
+		calls.set(path, (calls.get(path) ?? 0) + 1);
+		bodies.set(path, [...(bodies.get(path) ?? []), init?.body ? JSON.parse(init.body) : undefined]);
+		if (fail?.(path)) {
+			return new Response(JSON.stringify({error: {code: 'internal', message: 'down for a test'}}), {status: 500});
+		}
+		return globalThis.fetch(input, init);
+	}) as typeof globalThis.fetch;
+	return {url, fetch, count: (path: string) => calls.get(path) ?? 0, bodies: (path: string) => bodies.get(path) ?? []};
+}
+
 describe('conversation list', () => {
-	it('polls while subscribed, counts requests and unread apart, and stops on unsubscribe', async () => {
-		const {fetch, count} = countingFetch();
-		const list = openConversationList({
-			registration: registrationOf(writable<Account>(accountOf(B)), fetch),
-			endpoint: SERVER_URL,
+	afterEach(() => h.close());
+
+	function listOf(user: TestUser, s: Awaited<ReturnType<typeof served>>) {
+		return openConversationList({
+			registration: registrationOf(writable<Account>(accountOf(user)), s.fetch, s.url),
+			endpoint: s.url,
 			domain: DOMAIN,
 			namespace: NAMESPACE,
-			pollingInterval: 0.02,
-			fetch,
+			retryDelayMs: 10,
+			fetch: s.fetch,
 		});
+	}
+
+	it('fetches once, then follows the pushed inbox rows: requests and unread counted apart, no polling', async () => {
+		const s = await served();
+		const list = listOf(B, s);
 		const stop = hold(list);
 		let state = await until(list, (l) => l.step === 'Fetched');
 		expect(state.step === 'Fetched' && state.conversations).toEqual([]);
@@ -150,123 +184,263 @@ describe('conversation list', () => {
 		await h.send({from: C, to: B, content: 'yo'});
 		await h.accept(B, conversationIDOf([B.address, C.address]));
 		await h.markRead(B, conversationIDOf([B.address, C.address]), 1);
-		state = await until(list, (l) => l.step === 'Fetched' && l.conversations.length === 2);
+		state = await until(
+			list,
+			(l) => l.step === 'Fetched' && l.conversations.length === 2 && l.numUnaccepted === 1 && l.numUnread === 0,
+		);
 		expect(state.step === 'Fetched' && [state.numUnaccepted, state.numUnread]).toEqual([1, 0]);
 
 		// a newer message in the accepted one: unread
 		await h.send({from: C, to: B, content: 'again'});
-		state = await until(list, (l) => l.step === 'Fetched' && l.numUnread === 1, 5000);
-		expect(state.step === 'Fetched' && state.numUnaccepted).toBe(1);
+		state = await until(list, (l) => l.step === 'Fetched' && l.numUnread === 1);
+		expect(state.step === 'Fetched' && state.conversations.map((c) => c.lastSeq)).toEqual([2, 1]);
 
-		stop();
-		const after = count('/api/private/listConversations');
 		await wait(100);
-		expect(count('/api/private/listConversations')).toBeLessThanOrEqual(after + 1);
+		expect(s.count('/api/private/listConversations')).toBe(1);
+		stop();
+		await wait(30);
+		expect(h.liveInbox.size).toBe(0);
+	});
+
+	it('after a lost socket, reconnects and fetches again what changed while it was away', async () => {
+		const s = await served();
+		const list = listOf(B, s);
+		const stop = hold(list);
+		await until(list, (l) => l.step === 'Fetched');
+		await until({subscribe: (f: (n: number) => void) => (f(h.liveInbox.size), () => {})}, (n) => n === 1);
+		h.dropSockets();
+		await h.send({from: A, to: B, content: 'while away'});
+		const state = await until(list, (l) => l.step === 'Fetched' && l.conversations.length === 1);
+		expect(state.step === 'Fetched' && state.numUnaccepted).toBe(1);
+		expect(s.count('/api/private/listConversations')).toBeGreaterThanOrEqual(2);
+		stop();
 	});
 });
 
 describe('conversation', () => {
-	function conversationOf(user: TestUser, other: TestUser, fetch: typeof globalThis.fetch, extra = {}) {
+	afterEach(() => h.close());
+
+	function conversationOf(user: TestUser, other: TestUser, s: Awaited<ReturnType<typeof served>>, extra = {}) {
 		return openOneConversation({
-			registration: registrationOf(writable<Account>(accountOf(user)), fetch),
-			endpoint: SERVER_URL,
+			registration: registrationOf(writable<Account>(accountOf(user)), s.fetch, s.url),
+			endpoint: s.url,
 			domain: DOMAIN,
 			namespace: NAMESPACE,
-			pollingInterval: 0.02,
 			otherUser: {address: other.address},
-			fetch,
+			retryDelayMs: 10,
+			fetch: s.fetch,
 			...extra,
 		});
 	}
 
-	it('fetches, sends, shows both sides, and stops polling on unsubscribe, even while fetching', async () => {
-		const {fetch, count} = countingFetch();
-		const conversation = conversationOf(A, B, fetch);
+	/** resolves once `n` live sockets are open */
+	const sockets = (n: number) =>
+		new Promise<void>((resolve, reject) => {
+			const started = Date.now();
+			const check = () =>
+				h.liveInbox.size === n
+					? resolve()
+					: Date.now() - started > 2000
+						? reject(new Error(`${h.liveInbox.size} sockets, not ${n}`))
+						: setTimeout(check, 5);
+			check();
+		});
+
+	it('fetches once, sends, and receives the other side live, with no polling', async () => {
+		const s = await served();
+		const conversation = conversationOf(A, B, s);
 		const stop = hold(conversation);
 		await until(conversation, (c) => c.step === 'Fetched' && !!c.otherUser.keySet);
-		await conversation.sendMessage('hello B');
-
-		const forB = conversationOf(B, A, fetch);
+		const forB = conversationOf(B, A, s);
 		const stopB = hold(forB);
+		await until(forB, (c) => c.step === 'Fetched');
+		await sockets(2);
+
+		await conversation.sendMessage('hello B');
+		// shown to the sender from the send's answer
+		expect(get(conversation).step === 'Fetched' && (get(conversation) as any).messages.length).toBe(1);
 		const state = await until(forB, (c) => c.step === 'Fetched' && c.messages.length === 1);
 		expect(state.step === 'Fetched' && state.messages[0]).toMatchObject({content: 'hello B', sender: A.address});
+
+		await forB.sendMessage('hello A');
+		const both = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 2);
+		expect(both.step === 'Fetched' && both.messages.map((m) => [m.seq, m.content])).toEqual([
+			[1, 'hello B'],
+			[2, 'hello A'],
+		]);
+		await wait(100);
+		// one newest page each, and no read since
+		expect(s.count('/api/private/listMessages')).toBe(2);
 		stop();
 		stopB();
-
-		// a conversation closed before its first fetch completed polls no more
-		const early = conversationOf(A, B, fetch);
-		const stopEarly = hold(early);
-		stopEarly();
-		const after = count('/api/private/listMessages');
-		await wait(100);
-		expect(count('/api/private/listMessages')).toBeLessThanOrEqual(after + 1);
+		await sockets(0);
 	});
 
-	it('accepts once and marks read once per newer message, not on every poll', async () => {
-		const {fetch, count} = countingFetch();
+	it('a conversation closed before its first fetch completed fetches no more and holds no socket', async () => {
+		const s = await served();
+		const early = conversationOf(A, B, s);
+		const stopEarly = hold(early);
+		stopEarly();
+		await wait(100);
+		expect(s.count('/api/private/listMessages')).toBeLessThanOrEqual(1);
+		expect(h.liveInbox.size).toBe(0);
+	});
+
+	it('accepts once and marks read once per newer message', async () => {
+		const s = await served();
 		await h.send({from: A, to: B, content: 'one'});
-		const conversation = conversationOf(B, A, fetch, {markAsAcceptedAndRead: true});
+		const conversation = conversationOf(B, A, s, {markAsAcceptedAndRead: true});
 		const stop = hold(conversation);
 		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1);
-		await wait(100); // several polls
-		expect(count('/api/private/accept')).toBe(1);
-		expect(count('/api/private/markRead')).toBe(1);
+		await wait(100);
+		expect(s.count('/api/private/accept')).toBe(1);
+		expect(s.count('/api/private/markRead')).toBe(1);
 		const [accepted] = await h.accepted(B);
 		expect([accepted.lastSeq, accepted.lastReadSeq]).toEqual([1, 1]);
 		await h.send({from: A, to: B, content: 'two'});
 		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 2);
 		await wait(100);
-		expect([count('/api/private/accept'), count('/api/private/markRead')]).toEqual([1, 2]);
+		expect([s.count('/api/private/accept'), s.count('/api/private/markRead')]).toEqual([1, 2]);
 		stop();
 	});
 
-	it('fetches only what is new after the first page: listMessages after the last seq it has', async () => {
-		const bodies: any[] = [];
-		const fetch = (async (input: any, init?: any) => {
-			if (String(input).endsWith('/api/private/listMessages')) {
-				bodies.push(JSON.parse(init.body));
-			}
-			return h.app.request(input, init);
-		}) as typeof globalThis.fetch;
+	it('shares one socket with the conversation list, whose unread count follows the marks it makes', async () => {
+		const s = await served();
 		await h.send({from: A, to: B, content: 'one'});
-		await h.send({from: A, to: B, content: 'two'});
-		const conversation = conversationOf(B, A, fetch);
+		await h.accept(B, conversationIDOf([A.address, B.address]));
+		const list = openConversationList({
+			registration: registrationOf(writable<Account>(accountOf(B)), s.fetch, s.url),
+			endpoint: s.url,
+			domain: DOMAIN,
+			namespace: NAMESPACE,
+			fetch: s.fetch,
+		});
+		const stopList = hold(list);
+		await until(list, (l) => l.step === 'Fetched' && l.numUnread === 1);
+		const conversation = conversationOf(B, A, s, {markAsAcceptedAndRead: true});
 		const stop = hold(conversation);
-		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 2);
+		await until(list, (l) => l.step === 'Fetched' && l.numUnread === 0);
+		expect(h.liveInbox.size).toBe(1);
+		stop();
+		stopList();
+	});
+
+	it('after a lost socket, syncs exactly what it missed: every message once, in seq order', async () => {
+		const s = await served();
+		await h.send({from: A, to: B, content: 'one'});
+		const conversation = conversationOf(B, A, s);
+		const stop = hold(conversation);
+		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1);
+		await sockets(1);
+		h.dropSockets();
+		await sockets(0);
+		await h.send({from: A, to: B, content: 'two'});
 		await h.send({from: A, to: B, content: 'three'});
 		const state = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 3);
-		stop();
+		await wait(100);
 		expect(state.step === 'Fetched' && state.messages.map((m) => [m.seq, m.content])).toEqual([
 			[1, 'one'],
 			[2, 'two'],
 			[3, 'three'],
 		]);
-		expect(bodies[0].after).toBeUndefined();
-		expect(bodies.slice(1).every((body) => body.after >= 2)).toBe(true);
+		const after = get(conversation);
+		expect(after.step === 'Fetched' && after.messages.length).toBe(3);
+		// the history came by sync, not by a new read
+		expect(s.count('/api/private/listMessages')).toBe(1);
+		stop();
 	});
 
-	it('surfaces a failing server and goes on polling', async () => {
+	it('after a lost socket, still syncs what it missed when it sent a newer message itself meanwhile', async () => {
+		const s = await served();
+		await h.send({from: A, to: B, content: 'one'});
+		// slow to reconnect, so its own send lands while the socket is down
+		const conversation = conversationOf(B, A, s, {retryDelayMs: 400});
+		const stop = hold(conversation);
+		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1 && !!c.otherUser.keySet);
+		await sockets(1);
+		h.dropSockets();
+		await sockets(0);
+		await h.send({from: A, to: B, content: 'two, missed'});
+		await conversation.sendMessage('three, from B');
+		// shown from the send's answer, newer than the missed one
+		expect((get(conversation) as any).messages.map((m: any) => m.seq)).toEqual([1, 3]);
+		const state = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 3);
+		expect(state.step === 'Fetched' && state.messages.map((m) => [m.seq, m.content])).toEqual([
+			[1, 'one'],
+			[2, 'two, missed'],
+			[3, 'three, from B'],
+		]);
+		stop();
+	});
+
+	it('when its session expires, the server closes the socket and the store resumes on a renewed token', async () => {
+		const url = await h.listen();
+		let sessions = 0;
+		// the first session's token runs out in 300 ms (minted with the server's secret),
+		// though the server's answer says an hour: only the socket's close tells the client
+		const fetch = (async (input: any, init?: any) => {
+			const response = await globalThis.fetch(input, init);
+			if (!new URL(String(input)).pathname.endsWith('/api/session') || !response.ok) {
+				return response;
+			}
+			sessions++;
+			const body = await response.json();
+			if (sessions === 1) {
+				body.token = mintSessionToken(SESSION_SECRET, {
+					account: B.address,
+					domain: DOMAIN,
+					keyRef: B.keyRef,
+					exp: Date.now() + 300,
+				});
+			}
+			return new Response(JSON.stringify(body), {status: 200, headers: {'content-type': 'application/json'}});
+		}) as typeof globalThis.fetch;
+		const conversation = openOneConversation({
+			registration: registrationOf(writable<Account>(accountOf(B)), fetch, url),
+			endpoint: url,
+			domain: DOMAIN,
+			namespace: NAMESPACE,
+			otherUser: {address: A.address},
+			retryDelayMs: 10,
+			fetch,
+		});
+		const stop = hold(conversation);
+		await until(conversation, (c) => c.step === 'Fetched');
+		await wait(400);
+		await until({subscribe: (f: (n: number) => void) => (f(sessions), () => {})}, (n) => n >= 2);
+		await sockets(1);
+		await h.send({from: A, to: B, content: 'after the renewal'});
+		const state = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1);
+		expect(state.step === 'Fetched' && state.messages[0].content).toBe('after the renewal');
+		stop();
+	});
+
+	it('surfaces a failing server and recovers without polling', async () => {
 		let down = true;
-		const {fetch} = countingFetch((path) => down && path === '/api/private/listMessages');
-		const conversation = conversationOf(A, B, fetch);
+		const s = await served((path) => down && path === '/api/private/listMessages');
+		const conversation = conversationOf(A, B, s);
 		const stop = hold(conversation);
 		const failed = await until(conversation, (c) => !!c.error);
 		expect(failed.error?.code).toBe('internal');
 		down = false;
-		await until(conversation, (c) => c.step === 'Fetched');
+		await until(conversation, (c) => c.step === 'Fetched' && !c.error);
+		const reads = s.count('/api/private/listMessages');
+		await wait(100);
+		expect(s.count('/api/private/listMessages')).toBe(reads);
 		stop();
 	});
 
 	it('a new account replaces the run: the other account sees its own conversation', async () => {
+		const s = await served();
 		const account = writable<Account>(accountOf(A));
 		const conversation = openOneConversation({
-			registration: registrationOf(account),
-			endpoint: SERVER_URL,
+			registration: registrationOf(account, s.fetch, s.url),
+			endpoint: s.url,
 			domain: DOMAIN,
 			namespace: NAMESPACE,
-			pollingInterval: 0.02,
 			otherUser: {address: B.address},
-			fetch: h.app.request as any,
+			retryDelayMs: 10,
+			fetch: s.fetch,
 		});
 		await h.send({from: C, to: B, content: 'C to B'});
 		const stop = hold(conversation);
