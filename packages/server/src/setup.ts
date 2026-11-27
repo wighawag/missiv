@@ -4,7 +4,12 @@ import {Env} from './env.js';
 import {RemoteSQLStorage} from './storage/RemoteSQLStorage.js';
 import {Address, DomainUser, PublicKey} from '@missiv/common';
 import {Context} from 'hono';
-import {DEFAULT_MAX_REQUEST_AGE_MS, recoverRequestSigner, REQUEST_SIGNATURE_HEADER} from 'delegated-identity';
+import {
+	DEFAULT_MAX_REQUEST_AGE_MS,
+	parseRequestSignature,
+	REQUEST_SIGNATURE_HEADER,
+	verifyRequestSignature,
+} from 'delegated-identity';
 import {MissivError} from './errors.js';
 
 export type SetupOptions<CustomEnv extends Env = Record<string, any>> = {
@@ -19,16 +24,16 @@ export type Config = {
 declare module 'hono' {
 	interface ContextVariableMap {
 		config: Config;
-		/** the key that signed the request, when one did */
+		/** the Ed25519 signing key that signed the request, when one did */
 		publicKey?: PublicKey;
-		/** the wallet and domain that key is registered for, when it is */
+		/** the wallet and domain whose current key set that key signs for, when there is one */
 		domainUser?: DomainUser;
 		/** the request signature and its timestamp, when the request is signed */
 		requestSignature?: {signature: string; timestamp: number};
 	}
 }
 
-/** The key that signed the request; 401 when none did. */
+/** The Ed25519 signing key that signed the request; 401 when none did. */
 export function requireSigner(c: Context): PublicKey {
 	const publicKey = c.get('publicKey');
 	if (!publicKey) {
@@ -38,9 +43,10 @@ export function requireSigner(c: Context): PublicKey {
 }
 
 /**
- * The account of the key that signed the request, which must be registered for
- * `domain`: 401 when the key is registered nowhere, 403 when it is registered
- * for another domain (a key a wallet authorized for one site acts in no other).
+ * The account of the key that signed the request, which must be the signing key
+ * of its current key set in `domain`: 401 when the key is the current one of no
+ * account (unregistered, or replaced), 403 when it is registered for another
+ * domain (a key a wallet authorized for one site acts in no other).
  */
 export function requireAccount(
 	c: Context,
@@ -90,25 +96,32 @@ export function setup<CustomEnv extends Env>(options: SetupOptions<CustomEnv>): 
 
 		const signature = c.req.header(REQUEST_SIGNATURE_HEADER);
 		if (signature) {
+			// delegated-identity's Ed25519 envelope: the header names its key (Ed25519
+			// has no recovery), which signs this request or the request is refused
+			const parsed = parseRequestSignature(signature);
+			if (!parsed) {
+				throw new MissivError('unauthenticated', 'malformed request signature');
+			}
 			const url = new URL(c.req.url);
-			const recovered = recoverRequestSigner({
+			const checked = await verifyRequestSignature({
 				serverOrigin: env.SERVER_ORIGIN || url.origin,
 				method: c.req.method,
 				path: url.pathname + url.search,
 				body: await c.req.text(),
 				signature,
+				publicKey: parsed.publicKey,
 			});
-			if (!recovered.ok) {
+			if (!checked.ok) {
 				throw new MissivError(
 					'unauthenticated',
-					recovered.reason === 'expired'
+					checked.reason === 'expired'
 						? 'the request signature is outside its time window'
-						: 'malformed request signature',
+						: 'the request signature does not verify for this request',
 				);
 			}
-			c.set('publicKey', recovered.publicKey);
-			c.set('requestSignature', {signature, timestamp: recovered.timestamp});
-			const {domainUser} = await storage.getDomainUserByPublicKey(recovered.publicKey);
+			c.set('publicKey', checked.publicKey);
+			c.set('requestSignature', {signature, timestamp: checked.timestamp});
+			const {domainUser} = await storage.getDomainUserBySigningKey(checked.publicKey);
 			if (domainUser) {
 				c.set('domainUser', domainUser);
 			}

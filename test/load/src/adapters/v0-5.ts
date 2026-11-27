@@ -1,7 +1,9 @@
-// missiv 0.5's API (`@missiv/server` 0.5, `@missiv/client` 0.4): every request
-// signed by the user's secp256k1 delegate key, one signed copy per member, the
-// newest page of a conversation as its read, rooms over a WebSocket logged in by
-// a request signature over the socket's challenge. Users, registration and sends
+// missiv 0.5's API (`@missiv/server` 0.5, `@missiv/client` 0.4), on 0.6's keys
+// since `messaging-keys-and-registration`: every request signed by the user's
+// Ed25519 signing key (its key set's, delegated-identity), one signed copy per
+// member, the newest page of a conversation as its read, rooms over a WebSocket
+// logged in by a request signature over the socket's challenge. (The 0.5
+// baseline was measured with secp256k1 keys, before that change.) Users, registration and sends
 // are the client-server tests' own (`test/client-server/test/setup.ts`), over
 // real HTTP instead of `app.request`.
 import {API} from '@missiv/client';
@@ -37,7 +39,7 @@ export const v0_5: AdapterFactory = (target) => {
 				if ('challenge' in msg) {
 					const signature = await signRequest(
 						{serverOrigin: serverOriginOf(wsURL), method: 'GET', path: new URL(wsURL).pathname, body: msg.challenge},
-						user.delegatePrivateKey,
+						user.keySet.signing.privateKey,
 					);
 					ws.send(JSON.stringify({address: user.address, signature}));
 				} else if ('joined' in msg) {
@@ -104,7 +106,7 @@ export const v0_5: AdapterFactory = (target) => {
 		async listConversations(user) {
 			const {conversations} = await api.getConversations(
 				{type: 'getConversations', domain: DOMAIN, namespace: NAMESPACE},
-				{privateKey: asUser(user).delegatePrivateKey},
+				{privateKey: asUser(user).keySet.signing.privateKey},
 			);
 			return conversations.length;
 		},

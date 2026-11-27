@@ -18,10 +18,13 @@ import {
 	ResponseGetAcceptedConversations,
 	ResponseGetConversations,
 	ResponseGetDomainUser,
+	ResponseGetKeySet,
 	ResponseGetMessages,
 	ResponseGetUnacceptedConversations,
 	ResponseSendMessage,
 	String0x,
+	type PublicKeySet,
+	type RegisteredKeySet,
 } from '@missiv/common';
 import {migrate, resetDatabase} from '../schema/migrate.js';
 import {newULID} from './ids.js';
@@ -52,7 +55,9 @@ type MessageRow = {
 	recipient: Address;
 	messageID: string;
 	sender: Address;
-	senderPublicKey: PublicKey;
+	senderKeyRef: String0x;
+	senderSigningKey: PublicKey;
+	senderEncryptionKey: PublicKey;
 	senderOwnershipSignature: String0x;
 	senderAppOrigin: string;
 	recipientPublicKey: PublicKey | null;
@@ -61,6 +66,63 @@ type MessageRow = {
 	signature: String0x;
 	timestamp: number;
 };
+
+type KeySetRow = {
+	domain: string;
+	keyRef: String0x;
+	user: Address;
+	signingKey: PublicKey;
+	encryptionKey: PublicKey;
+	ownershipSignature: String0x;
+	appOrigin: string;
+	registered: number;
+};
+
+type DomainUserRow = KeySetRow & {
+	name: string | null;
+	description: string | null;
+	added: number;
+	lastPresence: number;
+};
+
+function keySetOf(row: {signingKey: PublicKey; encryptionKey: PublicKey}): PublicKeySet {
+	return {signing: {publicKey: row.signingKey}, encryption: {publicKey: row.encryptionKey}};
+}
+
+function formatKeySet(row: KeySetRow): RegisteredKeySet {
+	return {
+		user: row.user,
+		domain: row.domain,
+		keyRef: row.keyRef,
+		keySet: keySetOf(row),
+		ownershipSignature: row.ownershipSignature,
+		appOrigin: row.appOrigin,
+		registered: row.registered,
+	};
+}
+
+function formatDomainUser(row: DomainUserRow): DomainUser {
+	return {
+		user: row.user,
+		domain: row.domain,
+		keyRef: row.keyRef,
+		keySet: keySetOf(row),
+		ownershipSignature: row.ownershipSignature,
+		appOrigin: row.appOrigin,
+		name: row.name,
+		description: row.description,
+		added: row.added,
+		lastPresence: row.lastPresence,
+	};
+}
+
+/** A domain user with its current key set: the key set is the one its row names, of the same user. */
+const DOMAIN_USERS_SELECT = `
+	SELECT d.user AS user, d.domain AS domain, d.keyRef AS keyRef, d.name AS name, d.description AS description,
+		d.added AS added, d.lastPresence AS lastPresence, k.signingKey AS signingKey, k.encryptionKey AS encryptionKey,
+		k.ownershipSignature AS ownershipSignature, k.appOrigin AS appOrigin, k.registered AS registered
+	FROM DomainUsers d
+	JOIN KeySets k ON k.domain = d.domain AND k.keyRef = d.keyRef AND k.user = d.user`;
 
 function formatConversation(v: ConversationRow): Conversation {
 	return {
@@ -93,45 +155,64 @@ export class RemoteSQLStorage {
 	constructor(private db: RemoteSQL) {}
 
 	/**
-	 * Register a key for (address, domain), or REPLACE the key already registered
-	 * there (a newer publication wins: messages encrypted to the old key stay
-	 * stored, and only the old key can read them). A key registered for another
-	 * (address, domain) is a 409.
+	 * Register a key set (checked by the caller) as the current one of (address,
+	 * domain), or REPLACE the current one there: the replaced key set stays
+	 * stored (`getKeySet`), so messages it signed stay verifiable, and only its
+	 * keys can read what was encrypted to it. Registering the current key set
+	 * again (another device of the account derives the same) keeps it. A key set,
+	 * or a key of it, registered for another (user, domain) is a 409.
 	 */
 	async register(
 		address: Address,
-		publicKey: PublicKey,
-		signature: String0x,
+		keyRef: String0x,
 		timestampMS: number,
 		action: ActionRegisterDomainUser,
-	) {
-		const statement = this.db.prepare(`
-			INSERT INTO DomainUsers (user, domain, publicKey, signature, appOrigin, name, description, added, lastPresence)
-			VALUES (?1, ?2, ?3, ?4, ?8, ?5, ?6, ?7, ?7)
-			ON CONFLICT (user, domain) DO UPDATE SET
-				publicKey = excluded.publicKey,
-				signature = excluded.signature,
-				appOrigin = excluded.appOrigin,
-				name = coalesce(excluded.name, name),
-				description = coalesce(excluded.description, description),
-				lastPresence = excluded.lastPresence
-		`);
+	): Promise<void> {
+		const signingKey = action.keySet.signing.publicKey;
+		const encryptionKey = action.keySet.encryption.publicKey;
+		const {results: owners} = await this.db
+			.prepare(`SELECT user, domain FROM KeySets WHERE signingKey = ?1 OR encryptionKey = ?2`)
+			.bind(signingKey, encryptionKey)
+			.all<{user: Address; domain: string}>();
+		if (owners.some((owner) => owner.user !== address || owner.domain !== action.domain)) {
+			throw new MissivError('conflict', 'this key set is already registered for another account or domain');
+		}
 		try {
-			await statement
-				.bind(
-					address,
-					action.domain,
-					publicKey,
-					signature,
-					action.name ?? null,
-					action.description ?? null,
-					timestampMS,
-					action.appOrigin,
-				)
-				.all();
+			await this.db.batch([
+				this.db
+					.prepare(
+						`INSERT INTO KeySets (domain, keyRef, user, signingKey, encryptionKey, ownershipSignature, appOrigin, registered)
+						VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+						ON CONFLICT (domain, keyRef) DO UPDATE SET
+							ownershipSignature = excluded.ownershipSignature,
+							appOrigin = excluded.appOrigin
+						WHERE KeySets.user = excluded.user`,
+					)
+					.bind(
+						action.domain,
+						keyRef,
+						address,
+						signingKey,
+						encryptionKey,
+						action.ownershipSignature,
+						action.appOrigin,
+						timestampMS,
+					),
+				this.db
+					.prepare(
+						`INSERT INTO DomainUsers (user, domain, keyRef, name, description, added, lastPresence)
+						VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+						ON CONFLICT (user, domain) DO UPDATE SET
+							keyRef = excluded.keyRef,
+							name = coalesce(excluded.name, name),
+							description = coalesce(excluded.description, description),
+							lastPresence = excluded.lastPresence`,
+					)
+					.bind(address, action.domain, keyRef, action.name ?? null, action.description ?? null, timestampMS),
+			]);
 		} catch (err) {
 			if (isUniqueViolation(err)) {
-				throw new MissivError('conflict', 'this key is already registered for another account or domain');
+				throw new MissivError('conflict', 'this key set is already registered for another account or domain');
 			}
 			throw err;
 		}
@@ -167,29 +248,44 @@ export class RemoteSQLStorage {
 			.all();
 	}
 
+	/** The account's current key set in the domain and its profile there. */
 	async getDomainUser(domain: string, address: Address): Promise<ResponseGetDomainUser> {
 		const {results} = await this.db
-			.prepare(`SELECT * FROM DomainUsers WHERE user = ?1 AND domain = ?2`)
+			.prepare(`${DOMAIN_USERS_SELECT} WHERE d.user = ?1 AND d.domain = ?2`)
 			.bind(address, domain)
-			.all<DomainUser>();
-		return {domainUser: results[0]};
+			.all<DomainUserRow>();
+		return {domainUser: results[0] && formatDomainUser(results[0])};
 	}
 
-	async getDomainUserByPublicKey(publicKey: PublicKey): Promise<ResponseGetDomainUser> {
+	/** The domain user whose CURRENT key set has this signing key: none for a replaced one. */
+	async getDomainUserBySigningKey(signingKey: PublicKey): Promise<ResponseGetDomainUser> {
 		const {results} = await this.db
-			.prepare(`SELECT * FROM DomainUsers WHERE publicKey = ?1`)
-			.bind(publicKey)
-			.all<DomainUser>();
-		return {domainUser: results[0]};
+			.prepare(`${DOMAIN_USERS_SELECT} WHERE k.signingKey = ?1`)
+			.bind(signingKey)
+			.all<DomainUserRow>();
+		return {domainUser: results[0] && formatDomainUser(results[0])};
+	}
+
+	/** A key set registered in the domain, current or replaced. */
+	async getKeySet(domain: string, keyRef: String0x): Promise<ResponseGetKeySet> {
+		const {results} = await this.db
+			.prepare(`SELECT * FROM KeySets WHERE domain = ?1 AND keyRef = ?2`)
+			.bind(domain, keyRef)
+			.all<KeySetRow>();
+		return {keySet: results[0] && formatKeySet(results[0])};
 	}
 
 	async getMessages(address: Address, action: ActionGetMessages): Promise<ResponseGetMessages> {
 		const limit = Math.min(action.limit ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE);
 		const {results} = await this.db
 			.prepare(
-				`SELECT * FROM Messages WHERE domain = ?1 AND namespace = ?2 AND conversationID = ?3 AND recipient = ?4
-				AND (?5 IS NULL OR messageID < ?5)
-				ORDER BY messageID DESC LIMIT ?6`,
+				`SELECT m.*, k.signingKey AS senderSigningKey, k.encryptionKey AS senderEncryptionKey,
+					k.ownershipSignature AS senderOwnershipSignature, k.appOrigin AS senderAppOrigin
+				FROM Messages m
+				JOIN KeySets k ON k.domain = m.domain AND k.keyRef = m.senderKeyRef
+				WHERE m.domain = ?1 AND m.namespace = ?2 AND m.conversationID = ?3 AND m.recipient = ?4
+				AND (?5 IS NULL OR m.messageID < ?5)
+				ORDER BY m.messageID DESC LIMIT ?6`,
 			)
 			.bind(action.domain, action.namespace, action.conversationID, address, action.before ?? null, limit + 1)
 			.all<MessageRow>();
@@ -201,7 +297,8 @@ export class RemoteSQLStorage {
 			id: row.messageID,
 			recipient: row.recipient,
 			sender: row.sender,
-			senderPublicKey: row.senderPublicKey,
+			senderKeyRef: row.senderKeyRef,
+			senderKeySet: keySetOf({signingKey: row.senderSigningKey, encryptionKey: row.senderEncryptionKey}),
 			senderOwnershipSignature: row.senderOwnershipSignature,
 			senderAppOrigin: row.senderAppOrigin,
 			recipientPublicKey: row.recipientPublicKey,
@@ -277,13 +374,13 @@ export class RemoteSQLStorage {
 		return users;
 	}
 
-	/** The registered keys of these addresses in the domain. */
-	async publicKeysOf(domain: string, addresses: Address[]): Promise<Map<Address, PublicKey>> {
+	/** The X25519 encryption keys of the current key sets of these addresses in the domain. */
+	async encryptionKeysOf(domain: string, addresses: Address[]): Promise<Map<Address, PublicKey>> {
 		const keys = new Map<Address, PublicKey>();
 		for (const address of addresses) {
 			const {domainUser} = await this.getDomainUser(domain, address);
 			if (domainUser) {
-				keys.set(address, domainUser.publicKey);
+				keys.set(address, domainUser.keySet.encryption.publicKey);
 			}
 		}
 		return keys;
@@ -314,9 +411,9 @@ export class RemoteSQLStorage {
 				lastRead = MAX(lastRead, excluded.lastRead)
 		`);
 		const insertMessage = this.db.prepare(`
-			INSERT INTO Messages (domain, namespace, conversationID, recipient, messageID, sender, senderPublicKey,
-				senderOwnershipSignature, senderAppOrigin, recipientPublicKey, messageType, content, signature, timestamp)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+			INSERT INTO Messages (domain, namespace, conversationID, recipient, messageID, sender, senderKeyRef,
+				recipientPublicKey, messageType, content, signature, timestamp)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
 		`);
 
 		const account = sender.user;
@@ -351,9 +448,7 @@ export class RemoteSQLStorage {
 					message.to,
 					messageID,
 					account,
-					sender.publicKey,
-					sender.signature,
-					sender.appOrigin,
+					sender.keyRef,
 					action.messageType === 'encrypted' ? message.toPublicKey : null,
 					action.messageType,
 					message.content,

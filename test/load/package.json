@@ -9,7 +9,7 @@
     "@missiv/common": "workspace:*",
     "@types/node": "^22.13.10",
     "@types/ws": "^8.18.0",
-    "delegated-identity": "^0.1.1",
+    "delegated-identity": "^0.2.0",
     "missiv": "workspace:*",
     "prettier": "^3.5.3",
     "tsx": "^4.19.3",

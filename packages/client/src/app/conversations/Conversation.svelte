@@ -56,7 +56,7 @@
 {/if}
 
 <input type="text" bind:value={message} />
-{#if $conversation.otherUser.publicKey}
+{#if $conversation.otherUser.keySet}
 	<button onclick={() => send(false)}>send</button>
 {:else if $conversation.otherUser.unverifiedKey}
 	<p class="error">their key is not proven by their wallet: messaging is disabled</p>

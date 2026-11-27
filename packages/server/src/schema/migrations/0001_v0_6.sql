@@ -1,23 +1,38 @@
--- missiv 0.4's schema. A database made by missiv 0.3 or earlier (Users, DomainUsers with
--- domainUsername, Messages with a JSON blob) is not migrated: 0.4 starts from an
--- empty database.
+-- missiv 0.6's schema. A database made by missiv 0.5 or earlier is not migrated:
+-- 0.6 starts from an empty database (ADR-0004). The file is named apart from
+-- 0.5's `0001_initial`, so a 0.5 database fails to migrate (its tables exist)
+-- instead of running on the wrong schema.
 
--- A wallet's delegate key in one domain: the ownership proof (the wallet's
--- signature over the publication message of `publicKey` for `appOrigin`, the
--- domain's origin) and the profile it shows in that domain. A key belongs to one
--- (user, domain).
+-- Every key set registered in a domain, current or replaced, by its reference
+-- (delegated-identity's `keySetRef`): the account, its two public keys and the
+-- ownership proof (the wallet's signature over the publication message of the
+-- key set for `appOrigin`, the domain's origin). A key set, and each of its
+-- keys, belongs to one (user, domain).
+CREATE TABLE KeySets (
+  domain TEXT NOT NULL,
+  keyRef TEXT NOT NULL,
+  user TEXT NOT NULL,
+  signingKey TEXT NOT NULL,
+  encryptionKey TEXT NOT NULL,
+  ownershipSignature TEXT NOT NULL,
+  appOrigin TEXT NOT NULL,
+  registered INTEGER NOT NULL,
+  PRIMARY KEY (domain, keyRef),
+  UNIQUE (signingKey),
+  UNIQUE (encryptionKey)
+);
+
+-- A wallet in one domain: its current key set (`keyRef`, in KeySets) and the
+-- profile it shows in that domain.
 CREATE TABLE DomainUsers (
   user TEXT NOT NULL,
   domain TEXT NOT NULL,
-  publicKey TEXT NOT NULL,
-  signature TEXT NOT NULL,
-  appOrigin TEXT NOT NULL,
+  keyRef TEXT NOT NULL,
   name TEXT,
   description TEXT,
   added INTEGER NOT NULL,
   lastPresence INTEGER NOT NULL,
-  PRIMARY KEY (user, domain),
-  UNIQUE (publicKey)
+  PRIMARY KEY (user, domain)
 );
 
 -- A conversation is its member set: its ID is derived from the members.
@@ -44,9 +59,11 @@ CREATE TABLE ConversationParticipants (
 -- the conversation lists: a user's conversations in a domain and namespace, by status
 CREATE INDEX idx_participants_user ON ConversationParticipants (domain, namespace, user, status);
 
--- One row per recipient of a message (the sender's own copy included). messageID
--- is time-ordered (a ULID), shared by a message's rows; signature is the sender's
--- over this copy, stored as sent and checked by the reader, never here.
+-- One row per recipient of a message (the sender's own copy included), 0.5's
+-- format on 0.6's keys until the one-ciphertext format. messageID is
+-- time-ordered (a ULID), shared by a message's rows; signature is the sender's
+-- Ed25519 signature over this copy, stored as sent and checked by the reader,
+-- never here.
 CREATE TABLE Messages (
   domain TEXT NOT NULL,
   namespace TEXT NOT NULL,
@@ -54,11 +71,10 @@ CREATE TABLE Messages (
   recipient TEXT NOT NULL,
   messageID TEXT NOT NULL,
   sender TEXT NOT NULL,
-  senderPublicKey TEXT NOT NULL,
-  -- the sender's ownership proof of senderPublicKey when it sent, so a reader can
-  -- check the message after the sender has replaced the key
-  senderOwnershipSignature TEXT NOT NULL,
-  senderAppOrigin TEXT NOT NULL,
+  -- the sender's key set when it sent (in KeySets, kept after a replacement), so
+  -- a reader can check the message after the sender has replaced it
+  senderKeyRef TEXT NOT NULL,
+  -- the X25519 key an encrypted copy is encrypted to; null for a clear one
   recipientPublicKey TEXT,
   messageType TEXT NOT NULL,
   content TEXT NOT NULL,

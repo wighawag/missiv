@@ -14,21 +14,22 @@ import {
 	PUBLIC_MISSIV_WEBOSCKET_ENDPOINT
 } from './config.js';
 
-export const account = derived<Readable<Connection>, Account>(connection, (currentConnection) => {
-	// console.log(`connection updated: `, currentConnection.step);
-	if (currentConnection.step === 'SignedIn') {
-		return currentConnection.account;
-	} else if (currentConnection.step === 'WaitingForSignature') {
+// connect's signed-in account is a missiv account: its address, its key set (private halves
+// included) and, once signed, the wallet's ownership signature of that key set
+export const account = derived<Readable<Connection<unknown>>, Account>(
+	connection,
+	(currentConnection) => {
+		// console.log(`connection updated: `, currentConnection.step);
+		if (currentConnection.step === 'SignedIn') {
+			return currentConnection.account;
+		} else if (currentConnection.step === 'WaitingForSignature') {
+			return undefined;
+			// TODO ? show new address
+			// the following show the current one:
+		}
 		return undefined;
-		// TODO ? show new address
-		// the following show the current one:
-		// return {
-		// 	address: currentConnection.mechanism.address,
-		// 	signer: undefined
-		// };
 	}
-	return undefined;
-});
+);
 
 export const registration = createMissivRegistration({
 	account,
@@ -79,14 +80,14 @@ export const profileShown = {
 	}
 };
 
-// TODO setup a callback in registration or in co
-// or maybe simply add an auto-registration option with a mechanism to fetch savedPublicKeyPublicationSignature
+// register the account's key set as soon as the wallet's ownership signature of it is there
+// (connect saves it at sign-in): no prompt
 registration.subscribe((currentRegistration) => {
 	if (currentRegistration.step === 'Unregistered' && !currentRegistration.registering) {
 		const currentConnection = get(connection);
 		if (currentConnection.step === 'SignedIn' && !currentRegistration.error) {
 			if (currentConnection.account.savedPublicKeyPublicationSignature) {
-				registration.register(currentConnection.account.savedPublicKeyPublicationSignature);
+				registration.register().catch(() => {});
 			}
 		}
 	}

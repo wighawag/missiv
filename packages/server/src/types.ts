@@ -113,6 +113,7 @@ export {
 	ActionEditDomainUserSchema,
 	ActionGetAcceptedConversationsSchema,
 	ActionGetDomainUserSchema,
+	ActionGetKeySetSchema,
 	ActionGetConversationsSchema,
 	ActionGetMessagesSchema,
 	ActionGetUnacceptedConversationsSchema,
@@ -123,5 +124,7 @@ export {
 	ActionSendMessageSchema,
 	ActionUnblockSchema,
 	AddressSchema,
+	KeySchema,
 	PublicKeySchema,
+	PublicKeySetSchema,
 } from '@missiv/common';

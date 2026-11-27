@@ -3,7 +3,17 @@
 import {describe, it, expect, beforeEach} from 'vitest';
 import {Room, createInProcessRooms} from '@missiv/server';
 import {signRequest} from 'delegated-identity';
-import {createHarness, createUser, DOMAIN, type Harness, type TestUser} from './setup.js';
+import {
+	createHarness,
+	createUser,
+	newKeySet,
+	publicOf,
+	APP_ORIGIN,
+	DOMAIN,
+	type Harness,
+	type TestUser,
+} from './setup.js';
+import type {KeySet} from 'delegated-identity';
 
 type FakeSocket = {sent: string[]; send(m: string): void; close(): void};
 
@@ -58,10 +68,11 @@ async function connect(room: any): Promise<FakeSocket & {challenge: string}> {
 	return Object.assign(ws, {challenge});
 }
 
-async function login(room: any, ws: FakeSocket & {challenge: string}, user: TestUser) {
+/** Log in as `user`, the challenge signed by its key set's signing key (or another key set's). */
+async function login(room: any, ws: FakeSocket & {challenge: string}, user: TestUser, keySet: KeySet = user.keySet) {
 	const signature = await signRequest(
 		{serverOrigin: 'http://localhost', method: 'GET', path: room.identifier.path, body: ws.challenge},
-		user.delegatePrivateKey,
+		keySet.signing.privateKey,
 	);
 	await room.webSocketMessage(ws, JSON.stringify({address: user.address, signature}));
 	// the rate limiter counts the login too, and lifts its cooldown a tick later
@@ -84,6 +95,45 @@ describe('public room', () => {
 		await login(room, ws, A);
 		await room.webSocketMessage(ws, JSON.stringify({message: 'hello', signature: '0x'}));
 		expect([...stored.values()].map((v) => JSON.parse(v as string).message)).toEqual(['hello']);
+	});
+
+	it('logs in with the Ed25519 signature of the current key set, and announces its signing key', async () => {
+		const {room} = createRoom(h, `@${DOMAIN}`);
+		const ws = await connect(room);
+		await login(room, ws, A);
+		const joined = ws.sent.map((m) => JSON.parse(m)).find((m) => 'joined' in m);
+		expect(joined).toMatchObject({joined: A.address, publicKey: A.keySet.signing.publicKey});
+	});
+
+	it('refuses a login not signed by the signing key of the current key set', async () => {
+		const {room, stored} = createRoom(h, `@${DOMAIN}`);
+		const ws = await connect(room);
+		await login(room, ws, A, newKeySet());
+		expect(ws.sent.map((m) => JSON.parse(m))).toContainEqual({error: 'Invalid signature', code: 'unauthenticated'});
+		await room.webSocketMessage(ws, JSON.stringify({message: 'not logged in'}));
+		expect([...stored.values()]).toEqual([]);
+	});
+
+	it('refuses a login by a replaced key set', async () => {
+		const replacement = newKeySet();
+		await h.api.register(
+			{
+				type: 'register',
+				domain: DOMAIN,
+				appOrigin: APP_ORIGIN,
+				address: A.address,
+				keySet: publicOf(replacement),
+				ownershipSignature: await A.signPublication(replacement),
+			},
+			{privateKey: replacement.signing.privateKey},
+		);
+		const {room} = createRoom(h, `@${DOMAIN}`);
+		const ws = await connect(room);
+		await login(room, ws, A);
+		expect(ws.sent.map((m) => JSON.parse(m))).toContainEqual({error: 'Invalid signature', code: 'unauthenticated'});
+		const again = await connect(room);
+		await login(room, again, A, replacement);
+		expect(again.sent.map((m) => JSON.parse(m)).find((m) => 'joined' in m)).toMatchObject({joined: A.address});
 	});
 });
 

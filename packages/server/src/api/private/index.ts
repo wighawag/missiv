@@ -37,15 +37,18 @@ export function getPrivateChatAPI<CustomEnv extends Env>(options: ServerOptions<
 				throw new MissivError('invalid_request', 'conversationID is not the ID of its members');
 			}
 			if (action.messageType === 'encrypted') {
-				// a recipient's copy names that recipient's registered key; the sender's own
-				// copy names the key its shared secret is with, a member's
-				const keys = await storage.publicKeysOf(action.domain, members);
+				// a recipient's copy names the X25519 key of that recipient's current key
+				// set; the sender's own copy names the key its shared secret is with, a member's
+				const keys = await storage.encryptionKeysOf(action.domain, members);
 				const memberKeys = new Set(keys.values());
 				for (const message of action.messages) {
 					const expected =
 						message.to === account ? memberKeys.has(message.toPublicKey) : keys.get(message.to) === message.toPublicKey;
 					if (!expected) {
-						throw new MissivError('conflict', `the copy for ${message.to} is not encrypted to its registered key`);
+						throw new MissivError(
+							'conflict',
+							`the copy for ${message.to} is not encrypted to its registered encryption key`,
+						);
 					}
 				}
 			}

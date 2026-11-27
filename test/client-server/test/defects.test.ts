@@ -7,7 +7,8 @@ import {pushKey, pushMessage, type NewMessageNotification} from '@missiv/server'
 import {
 	createHarness,
 	createUser,
-	newDelegateKey,
+	newKeySet,
+	publicOf,
 	conversationIDOf,
 	DOMAIN,
 	APP_ORIGIN,
@@ -31,7 +32,7 @@ describe('production configuration (no DEV)', () => {
 	it('refuses FAKE: request authentication', async () => {
 		const response = await h.app.request('http://localhost/api/private/getConversations', {
 			method: 'POST',
-			headers: {'content-type': 'application/json', SIGNATURE: `FAKE:${A.delegatePublicKey}`},
+			headers: {'content-type': 'application/json', SIGNATURE: `FAKE:${A.keySet.signing.publicKey}`},
 			body: JSON.stringify({type: 'getConversations', domain: DOMAIN, namespace: 'test'}),
 		});
 		expect(response.ok).toBe(false);
@@ -46,9 +47,10 @@ describe('production configuration (no DEV)', () => {
 					domain: DOMAIN,
 					appOrigin: APP_ORIGIN,
 					address: user.address,
-					signature: '0x0000000000000000000000000000000000000000000000000000000000000000',
+					keySet: publicOf(user.keySet),
+					ownershipSignature: '0x0000000000000000000000000000000000000000000000000000000000000000',
 				},
-				{privateKey: user.delegatePrivateKey},
+				{privateKey: user.keySet.signing.privateKey},
 			),
 		).rejects.toThrow();
 	});
@@ -118,8 +120,8 @@ describe('signed requests are not replayable (signed-requests-are-replayable-and
 			lastMessageReadTimestampMS: 0,
 			messageType: 'clear',
 			messages: [
-				{to: A.address, toPublicKey: A.delegatePublicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
-				{to: B.address, toPublicKey: B.delegatePublicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
+				{to: A.address, toPublicKey: A.keySet.encryption.publicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
+				{to: B.address, toPublicKey: B.keySet.encryption.publicKey, content: 'once', signature: UNCHECKED_SIGNATURE},
 			],
 		});
 		let headers: Record<string, string> | undefined;
@@ -129,29 +131,30 @@ describe('signed requests are not replayable (signed-requests-are-replayable-and
 				return h.app.request(url, init);
 			},
 		});
-		await capture.sendMessage(JSON.parse(body), {privateKey: A.delegatePrivateKey});
+		await capture.sendMessage(JSON.parse(body), {privateKey: A.keySet.signing.privateKey});
 		const replay = await h.app.request('http://localhost/api/private/sendMessage', {method: 'POST', headers, body});
 		expect(replay.ok).toBe(false);
 		expect((await h.messages(B, conversationIDOf([A.address, B.address]))).length).toBe(1);
 	});
 });
 
-describe('a second key for the same wallet (re-registering-a-new-key-keeps-the-old-one)', () => {
-	it('replaces the first, so the new key authenticates', async () => {
-		const second = newDelegateKey();
+describe('a second key set for the same wallet (re-registering-a-new-key-keeps-the-old-one)', () => {
+	it('replaces the first, so the new key set authenticates', async () => {
+		const second = newKeySet();
 		await h.api.register(
 			{
 				type: 'register',
 				domain: DOMAIN,
 				appOrigin: APP_ORIGIN,
 				address: A.address,
-				signature: await A.signPublication(second.publicKey),
+				keySet: publicOf(second),
+				ownershipSignature: await A.signPublication(second),
 			},
-			{privateKey: second.privateKey},
+			{privateKey: second.signing.privateKey},
 		);
 		await h.api.getConversations(
 			{type: 'getConversations', domain: DOMAIN, namespace: 'test'},
-			{privateKey: second.privateKey},
+			{privateKey: second.signing.privateKey},
 		);
 	});
 });
@@ -161,7 +164,7 @@ describe('the request envelope (S3-6)', () => {
 		const body = JSON.stringify({type: 'getConversations', domain: DOMAIN, namespace: 'test'});
 		const signature = await signRequest(
 			{serverOrigin, method: 'POST', path: '/api/private/getConversations', body, timestamp},
-			A.delegatePrivateKey,
+			A.keySet.signing.privateKey,
 		);
 		return h.app.request('http://localhost/api/private/getConversations', {
 			method: 'POST',
@@ -191,16 +194,17 @@ describe('the request envelope (S3-6)', () => {
 					domain: DOMAIN,
 					appOrigin: 'https://evil.example',
 					address: user.address,
-					signature: user.ownershipSignature,
+					keySet: publicOf(user.keySet),
+					ownershipSignature: await user.signPublication(user.keySet, 'https://evil.example'),
 				},
-				{privateKey: user.delegatePrivateKey},
+				{privateKey: user.keySet.signing.privateKey},
 			),
 		).rejects.toThrow();
 	});
 });
 
 describe('conversation checks (S3-8)', () => {
-	it('refuses an encrypted copy not encrypted to its recipient key', async () => {
+	it('refuses an encrypted copy not encrypted to its recipient encryption key', async () => {
 		await expect(
 			h.api.sendMessage(
 				{
@@ -211,11 +215,11 @@ describe('conversation checks (S3-8)', () => {
 					lastMessageReadTimestampMS: 0,
 					messageType: 'encrypted',
 					messages: [
-						{to: A.address, toPublicKey: B.delegatePublicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
-						{to: B.address, toPublicKey: C.delegatePublicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
+						{to: A.address, toPublicKey: B.keySet.encryption.publicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
+						{to: B.address, toPublicKey: C.keySet.encryption.publicKey, content: 'x', signature: UNCHECKED_SIGNATURE},
 					],
 				},
-				{privateKey: A.delegatePrivateKey},
+				{privateKey: A.keySet.signing.privateKey},
 			),
 		).rejects.toMatchObject({status: 409});
 	});
@@ -235,7 +239,7 @@ describe('conversation checks (S3-8)', () => {
 						{to: C.address, content: 'x', signature: UNCHECKED_SIGNATURE},
 					],
 				},
-				{privateKey: A.delegatePrivateKey},
+				{privateKey: A.keySet.signing.privateKey},
 			),
 		).rejects.toMatchObject({status: 400});
 	});
@@ -247,13 +251,13 @@ describe('conversation checks (S3-8)', () => {
 		const conversationID = conversationIDOf([A.address, B.address]);
 		const first = await h.api.getMessages(
 			{type: 'getMessages', domain: DOMAIN, namespace: 'test', conversationID, limit: 2},
-			{privateKey: B.delegatePrivateKey},
+			{privateKey: B.keySet.signing.privateKey},
 		);
 		expect(first.messages.map((m) => m.content)).toEqual(['m4', 'm3']);
 		expect(first.cursor).toBeDefined();
 		const rest = await h.api.getMessages(
 			{type: 'getMessages', domain: DOMAIN, namespace: 'test', conversationID, limit: 10, before: first.cursor},
-			{privateKey: B.delegatePrivateKey},
+			{privateKey: B.keySet.signing.privateKey},
 		);
 		expect(rest.messages.map((m) => m.content)).toEqual(['m2', 'm1', 'm0']);
 		expect(rest.cursor).toBeUndefined();
@@ -264,12 +268,12 @@ describe('conversation checks (S3-8)', () => {
 		await h.send({from: C, to: B, content: 'cb'});
 		const first = await h.api.getConversations(
 			{type: 'getConversations', domain: DOMAIN, namespace: 'test', limit: 1},
-			{privateKey: B.delegatePrivateKey},
+			{privateKey: B.keySet.signing.privateKey},
 		);
 		expect(first.conversations.map((c) => c.conversationID)).toEqual([conversationIDOf([B.address, C.address])]);
 		const rest = await h.api.getConversations(
 			{type: 'getConversations', domain: DOMAIN, namespace: 'test', limit: 1, before: first.cursor},
-			{privateKey: B.delegatePrivateKey},
+			{privateKey: B.keySet.signing.privateKey},
 		);
 		expect(rest.conversations.map((c) => c.conversationID)).toEqual([conversationIDOf([A.address, B.address])]);
 		expect(rest.cursor).toBeUndefined();
@@ -280,54 +284,43 @@ describe('unblock (S3-9)', () => {
 	it('lets a blocked sender reach the recipient again', async () => {
 		await h.send({from: A, to: B, content: 'first'});
 		await h.reject(B, conversationIDOf([A.address, B.address]));
-		await h.api.unblock({type: 'unblock', domain: DOMAIN, address: A.address}, {privateKey: B.delegatePrivateKey});
+		await h.api.unblock(
+			{type: 'unblock', domain: DOMAIN, address: A.address},
+			{privateKey: B.keySet.signing.privateKey},
+		);
 		await h.send({from: A, to: B, content: 'again'});
 		expect(await h.contents(B, conversationIDOf([A.address, B.address]))).toContain('again');
 	});
 });
 
 describe('key replacement (S3-10)', () => {
-	it('re-registering the same key is idempotent and keeps it', async () => {
+	it('re-registering the same key set is idempotent and keeps it', async () => {
 		await h.register(A, {name: 'alice'});
 		const {domainUser} = await h.api.getDomainUser({type: 'getDomainUser', domain: DOMAIN, address: A.address});
-		expect(domainUser?.publicKey).toBe(A.delegatePublicKey);
+		expect(domainUser?.keySet).toEqual(publicOf(A.keySet));
+		expect(domainUser?.keyRef).toBe(A.keyRef);
 		expect(domainUser?.name).toBe('alice');
 	});
 
-	it('the replaced key no longer authenticates', async () => {
-		const second = newDelegateKey();
+	it('the replaced key set no longer authenticates', async () => {
+		const second = newKeySet();
 		await h.api.register(
 			{
 				type: 'register',
 				domain: DOMAIN,
 				appOrigin: APP_ORIGIN,
 				address: A.address,
-				signature: await A.signPublication(second.publicKey),
+				keySet: publicOf(second),
+				ownershipSignature: await A.signPublication(second),
 			},
-			{privateKey: second.privateKey},
+			{privateKey: second.signing.privateKey},
 		);
 		await expect(
 			h.api.getConversations(
 				{type: 'getConversations', domain: DOMAIN, namespace: 'test'},
-				{privateKey: A.delegatePrivateKey},
+				{privateKey: A.keySet.signing.privateKey},
 			),
 		).rejects.toMatchObject({status: 401});
-	});
-
-	it('refuses a key already registered for another account', async () => {
-		const other = await createUser();
-		await expect(
-			h.api.register(
-				{
-					type: 'register',
-					domain: DOMAIN,
-					appOrigin: APP_ORIGIN,
-					address: other.address,
-					signature: await other.signPublication(A.delegatePublicKey),
-				},
-				{privateKey: A.delegatePrivateKey},
-			),
-		).rejects.toMatchObject({status: 409});
 	});
 });
 

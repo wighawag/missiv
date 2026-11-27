@@ -15,7 +15,10 @@ allowBuilds:
   workerd: true
   '@parcel/watcher': false
   sharp: false
-# pnpm 11 refuses a release younger than its minimum age; delegated-identity was
-# published the day this depended on it. Drop the entry once it is older.
+# pnpm 11 refuses a release younger than its minimum age; delegated-identity and
+# @etherplay/connect were published the day this depended on them. Drop an entry
+# once its release is older.
 minimumReleaseAgeExclude:
-  - delegated-identity@0.1.0 || 0.1.1
+  - delegated-identity@0.1.0 || 0.1.1 || 0.2.0
+  - '@etherplay/connect@0.19.0'
+  - '@etherplay/connect-core@0.8.0'

@@ -1,5 +1,5 @@
 import type { Readable } from 'svelte/store';
-import { getConversationID, type Address, type PublicKey } from '@missiv/common';
+import { getConversationID, type Address, type KeySet, type PublicKeySet } from '@missiv/common';
 import type { MissivRegistration, MissivRegistrationStore } from '$lib/registration/index.js';
 import { API, type FetchFunction } from '$lib/API.js';
 import { activeStore, poll, toStoreError, type StoreError } from '$lib/utils/lifecycle.js';
@@ -14,9 +14,9 @@ import {
 export type OtherUser = {
 	address: Address;
 	name?: string;
-	/** the other user's key, set only once its ownership proof is verified */
-	publicKey?: PublicKey;
-	/** the server returned a key whose ownership proof does not verify: nothing is encrypted to it */
+	/** the other user's current key set, set only once its ownership proof is verified */
+	keySet?: PublicKeySet;
+	/** the server returned a key set whose ownership proof does not verify: nothing is encrypted to it */
 	unverifiedKey?: boolean;
 };
 
@@ -31,9 +31,9 @@ export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
 );
 
 export type CurrentConversation = Readable<ConversationState> & {
-	/** send encrypted to the other user's verified key; refused when there is none */
+	/** send encrypted to the other user's verified key set; refused when there is none */
 	sendMessage(text: string): Promise<void>;
-	/** send in clear, readable by the server: only when asked, to reach a user with no verified key */
+	/** send in clear, readable by the server: only when asked, to reach a user with no verified key set */
 	sendIntroduction(text: string): Promise<void>;
 };
 
@@ -61,7 +61,7 @@ export function openOneConversation(params: {
 
 	/** the account of the current run, and how to refresh it */
 	let current:
-		| { address: Address; privateKey: string; conversationID: string; refresh(): Promise<void> }
+		| { address: Address; keySet: KeySet; conversationID: string; refresh(): Promise<void> }
 		| undefined;
 
 	const store = activeStore<MissivRegistration, ConversationState>({
@@ -75,15 +75,16 @@ export function openOneConversation(params: {
 				return;
 			}
 			const address = registration.address;
-			const privateKey = registration.signer.privateKey;
+			const keySet = registration.keySet;
+			const privateKey = keySet.signing.privateKey;
 			const conversationID = getConversationID(address, params.otherUser.address);
-			const reader = { address, domain, privateKey };
+			const reader = { address, domain, keySet };
 			ctx.set({ step: 'Fetching', conversationID, otherUser: initialOther });
 			let lastMarked = 0;
 
 			async function resolveOtherKey() {
 				const { otherUser } = ctx.get();
-				if (otherUser.publicKey) {
+				if (otherUser.keySet) {
 					return;
 				}
 				const { domainUser } = await api.getDomainUser({
@@ -100,7 +101,7 @@ export function openOneConversation(params: {
 					otherUser: verified
 						? {
 								...state.otherUser,
-								publicKey: domainUser.publicKey,
+								keySet: domainUser.keySet,
 								name: domainUser.name ?? state.otherUser.name,
 								unverifiedKey: false
 							}
@@ -142,7 +143,7 @@ export function openOneConversation(params: {
 				}
 			}
 
-			const run = { address, privateKey, conversationID, refresh: fetchMessages };
+			const run = { address, keySet, conversationID, refresh: fetchMessages };
 			current = run;
 			const stop = poll(ctx, pollingInterval * 1000, fetchMessages, (err) =>
 				ctx.update((state) => ({
@@ -177,22 +178,25 @@ export function openOneConversation(params: {
 	async function sendMessage(text: string) {
 		const run = requireRun();
 		const { otherUser } = store.get();
-		if (!otherUser.publicKey) {
+		if (!otherUser.keySet) {
 			throw new Error(
 				otherUser.unverifiedKey
-					? `the other user's key is not proven by their wallet: nothing is sent`
-					: `the other user has no key yet: send an introduction in clear with sendIntroduction`
+					? `the other user's key set is not proven by their wallet: nothing is sent`
+					: `the other user has no key set yet: send an introduction in clear with sendIntroduction`
 			);
 		}
 		const messages = await encryptedCopies({
 			scope: { domain, namespace, conversationID: run.conversationID },
 			sender: run,
-			recipient: { address: otherUser.address, publicKey: otherUser.publicKey },
+			recipient: {
+				address: otherUser.address,
+				encryptionKey: otherUser.keySet.encryption.publicKey
+			},
 			text
 		});
 		await api.sendMessage(
 			{ ...action(run.conversationID), messageType: 'encrypted', messages },
-			{ privateKey: run.privateKey }
+			{ privateKey: run.keySet.signing.privateKey }
 		);
 		await run.refresh().catch(() => {});
 	}
@@ -207,7 +211,7 @@ export function openOneConversation(params: {
 		});
 		await api.sendMessage(
 			{ ...action(run.conversationID), messageType: 'clear', messages },
-			{ privateKey: run.privateKey }
+			{ privateKey: run.keySet.signing.privateKey }
 		);
 		await run.refresh().catch(() => {});
 	}

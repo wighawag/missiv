@@ -32,7 +32,7 @@
 						type: 'wallet'
 					})}>connect</button
 			>
-		{:else if $connection.step === 'NeedWalletSignature'}
+		{:else if $connection.step === 'WalletConnected'}
 			<button onclick={() => connection.requestSignature()}>sign-in</button>
 			<button onclick={() => connection.cancel()}>cancel</button>
 		{:else if $connection.step === 'WaitingForSignature'}
@@ -74,10 +74,8 @@
 			{/if}
 			<ImgBlockie address={$connection.account.address} style="width: 24px; height: 24px;" />
 			<button onclick={() => connection.disconnect()}>disconnect</button>
-			{#if $connection.walletAccountChanged}
-				<button
-					onclick={() =>
-						connection.connectOnCurrentWalletAccount($connection.walletAccountChanged!)}
+			{#if $connection.wallet?.accountChanged}
+				<button onclick={() => connection.connectToAddress($connection.wallet!.accountChanged!)}
 					>switch</button
 				>
 			{/if}
@@ -114,7 +112,7 @@
 	</Modal>
 {/if}
 
-{#if $profileShown && $account && $account.signer}
+{#if $profileShown && $account}
 	<Modal oncancel={() => profileShown.hide()} title="Profile" description="">
 		<div class="modal-content">
 			<Conversation otherUser={$profileShown} />

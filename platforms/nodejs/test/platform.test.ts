@@ -3,7 +3,7 @@
 // route's refusals are checked; the Room itself is tested in test/client-server.
 import {describe, it, expect} from 'vitest';
 import {privateKeyToAccount, generatePrivateKey} from 'viem/accounts';
-import {delegatePublicKey, originPublicKeyPublicationMessage} from 'delegated-identity';
+import {deriveKeySet, originPublicKeyPublicationMessage} from 'delegated-identity';
 import {API, clearCopies} from '@missiv/client';
 import {conversationIDOf} from '@missiv/common';
 import {createNodeServer} from '../src/index.js';
@@ -13,12 +13,11 @@ const APP_ORIGIN = 'https://test.com';
 
 async function createUser() {
 	const wallet = privateKeyToAccount(generatePrivateKey());
-	const delegatePrivateKey = generatePrivateKey();
-	const publicKey = delegatePublicKey(delegatePrivateKey);
+	const keySet = deriveKeySet(generatePrivateKey());
 	return {
 		address: wallet.address.toLowerCase() as `0x${string}`,
-		delegatePrivateKey,
-		signature: await wallet.signMessage({message: originPublicKeyPublicationMessage(APP_ORIGIN, publicKey)}),
+		keySet,
+		ownershipSignature: await wallet.signMessage({message: originPublicKeyPublicationMessage(APP_ORIGIN, keySet)}),
 	};
 }
 
@@ -29,8 +28,18 @@ describe('nodejs platform', () => {
 		const [a, b] = await Promise.all([createUser(), createUser()]);
 		for (const user of [a, b]) {
 			await api.register(
-				{type: 'register', domain: DOMAIN, appOrigin: APP_ORIGIN, address: user.address, signature: user.signature},
-				{privateKey: user.delegatePrivateKey},
+				{
+					type: 'register',
+					domain: DOMAIN,
+					appOrigin: APP_ORIGIN,
+					address: user.address,
+					keySet: {
+						signing: {publicKey: user.keySet.signing.publicKey},
+						encryption: {publicKey: user.keySet.encryption.publicKey},
+					},
+					ownershipSignature: user.ownershipSignature,
+				},
+				{privateKey: user.keySet.signing.privateKey},
 			);
 		}
 		const conversationID = conversationIDOf([a.address, b.address]);
@@ -44,16 +53,16 @@ describe('nodejs platform', () => {
 				messageType: 'clear',
 				messages: await clearCopies({
 					scope: {domain: DOMAIN, namespace: '', conversationID},
-					sender: {address: a.address, privateKey: a.delegatePrivateKey},
+					sender: {address: a.address, keySet: a.keySet},
 					recipients: [b.address],
 					text: 'hello',
 				}),
 			},
-			{privateKey: a.delegatePrivateKey},
+			{privateKey: a.keySet.signing.privateKey},
 		);
 		const {messages} = await api.getMessages(
 			{type: 'getMessages', domain: DOMAIN, namespace: '', conversationID},
-			{privateKey: b.delegatePrivateKey},
+			{privateKey: b.keySet.signing.privateKey},
 		);
 		expect(messages.map((m) => m.content)).toEqual(['hello']);
 	});
