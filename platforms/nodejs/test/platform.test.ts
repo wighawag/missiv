@@ -23,7 +23,7 @@ async function createUser() {
 
 describe('nodejs platform', () => {
 	it('builds its app on a fresh database and serves the HTTP API', async () => {
-		const {app} = await createNodeServer({db: ':memory:', env: {}});
+		const {app} = await createNodeServer({db: ':memory:', env: {SESSION_SECRET: 'test-session-secret'}});
 		const api = new API('http://localhost', {fetch: app.request as any});
 		const [a, b] = await Promise.all([createUser(), createUser()]);
 		for (const user of [a, b]) {
@@ -81,6 +81,16 @@ describe('nodejs platform', () => {
 			method: 'POST',
 			headers: {'content-type': 'application/json', Authorization: 'Bearer anything'},
 			body: JSON.stringify({reset: true}),
+		});
+		expect(response.status).toBe(403);
+	});
+
+	it('refuses every authenticated route when SESSION_SECRET is unset', async () => {
+		const {app} = await createNodeServer({db: ':memory:', env: {}});
+		const response = await app.request('http://localhost/api/session', {
+			method: 'POST',
+			headers: {'content-type': 'application/json'},
+			body: JSON.stringify({domain: DOMAIN}),
 		});
 		expect(response.status).toBe(403);
 	});

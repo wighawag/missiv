@@ -47,3 +47,9 @@ git fetch <remote> && git switch -c work/sessions-and-tokens <remote>/main
 # on completion, in the work branch's PR/merge:
 git mv work/tasks/ready/sessions-and-tokens.md work/tasks/done/sessions-and-tokens.md
 ```
+
+## Decisions
+
+The builder recorded its in-scope decisions in a separate note; see:
+
+- [2026-11-27-sessions-and-tokens-decisions.md](../../notes/observations/2026-11-27-sessions-and-tokens-decisions.md)

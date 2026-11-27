@@ -155,6 +155,28 @@ export type ActionGetKeySet = z.infer<typeof ActionGetKeySetSchema>;
 export type ResponseGetKeySet = {keySet: RegisteredKeySet | undefined};
 
 // ------------------------------------------------------------------------------------------------
+// sessions
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * `POST /api/session` (ADR-0006): a request signed by the signing key of the
+ * caller's current key set in `domain`, answered with a session token that
+ * authenticates every later request in that domain (as `Authorization: Bearer
+ * <token>`) but `register` and `sendMessage`, which stay signed.
+ */
+export const ActionOpenSessionSchema = z.object({
+	domain: DomainSchema,
+});
+export type ActionOpenSession = z.infer<typeof ActionOpenSessionSchema>;
+export type ResponseOpenSession = {
+	token: string;
+	/** when the token stops being accepted, in ms since the epoch, on the server's clock */
+	expiresAt: number;
+	/** the key set the session was opened with (delegated-identity's `keySetRef`) */
+	keyRef: String0x;
+};
+
+// ------------------------------------------------------------------------------------------------
 // conversations
 // ------------------------------------------------------------------------------------------------
 

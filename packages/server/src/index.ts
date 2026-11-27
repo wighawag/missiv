@@ -5,6 +5,7 @@ import {getPrivateChatAPI} from './api/private/index.js';
 import {getPublicChatAPI} from './api/public/index.js';
 import {getUserAPI} from './api/user/index.js';
 import {getAdminAPI} from './api/admin/index.js';
+import {getSessionAPI} from './api/session/index.js';
 import {HTTPException} from 'hono/http-exception';
 import {Env} from './env.js';
 import {MissivError} from './errors.js';
@@ -41,7 +42,7 @@ export {createInProcessRooms, InMemoryRoom, InMemoryRateLimiter, InMemoryObjectS
 
 const corsSetup = cors({
 	origin: '*',
-	allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE'],
+	allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type', 'SIGNATURE', 'Authorization'],
 	allowMethods: ['POST', 'GET', 'HEAD', 'OPTIONS'],
 	exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
 	maxAge: 600,
@@ -56,10 +57,12 @@ export function createServer<CustomEnv extends Env>(options: ServerOptions<Custo
 	const privateChatAPI = getPrivateChatAPI(options);
 	const publicChatAPI = getPublicChatAPI(options);
 	const adminAPI = getAdminAPI(options);
+	const sessionAPI = getSessionAPI(options);
 
 	return app
 		.use('/*', corsSetup)
 		.route('/api/public', publicChatAPI)
+		.route('/api/session', sessionAPI)
 		.route('/api/user', userAPI)
 		.route('/api/private', privateChatAPI)
 		.route('/api/admin', adminAPI)

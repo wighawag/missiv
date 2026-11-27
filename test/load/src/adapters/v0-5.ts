@@ -1,6 +1,7 @@
 // missiv 0.5's API (`@missiv/server` 0.5, `@missiv/client` 0.4), on 0.6's keys
-// since `messaging-keys-and-registration`: every request signed by the user's
-// Ed25519 signing key (its key set's, delegated-identity), one signed copy per
+// since `messaging-keys-and-registration`: registrations and sends signed by the
+// user's Ed25519 signing key (its key set's, delegated-identity), every other
+// request on a session token since `sessions-and-tokens`, one signed copy per
 // member, the newest page of a conversation as its read, rooms over a WebSocket
 // logged in by a request signature over the socket's challenge. (The 0.5
 // baseline was measured with secp256k1 keys, before that change.) Users, registration and sends

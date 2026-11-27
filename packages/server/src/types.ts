@@ -118,6 +118,7 @@ export {
 	ActionGetMessagesSchema,
 	ActionGetUnacceptedConversationsSchema,
 	ActionMarkAsReadSchema,
+	ActionOpenSessionSchema,
 	ActionRegisterDomainUserSchema,
 	ActionRejectConversationSchema,
 	ActionResetSchema,
