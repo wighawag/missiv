@@ -137,10 +137,26 @@ export function openOneConversation(params: {
 			const setError = (message: string) => (err: unknown) =>
 				ctx.update((state) => ({ ...state, error: toStoreError(message, err) }));
 
-			/** the seq a sync asks after: the newest this run has, below any it failed to open */
+			/** the in-scope seqs this run has received, from any source */
+			const received = new Set<number>();
+			/**
+			 * The seq up to which this run provably has every message: the newest
+			 * page's top, then each next seq as it arrives. Not simply the newest
+			 * seq held: a send's own answer, or a push overtaking an earlier one
+			 * (each send is delivered on its own), can be newer than a message
+			 * missed while the socket was down, and a sync after it would skip it.
+			 * A gap that never fills (a message hidden from this reader, by its
+			 * block) keeps it there: each sync then asks again from that gap, and
+			 * what it already has is not opened twice.
+			 */
+			let synced = 0;
+			function advance() {
+				while (received.has(synced + 1)) synced++;
+			}
+
+			/** the seq a sync asks after: the complete prefix, below any it failed to open */
 			function cursor(): number {
-				const newest = opened.length ? opened[opened.length - 1].seq : 0;
-				return failed.size > 0 ? Math.min(newest, Math.min(...failed) - 1) : newest;
+				return failed.size > 0 ? Math.min(synced, Math.min(...failed) - 1) : synced;
 			}
 
 			async function resolveOtherKey() {
@@ -216,6 +232,16 @@ export function openOneConversation(params: {
 				});
 				const fresh = messages.filter((message) => !known.has(message.seq));
 				for (const message of fresh) known.add(message.seq);
+				for (const message of messages) {
+					if (
+						message.domain === domain &&
+						message.namespace === namespace &&
+						message.conversationID === conversationID
+					) {
+						received.add(message.seq);
+					}
+				}
+				advance();
 				if (fresh.length === 0) {
 					await Promise.all(inFlight);
 					return;
@@ -263,7 +289,19 @@ export function openOneConversation(params: {
 					{ privateKey }
 				);
 				if (!ctx.active) return;
+				// the newest page holds every message up to its top
+				const top = Math.max(
+					0,
+					...page.messages
+						.filter(
+							(message) =>
+								message.namespace === namespace && message.conversationID === conversationID
+						)
+						.map((message) => message.seq)
+				);
 				await add(page.messages);
+				synced = Math.max(synced, top);
+				advance();
 				fetched = true;
 				publish();
 				// what arrived between the page's read and the socket's opening

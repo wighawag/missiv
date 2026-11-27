@@ -350,6 +350,29 @@ describe('conversation', () => {
 		stop();
 	});
 
+	it('after a lost socket, still syncs what it missed when it sent a newer message itself meanwhile', async () => {
+		const s = await served();
+		await h.send({from: A, to: B, content: 'one'});
+		// slow to reconnect, so its own send lands while the socket is down
+		const conversation = conversationOf(B, A, s, {retryDelayMs: 400});
+		const stop = hold(conversation);
+		await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 1 && !!c.otherUser.keySet);
+		await sockets(1);
+		h.dropSockets();
+		await sockets(0);
+		await h.send({from: A, to: B, content: 'two, missed'});
+		await conversation.sendMessage('three, from B');
+		// shown from the send's answer, newer than the missed one
+		expect((get(conversation) as any).messages.map((m: any) => m.seq)).toEqual([1, 3]);
+		const state = await until(conversation, (c) => c.step === 'Fetched' && c.messages.length === 3);
+		expect(state.step === 'Fetched' && state.messages.map((m) => [m.seq, m.content])).toEqual([
+			[1, 'one'],
+			[2, 'two, missed'],
+			[3, 'three, from B'],
+		]);
+		stop();
+	});
+
 	it('when its session expires, the server closes the socket and the store resumes on a renewed token', async () => {
 		const url = await h.listen();
 		let sessions = 0;
