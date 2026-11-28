@@ -53,7 +53,8 @@ describe('migration 0003_inbox_version on a database with Inbox rows', () => {
 		await insertRow(db, OTHER_USER, 2, 1, 0);
 		await insertRow(db, USER, 3, 5, 2);
 
-		expect(await migrate(db)).toEqual(['0003_inbox_version']);
+		// 0004_read_receipts follows: existing rows hold no read receipt
+		expect(await migrate(db)).toEqual(['0003_inbox_version', '0004_read_receipts']);
 		// applied once: a second start has nothing to do
 		expect(await migrate(db)).toEqual([]);
 
@@ -61,6 +62,7 @@ describe('migration 0003_inbox_version on a database with Inbox rows', () => {
 		const all = await inbox.changes(USER, DOMAIN, {since: 0, limit: 100});
 		if ('unchanged' in all) throw new Error('expected the existing rows');
 		expect(all.conversations.map((c) => c.conversationID)).toEqual([conversation(1), conversation(3)]);
+		expect(all.conversations.map((c) => c.otherReadSeq)).toEqual([0, 0]);
 		const versions = all.conversations.map((c) => c.version);
 		expect(versions.every((v) => v > 0)).toBe(true);
 		expect(new Set(versions).size).toBe(versions.length);

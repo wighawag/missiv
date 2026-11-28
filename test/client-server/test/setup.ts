@@ -359,6 +359,11 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 		await api.markRead({type: 'markRead', ...scope(conversationID, where), seq}, as(user));
 	}
 
+	/** Share (or stop sharing) `user`'s read receipts in the domain. */
+	async function shareReadReceipts(user: TestUser, readReceipts: boolean, domain = DOMAIN) {
+		return (await api.setSettings({type: 'setSettings', domain, readReceipts}, as(user))).settings;
+	}
+
 	/** The messages `user` lists, in seq order: the newest page, or a page `after` / `before` a seq. */
 	async function messages(
 		user: TestUser,
@@ -404,6 +409,7 @@ export function createActions(api: API, options?: {before?: () => Promise<unknow
 		accept,
 		reject,
 		markRead,
+		shareReadReceipts,
 		messages,
 		contents,
 		conversations,

@@ -204,6 +204,14 @@ export type Conversation = {
 	status: ConversationStatus;
 	lastSeq: number;
 	lastReadSeq: number;
+	/**
+	 * the other member's read receipt: the seq up to which they read this
+	 * conversation (every message of this member's at or below it is read), at
+	 * most `lastSeq`. It moves only while both members share read receipts in
+	 * the domain (`ActionSetSettings`), and shows 0 to a member who does not
+	 * share theirs: who hides theirs sees nobody's
+	 */
+	otherReadSeq: number;
 	/** the server time of the newest message this member can see (ms) */
 	lastMessageAt: number;
 	/**
@@ -275,6 +283,26 @@ export type ResponseUnblock = {success: true};
 export const ActionMarkReadSchema = z.object({type: z.literal('markRead'), ...conversationFields, seq: SeqSchema});
 export type ActionMarkRead = z.infer<typeof ActionMarkReadSchema>;
 export type ResponseMarkRead = {success: true};
+
+/**
+ * An account's settings in a domain. `readReceipts` (default true): whether
+ * the other member of each conversation sees how far this account read it
+ * (`Conversation.otherReadSeq`); reciprocal, an account that does not share
+ * its own sees nobody's.
+ */
+export type InboxSettings = {readReceipts: boolean};
+/** The account's settings in the domain (the defaults where it set none). */
+export const ActionGetSettingsSchema = z.object({type: z.literal('getSettings'), domain: DomainSchema});
+export type ActionGetSettings = z.infer<typeof ActionGetSettingsSchema>;
+export type ResponseGetSettings = {settings: InboxSettings};
+/** Change the account's settings in the domain: the fields given, the others kept. */
+export const ActionSetSettingsSchema = z.object({
+	type: z.literal('setSettings'),
+	domain: DomainSchema,
+	readReceipts: z.boolean().optional(),
+});
+export type ActionSetSettings = z.infer<typeof ActionSetSettingsSchema>;
+export type ResponseSetSettings = {settings: InboxSettings};
 
 /**
  * The account's inbox rows in a domain (every namespace) that changed after

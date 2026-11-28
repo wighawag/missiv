@@ -13,6 +13,7 @@ import type {
 	Conversation,
 	ConversationStatus,
 	InboxServerFrame,
+	InboxSettings,
 	ResponseInboxChanges,
 	Message,
 	MessageToSend,
@@ -146,8 +147,18 @@ export interface Inbox {
 	/** reject the conversation and block `other` in the domain */
 	reject(user: Address, key: ConversationKey, other: Address, now: number): Promise<void>;
 	unblock(user: Address, domain: string, blocked: Address): Promise<void>;
-	/** lastReadSeq = max(lastReadSeq, min(seq, lastSeq)) */
+	/**
+	 * lastReadSeq = max(lastReadSeq, min(seq, lastSeq)); then, when both members
+	 * share read receipts in the domain, the other member's row takes it as its
+	 * `otherReadSeq` (raised only, at most that row's `lastSeq`, with the other
+	 * member's next inbox version), even when `user`'s own row did not move (its
+	 * own message had moved it).
+	 */
 	markRead(user: Address, key: ConversationKey, seq: number): Promise<void>;
+	/** the user's settings in the domain, the defaults where it set none */
+	getSettings(user: Address, domain: string): Promise<InboxSettings>;
+	/** change the fields given, keep the others; answers the settings now */
+	setSettings(user: Address, domain: string, settings: Partial<InboxSettings>): Promise<InboxSettings>;
 }
 
 /**

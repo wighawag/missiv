@@ -56,9 +56,28 @@ export type ConversationState = { error?: StoreError; otherUser: OtherUser } & (
 	| { step: 'Fetching'; conversationID: string }
 	// fetched, then kept current by the live inbox channel (each new message
 	// pushed, what was missed synced by seq after a reconnection); in seq order,
-	// newest last; each message opened on its own
-	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[] }
+	// newest last; each message opened on its own. `otherReadSeq` is the other
+	// user's read receipt: every message at or below it is read (0 while either
+	// of the two shares no read receipts, or none came yet)
+	| { step: 'Fetched'; conversationID: string; messages: OpenedMessage[]; otherReadSeq: number }
 );
+
+/** Whether the thread is in front of the user, and when that changes (a page's visibility by default). */
+export type ConversationVisibility = {
+	visible(): boolean;
+	/** call `listener` when `visible()` may have changed; returns what stops it */
+	onChange(listener: () => void): () => void;
+};
+
+/** The page's visibility (`document.visibilityState`); always visible where there is no document. */
+export const documentVisibility: ConversationVisibility = {
+	visible: () => typeof document === 'undefined' || document.visibilityState === 'visible',
+	onChange(listener) {
+		if (typeof document === 'undefined') return () => {};
+		document.addEventListener('visibilitychange', listener);
+		return () => document.removeEventListener('visibilitychange', listener);
+	}
+};
 
 export type CurrentConversation = Readable<ConversationState> & {
 	/** send encrypted (`pairwise-v1`) to the other user's verified key set; refused when there is none */
@@ -82,8 +101,14 @@ export function openOneConversation(params: {
 	domain: string;
 	namespace: string;
 	otherUser: { address: Address; name?: string };
-	/** accept the conversation (once) and mark it read up to each newer message shown */
+	/**
+	 * accept the conversation (once) and mark it read up to each newer message
+	 * shown while `visibility` says it is visible (a read receipt to the other
+	 * user, when both share them)
+	 */
 	markAsAcceptedAndRead?: boolean;
+	/** when the thread counts as seen (default: the page's visibility, `documentVisibility`) */
+	visibility?: ConversationVisibility;
 	/** the fetch the API calls go through (the in-process server in tests) */
 	fetch?: FetchFunction;
 	/** how the live channel's socket is made (default: `new WebSocket(url, protocols)`) */
@@ -135,6 +160,10 @@ export function openOneConversation(params: {
 			const reader = { address, domain, keySet };
 			ctx.set({ step: 'Fetching', conversationID, otherUser: initialOther });
 			let lastMarked = 0;
+			/** the other user's read receipt, from this conversation's newest inbox row */
+			let otherReadSeq = 0;
+			let rowVersion = -1;
+			const visibility = params.visibility ?? documentVisibility;
 			let accepted = false;
 			let marking: Promise<void> = Promise.resolve();
 			/** every seq opened or being opened, so each is opened once */
@@ -205,7 +234,8 @@ export function openOneConversation(params: {
 					step: 'Fetched',
 					conversationID,
 					otherUser: state.otherUser,
-					messages: opened
+					messages: opened,
+					otherReadSeq
 				}));
 				markIfNeeded();
 			}
@@ -213,6 +243,8 @@ export function openOneConversation(params: {
 			function markIfNeeded() {
 				const newest = opened[opened.length - 1];
 				if (!params.markAsAcceptedAndRead || !newest || newest.seq <= lastMarked) return;
+				// not in front of the user: read only once it is
+				if (!visibility.visible()) return;
 				lastMarked = newest.seq;
 				const seq = newest.seq;
 				marking = marking
@@ -361,6 +393,23 @@ export function openOneConversation(params: {
 						add([message]).catch(setError('failed to open a message'));
 					}
 				},
+				onConversation(conversation) {
+					if (
+						conversation.domain !== domain ||
+						conversation.namespace !== namespace ||
+						conversation.conversationID !== conversationID
+					) {
+						return;
+					}
+					// rows may repeat or come out of order: the newest change wins
+					const version = typeof conversation.version === 'number' ? conversation.version : 0;
+					if (version < rowVersion) return;
+					rowVersion = version;
+					const next = conversation.otherReadSeq ?? 0;
+					if (next === otherReadSeq) return;
+					otherReadSeq = next;
+					publish();
+				},
 				onError(err) {
 					// without the channel, the history still shows
 					startFetching();
@@ -368,9 +417,11 @@ export function openOneConversation(params: {
 				}
 			});
 
+			const stopVisibility = visibility.onChange(() => markIfNeeded());
 			const run = { address, keySet, conversationID, add };
 			current = run;
 			return () => {
+				stopVisibility();
 				unsubscribe();
 				stopFetch?.();
 				if (current === run) current = undefined;

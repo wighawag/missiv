@@ -48,6 +48,8 @@ export {
 	cachedKeyDirectory,
 	createInboxVersionCache,
 	createSQLStores,
+	DEFAULT_INBOX_SETTINGS,
+	definedOf,
 	inboxChangesOf,
 	SQLConversationStore,
 	SQLInbox,

@@ -411,6 +411,92 @@ describe('live sockets', () => {
 	});
 });
 
+describe('read receipts', () => {
+	it("pushes the reader's read point to the sender's socket, and retries one that failed by alarm", async () => {
+		const {stores, send} = setup();
+		const [a, b] = [address(), address()];
+		await send(a, b, 'ns', 'one');
+		await send(a, b, 'ns', 'two');
+		const forA = await openInbox(a);
+		await stores.inbox.markRead(b, scope(a, b), 1);
+		await forA.until(() =>
+			forA.frames.some((f) => f.type === 'conversation' && f.conversation.otherReadSeq === 1),
+		);
+
+		// a's Inbox unreachable: the receipt waits, the markRead still answers
+		const inboxB = inboxObject(cfEnv, DOMAIN, b);
+		let failing = true;
+		await runInDurableObject(inboxB, (instance: ServerObjectInbox) => {
+			const target = instance as unknown as {inboxOf(domain: string, user: Address): unknown};
+			const real = target.inboxOf.bind(instance);
+			target.inboxOf = (domain: string, user: Address) => {
+				const stub = real(domain, user) as {receiveReceipt: (...args: unknown[]) => Promise<unknown>};
+				return new Proxy(stub, {
+					get(object, property) {
+						if (property === 'receiveReceipt' && failing) {
+							return async () => {
+								throw new Error('injected: the Inbox object is unreachable');
+							};
+						}
+						return Reflect.get(object, property);
+					},
+				});
+			};
+		});
+		await stores.inbox.markRead(b, scope(a, b), 2);
+		expect((await stores.inbox.getConversation(a, scope(a, b)))?.otherReadSeq).toBe(1);
+		expect(await alarmOf(inboxB)).not.toBeNull();
+		failing = false;
+		await runDurableObjectAlarm(inboxB);
+		expect((await stores.inbox.getConversation(a, scope(a, b)))?.otherReadSeq).toBe(2);
+		await forA.until(() =>
+			forA.frames.some((f) => f.type === 'conversation' && f.conversation.otherReadSeq === 2),
+		);
+		forA.ws.close(1000, 'done');
+	});
+
+	it("keeps a receipt ahead of the row (its user's update still retried), and one before the row exists", async () => {
+		const {stores} = setup();
+		const [a, b] = [address(), address()];
+		const key = scope(a, b);
+		const inboxA = inboxObject(cfEnv, DOMAIN, a);
+		const owner = {domain: DOMAIN, user: a};
+		// no row yet: the receipt waits, and the row is made with it
+		await inboxA.receiveReceipt(owner, key, 1);
+		await stores.inbox.update({...key, user: a, seq: 1, lastMessageAt: 10, own: true});
+		expect((await stores.inbox.getConversation(a, key))?.otherReadSeq).toBe(1);
+		// ahead of the row: shown at most its lastSeq, in full once the row catches up
+		const before = (await stores.inbox.getConversation(a, key))!;
+		await inboxA.receiveReceipt(owner, key, 3);
+		const ahead = (await stores.inbox.getConversation(a, key))!;
+		expect([ahead.otherReadSeq, ahead.version]).toEqual([1, before.version]);
+		await stores.inbox.update({...key, user: a, seq: 3, lastMessageAt: 30, own: true});
+		expect((await stores.inbox.getConversation(a, key))?.otherReadSeq).toBe(3);
+	});
+
+	it('drops the pending receipts of a user who stops sharing them', async () => {
+		const {stores, send} = setup();
+		const [a, b] = [address(), address()];
+		await send(a, b);
+		const inboxB = inboxObject(cfEnv, DOMAIN, b);
+		await runInDurableObject(inboxB, (instance: ServerObjectInbox) => {
+			const target = instance as unknown as {inboxOf(domain: string, user: Address): unknown};
+			target.inboxOf = () => ({
+				receiveReceipt: async () => {
+					throw new Error('injected: the Inbox object is unreachable');
+				},
+			});
+		});
+		await stores.inbox.markRead(b, scope(a, b), 1);
+		await stores.inbox.setSettings(b, DOMAIN, {readReceipts: false});
+		const pending = await runInDurableObject(inboxB, (_instance, state) =>
+			state.storage.sql.exec(`SELECT COUNT(*) AS n FROM receipts WHERE seq > sentSeq`).one(),
+		);
+		expect(pending).toEqual({n: 0});
+		expect((await stores.inbox.getConversation(a, scope(a, b)))?.otherReadSeq).toBe(0);
+	});
+});
+
 describe('isLiveSocket', () => {
 	const now = 1_000_000_000;
 	it('is live while the session runs and a ping or the acceptance is within the window', () => {

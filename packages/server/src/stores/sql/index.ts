@@ -4,7 +4,7 @@ import {SQLKeyDirectory} from './KeyDirectory.js';
 import {SQLConversationStore, SQLInbox} from './messaging.js';
 
 export {SQLKeyDirectory, SQLConversationStore, SQLInbox};
-export {inboxChangesOf} from './messaging.js';
+export {inboxChangesOf, DEFAULT_INBOX_SETTINGS, definedOf} from './messaging.js';
 
 /**
  * The three ports over one SQL database (ADR-0005's Node.js and Bun

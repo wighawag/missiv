@@ -4,7 +4,8 @@
 // database read. The SQL read stays the source: a version is remembered only
 // from what `Inbox.changes` read, and forgotten after every write of this
 // process that may move it (an append moves both members', an update, accept,
-// reject or markRead the user's), so the next poll reads it again.
+// reject the user's, a markRead the user's and the other member's, whose row
+// takes the read receipt), so the next poll reads it again.
 //
 // Decisions recorded here:
 // - Only a process that is the deployment's only one may answer from memory: a
@@ -22,7 +23,7 @@
 //   cannot be remembered after the write forgot it.
 // - At most `maxEntries` inboxes (default 100 000), the least recently used
 //   forgotten first: a forgotten inbox costs one read on its next poll.
-import type {Address} from '@missiv/common';
+import {membersOfConversationID, type Address} from '@missiv/common';
 import type {InboxChanges, Stores} from './ports.js';
 
 export type InboxVersionCache = {
@@ -104,7 +105,18 @@ export function createInboxVersionCache(options: {maxEntries?: number} = {}): In
 					reject: (user, key, other, now) => writing(inbox.reject(user, key, other, now), [[key.domain, user]]),
 					// changes no row, so no version
 					unblock: (user, domain, blocked) => inbox.unblock(user, domain, blocked),
-					markRead: (user, key, seq) => writing(inbox.markRead(user, key, seq), [[key.domain, user]]),
+					// the reader's row, and the other member's (its read receipt)
+					markRead: (user, key, seq) =>
+						writing(
+							inbox.markRead(user, key, seq),
+							(membersOfConversationID(key.conversationID) ?? [user]).map(
+								(member) => [key.domain, member] as [string, Address],
+							),
+						),
+					getSettings: (user, domain) => inbox.getSettings(user, domain),
+					// changes no row (a row's otherReadSeq is shown as 0 to a user that
+					// shares none, until the row changes), so no version
+					setSettings: (user, domain, settings) => inbox.setSettings(user, domain, settings),
 					async changes(user, domain, page): Promise<InboxChanges> {
 						const key = keyOf(domain, user);
 						const entry = touch(key);

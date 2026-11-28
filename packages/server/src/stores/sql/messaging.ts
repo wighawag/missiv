@@ -14,6 +14,7 @@ import {
 	membersOfConversationID,
 	type Address,
 	type Conversation,
+	type InboxSettings,
 	type Message,
 	type MessageToSend,
 } from '@missiv/common';
@@ -248,7 +249,21 @@ type InboxRow = {
 	lastReadSeq: number;
 	lastMessageAt: number;
 	version: number;
+	otherReadSeq: number;
+	/** whether the row's user shares read receipts in the domain (`INBOX_SELECT`): 0 or 1 */
+	shares: number;
 };
+
+/** The settings of an account that set none. */
+export const DEFAULT_INBOX_SETTINGS: InboxSettings = {readReceipts: true};
+
+/**
+ * The rows of `Inbox` as a reader gets them: with `shares`, whether their user
+ * shares read receipts in the domain (one lookup on InboxSettings' primary
+ * key), since a user who does not sees nobody's (`formatConversation`).
+ */
+const INBOX_SELECT = `SELECT Inbox.*, COALESCE((SELECT readReceipts FROM InboxSettings s
+	WHERE s.user = Inbox.user AND s.domain = Inbox.domain), 1) AS shares FROM Inbox`;
 
 function formatConversation(row: InboxRow): Conversation {
 	return {
@@ -259,6 +274,7 @@ function formatConversation(row: InboxRow): Conversation {
 		status: STATUS_OF[Number(row.status) as InboxStatus],
 		lastSeq: Number(row.lastSeq),
 		lastReadSeq: Number(row.lastReadSeq),
+		otherReadSeq: Number(row.shares) === 0 ? 0 : Math.min(Number(row.otherReadSeq ?? 0), Number(row.lastSeq)),
 		lastMessageAt: Number(row.lastMessageAt),
 		version: Number(row.version),
 	};
@@ -328,7 +344,7 @@ export class SQLInbox implements Inbox {
 		// above the inbox's version: the database was reset, so every row
 		const since = page.since > version ? 0 : page.since;
 		const {results} = await this.db
-			.prepare(`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND version > ?3 ORDER BY version ASC LIMIT ?4`)
+			.prepare(`${INBOX_SELECT} WHERE user = ?1 AND domain = ?2 AND version > ?3 ORDER BY version ASC LIMIT ?4`)
 			.bind(user, domain, since, page.limit + 1)
 			.all<InboxRow>();
 		return inboxChangesOf(results.map(formatConversation), version, page.limit);
@@ -336,7 +352,7 @@ export class SQLInbox implements Inbox {
 
 	async getConversation(user: Address, key: ConversationKey): Promise<Conversation | undefined> {
 		const {results} = await this.db
-			.prepare(`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`)
+			.prepare(`${INBOX_SELECT} WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4`)
 			.bind(user, key.domain, key.namespace, key.conversationID)
 			.all<InboxRow>();
 		return results[0] ? formatConversation(results[0]) : undefined;
@@ -353,14 +369,14 @@ export class SQLInbox implements Inbox {
 			page.status === undefined
 				? this.db
 						.prepare(
-							`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND namespace = ?3
+							`${INBOX_SELECT} WHERE user = ?1 AND domain = ?2 AND namespace = ?3
 							AND (lastMessageAt, conversationID) < (?4, ?5)
 							ORDER BY lastMessageAt DESC, conversationID DESC LIMIT ?6`,
 						)
 						.bind(user, scope.domain, scope.namespace, time, conversationID, page.limit + 1)
 				: this.db
 						.prepare(
-							`SELECT * FROM Inbox WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND status = ?7
+							`${INBOX_SELECT} WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND status = ?7
 							AND (lastMessageAt, conversationID) < (?4, ?5)
 							ORDER BY lastMessageAt DESC, conversationID DESC LIMIT ?6`,
 						)
@@ -409,13 +425,56 @@ export class SQLInbox implements Inbox {
 	}
 
 	async markRead(user: Address, key: ConversationKey, seq: number): Promise<void> {
+		const reader = `(SELECT lastReadSeq FROM Inbox r
+			WHERE r.user = ?1 AND r.domain = ?2 AND r.namespace = ?3 AND r.conversationID = ?4)`;
+		const other = membersOfConversationID(key.conversationID)?.find(
+			(member) => member.toLowerCase() !== user.toLowerCase(),
+		);
+		await this.db.batch([
+			this.db
+				.prepare(
+					`UPDATE Inbox SET lastReadSeq = MIN(?5, lastSeq), version = ${nextVersion('?1', '?2')}
+					WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
+						AND MIN(?5, lastSeq) > lastReadSeq`,
+				)
+				.bind(user, key.domain, key.namespace, key.conversationID, seq),
+			// the read receipt: the reader's read point (moved or not) to the other
+			// member's row, when both share read receipts; raised only, at most
+			// that row's lastSeq (a message hidden from the other member is not one it
+			// may learn of)
+			this.db
+				.prepare(
+					`UPDATE Inbox SET otherReadSeq = MIN(${reader}, lastSeq), version = ${nextVersion('?5', '?2')}
+					WHERE user = ?5 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
+						AND NOT EXISTS (SELECT 1 FROM InboxSettings WHERE user IN (?1, ?5) AND domain = ?2 AND readReceipts = 0)
+						AND MIN(${reader}, lastSeq) > otherReadSeq`,
+				)
+				.bind(user, key.domain, key.namespace, key.conversationID, other ?? ''),
+		]);
+	}
+
+	async getSettings(user: Address, domain: string): Promise<InboxSettings> {
+		const {results} = await this.db
+			.prepare(`SELECT readReceipts FROM InboxSettings WHERE user = ?1 AND domain = ?2`)
+			.bind(user, domain)
+			.all<{readReceipts: number}>();
+		return results[0] ? {readReceipts: Number(results[0].readReceipts) !== 0} : {...DEFAULT_INBOX_SETTINGS};
+	}
+
+	async setSettings(user: Address, domain: string, settings: Partial<InboxSettings>): Promise<InboxSettings> {
+		const next = {...(await this.getSettings(user, domain)), ...definedOf(settings)};
 		await this.db
 			.prepare(
-				`UPDATE Inbox SET lastReadSeq = MIN(?5, lastSeq), version = ${nextVersion('?1', '?2')}
-				WHERE user = ?1 AND domain = ?2 AND namespace = ?3 AND conversationID = ?4
-					AND MIN(?5, lastSeq) > lastReadSeq`,
+				`INSERT INTO InboxSettings (user, domain, readReceipts) VALUES (?1, ?2, ?3)
+				ON CONFLICT (user, domain) DO UPDATE SET readReceipts = excluded.readReceipts`,
 			)
-			.bind(user, key.domain, key.namespace, key.conversationID, seq)
+			.bind(user, domain, next.readReceipts ? 1 : 0)
 			.all();
+		return next;
 	}
+}
+
+/** The fields of `settings` that are set (an absent or undefined one keeps its value). */
+export function definedOf(settings: Partial<InboxSettings>): Partial<InboxSettings> {
+	return Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined));
 }

@@ -12,6 +12,7 @@ export function splitStatements(sql: string): string[] {
 
 /** The tables the migrations create, dropped by `resetDatabase`. */
 const TABLES = [
+	'InboxSettings',
 	'RequestSignatures',
 	'Blocks',
 	'Messages',

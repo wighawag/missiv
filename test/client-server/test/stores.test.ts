@@ -304,6 +304,85 @@ describe('conversation', () => {
 		stop();
 	});
 
+	/** a visibility a test switches */
+	function switchableVisibility(visible: boolean) {
+		const listeners = new Set<() => void>();
+		return {
+			visible: () => visible,
+			onChange(listener: () => void) {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			set(value: boolean) {
+				visible = value;
+				for (const listener of [...listeners]) listener();
+			},
+		};
+	}
+
+	it("marks read only while visible, and the sender's store shows the read receipt", async () => {
+		const s = await served();
+		const forA = conversationOf(A, B, s);
+		const stopA = hold(forA);
+		await until(forA, (c) => c.step === 'Fetched' && !!c.otherUser.keySet);
+		const visibility = switchableVisibility(false);
+		const forB = conversationOf(B, A, s, {markAsAcceptedAndRead: true, visibility});
+		const stopB = hold(forB);
+		await until(forB, (c) => c.step === 'Fetched');
+		await sockets(2);
+
+		await forA.sendMessage('seen?');
+		await until(forB, (c) => c.step === 'Fetched' && c.messages.length === 1);
+		await wait(100);
+		// in a background tab: neither accepted nor read
+		expect([s.count('/api/private/accept'), s.count('/api/private/markRead')]).toEqual([0, 0]);
+		expect((get(forA) as {otherReadSeq: number}).otherReadSeq).toBe(0);
+
+		visibility.set(true);
+		const read = await until(forA, (c) => c.step === 'Fetched' && c.otherReadSeq === 1);
+		expect(read.step === 'Fetched' && read.messages.map((m) => m.seq)).toEqual([1]);
+		expect(s.count('/api/private/markRead')).toBe(1);
+		// B's own store holds A's receipt of B's messages: none yet
+		expect((get(forB) as {otherReadSeq: number}).otherReadSeq).toBe(0);
+
+		// B stops sharing: B's reads reach A no more
+		expect(await h.shareReadReceipts(B, false)).toEqual({readReceipts: false});
+		await forA.sendMessage('and this one?');
+		await until(forB, (c) => c.step === 'Fetched' && c.messages.length === 2);
+		await wait(150);
+		expect(s.count('/api/private/markRead')).toBe(2);
+		expect((get(forA) as {otherReadSeq: number}).otherReadSeq).toBe(1);
+		stopA();
+		stopB();
+	});
+
+	it("shows the read receipt on a thread opened over polling, from the row its shared channel already saw", async () => {
+		const s = await served();
+		const AB = conversationIDOf([A.address, B.address]);
+		await h.send({from: A, to: B, content: 'one'});
+		// A's channel polls already (its conversation list), and learns the row's receipt
+		const list = openConversationList({
+			registration: registrationOf(writable<Account>(accountOf(A)), s.fetch, s.url),
+			endpoint: s.url,
+			domain: DOMAIN,
+			namespace: NAMESPACE,
+			fetch: s.fetch,
+			transport: 'poll',
+			pollIntervalMs: 20,
+		});
+		const stopList = hold(list);
+		await until(list, (l) => l.step === 'Fetched' && l.conversations.length === 1);
+		await h.markRead(B, AB, 1);
+		await until(list, (l) => l.step === 'Fetched' && l.conversations[0].otherReadSeq === 1);
+		// a thread opened on that channel later: no poll changes anything, the channel hands it the row
+		const forA = conversationOf(A, B, s, {transport: 'poll', pollIntervalMs: 20});
+		const stop = hold(forA);
+		const state = await until(forA, (c) => c.step === 'Fetched' && c.otherReadSeq === 1);
+		expect(state.step === 'Fetched' && state.messages.length).toBe(1);
+		stop();
+		stopList();
+	});
+
 	it('shares one socket with the conversation list, whose unread count follows the marks it makes', async () => {
 		const s = await served();
 		await h.send({from: A, to: B, content: 'one'});

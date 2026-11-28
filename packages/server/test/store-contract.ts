@@ -539,6 +539,87 @@ export function storeContract(implementation: Implementation, {describe, it, exp
 			});
 		});
 
+		describe('read receipts', () => {
+			const rowOf = async (stores: Stores, user: Address, a: Address, b: Address) =>
+				(await stores.inbox.getConversation(user, scope(a, b)))!;
+
+			it("a markRead is the other member's read receipt: raised only, at most their lastSeq, with their next version", async () => {
+				const {send, stores} = await setup();
+				const [a, b] = [address(), address()];
+				await send(a, b);
+				await send(a, b);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(0);
+				const before = (await rowOf(stores, a, a, b)).version;
+				await stores.inbox.markRead(b, scope(a, b), 1);
+				const read = await rowOf(stores, a, a, b);
+				expect(read.otherReadSeq).toBe(1);
+				expect(read.version).toBeGreaterThan(before);
+				// the reader's own row holds the other member's receipt, not its own
+				expect((await rowOf(stores, b, a, b)).otherReadSeq).toBe(0);
+				await stores.inbox.markRead(b, scope(a, b), 0);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(1);
+				// a repeated markRead changes nothing, not even the version
+				await stores.inbox.markRead(b, scope(a, b), 1);
+				expect((await rowOf(stores, a, a, b)).version).toBe(read.version);
+				await stores.inbox.markRead(b, scope(a, b), 99);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(2);
+			});
+
+			it("sends the reader's read point even when its own row did not move (a reply had moved it)", async () => {
+				const {send, stores} = await setup();
+				const [a, b] = [address(), address()];
+				await send(a, b);
+				await send(b, a);
+				// b's own message read b up to 2, which a does not know of yet
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(0);
+				await stores.inbox.markRead(b, scope(a, b), 2);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(2);
+				// and a's markRead is b's receipt
+				await stores.inbox.markRead(a, scope(a, b), 2);
+				expect((await rowOf(stores, b, a, b)).otherReadSeq).toBe(2);
+			});
+
+			it('flows only while both members share read receipts; who shares none sees nobody\'s', async () => {
+				const {send, stores} = await setup();
+				const [a, b] = [address(), address()];
+				expect(await stores.inbox.getSettings(b, DOMAIN)).toEqual({readReceipts: true});
+				await send(a, b);
+				await send(a, b);
+				await send(a, b);
+				// the reader shares none: nothing reaches the sender
+				expect(await stores.inbox.setSettings(b, DOMAIN, {readReceipts: false})).toEqual({readReceipts: false});
+				expect(await stores.inbox.getSettings(b, DOMAIN)).toEqual({readReceipts: false});
+				// another domain keeps its own settings
+				expect(await stores.inbox.getSettings(b, 'other.com')).toEqual({readReceipts: true});
+				await stores.inbox.markRead(b, scope(a, b), 1);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(0);
+				// an empty change keeps the settings
+				expect(await stores.inbox.setSettings(b, DOMAIN, {})).toEqual({readReceipts: false});
+				await stores.inbox.setSettings(b, DOMAIN, {readReceipts: true});
+				await stores.inbox.markRead(b, scope(a, b), 2);
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(2);
+				// the sender stops sharing: it sees none, and none moves
+				await stores.inbox.setSettings(a, DOMAIN, {readReceipts: false});
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(0);
+				await stores.inbox.markRead(b, scope(a, b), 3);
+				await stores.inbox.setSettings(a, DOMAIN, {readReceipts: true});
+				expect((await rowOf(stores, a, a, b)).otherReadSeq).toBe(2);
+			});
+
+			it('never tells the blocker of a message hidden from it: the receipt is at most its own lastSeq', async () => {
+				const {send, stores} = await setup();
+				const [a, b] = [address(), address()];
+				await send(a, b);
+				await stores.inbox.reject(b, scope(a, b), a, 1);
+				await send(a, b, {content: 'hidden'});
+				await send(a, b, {content: 'hidden too'});
+				// a read up to its own hidden messages: b's row stops at the one it sees
+				await stores.inbox.markRead(a, scope(a, b), 3);
+				const forB = await rowOf(stores, b, a, b);
+				expect([forB.lastSeq, forB.otherReadSeq]).toEqual([1, 1]);
+			});
+		});
+
 		describe('blocks', () => {
 			it('reject blocks the other member across the domain; their messages are stored hidden from the blocker', async () => {
 				const {send, list, stores} = await setup();

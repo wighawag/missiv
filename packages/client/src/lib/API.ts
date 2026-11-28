@@ -4,6 +4,7 @@ import type {
 	ActionEditDomainUser,
 	ActionGetDomainUser,
 	ActionGetKeySet,
+	ActionGetSettings,
 	ActionInboxChanges,
 	ActionListConversations,
 	ActionListMessages,
@@ -12,6 +13,7 @@ import type {
 	ActionRegisterDomainUser,
 	ActionReject,
 	ActionSendMessage,
+	ActionSetSettings,
 	ActionUnblock,
 	ErrorCode,
 	ErrorResponse,
@@ -19,6 +21,7 @@ import type {
 	ResponseEditDomainUser,
 	ResponseGetDomainUser,
 	ResponseGetKeySet,
+	ResponseGetSettings,
 	ResponseInboxChanges,
 	ResponseListConversations,
 	ResponseListMessages,
@@ -27,6 +30,7 @@ import type {
 	ResponseRegisterDomainUser,
 	ResponseReject,
 	ResponseSendMessage,
+	ResponseSetSettings,
 	ResponseUnblock
 } from '@missiv/common';
 
@@ -273,6 +277,20 @@ export class API {
 	/** Mark a conversation read up to `seq`. */
 	async markRead(action: ActionMarkRead, options: APIOptions) {
 		return this.authenticatedCall<ResponseMarkRead>('/private/markRead', action, options);
+	}
+
+	/** The account's settings in the domain (read receipts shared, by default). */
+	async getSettings(action: ActionGetSettings, options: APIOptions) {
+		return this.authenticatedCall<ResponseGetSettings>('/private/getSettings', action, options);
+	}
+
+	/**
+	 * Change the account's settings in the domain (the fields given). With
+	 * `readReceipts: false` the other members no longer see how far this account
+	 * read, and it no longer sees theirs.
+	 */
+	async setSettings(action: ActionSetSettings, options: APIOptions) {
+		return this.authenticatedCall<ResponseSetSettings>('/private/setSettings', action, options);
 	}
 
 	/**

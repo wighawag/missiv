@@ -44,6 +44,25 @@
 // - A frame of a type this object does not know is ignored and the socket
 //   stays open; every socket is sent `welcome` first (`@missiv/common`'s
 //   inbox.ts, "Room to grow the socket's wire").
+// - Read receipts (ADR-0006 "Amendment: read receipts"): the user's settings
+//   are this object's (`meta`, key `settings`). After a `markRead`, when the
+//   user shares read receipts, the read point goes to the other member's
+//   Inbox object (`receiveReceipt`) from the `receipts` table, the highest one
+//   to send and the highest acknowledged, retried by alarm until acknowledged
+//   (a newer read point replaces a pending one; it is monotonic). The other
+//   object applies it to its row's `otherReadSeq` only when its own user shares
+//   too (else it acknowledges and changes nothing), so a receipt moves only
+//   while both share, as on SQL. A user who stops sharing drops its pending
+//   receipts, and sees 0 as every row's `otherReadSeq` (`format`).
+// - A receipt is kept as it came, and shown at most the row's `lastSeq`
+//   (`format`): the members' rows are updated independently, so the reader's
+//   point may be ahead of this row's `lastSeq` (this user's own update still
+//   retried), and it shows in full once the row catches up. A receipt for a
+//   row that does not exist yet waits in `early_receipts` and is folded in when
+//   the row is made. The row's version moves only when what it shows changes,
+//   so a receipt about messages hidden from this user moves nothing. A receipt
+//   that reaches a user who shares none is dropped (acknowledged): the next
+//   newer read point is sent again, where SQL would also resend the same one.
 // - The inbox version (`@missiv/common`'s inbox.ts) is this object's rows' own:
 //   each change of a row gives it the highest row's version plus one, in the
 //   statement that changes it, so `changes` (the polling transport) reads only
@@ -67,6 +86,7 @@ import {
 	type Conversation,
 	type ConversationStatus,
 	type InboxServerFrame,
+	type InboxSettings,
 	type Message,
 } from '@missiv/common';
 import {
@@ -80,7 +100,7 @@ import {
 } from '@missiv/server';
 import type {CloudflareWorkerEnv} from '../env.js';
 import type {InboxApplyAnswer} from './conversation.js';
-import {conversationObject, conversationKeyOf, retryDelayMs, type InboxOwner} from './names.js';
+import {conversationObject, conversationKeyOf, inboxObject, retryDelayMs, type InboxOwner} from './names.js';
 
 /** How recently a socket must have answered a ping (or been accepted) to count as online: Node/Bun's idle close, 90 s. */
 export const LIVENESS_MS = HEARTBEAT_INTERVAL_MS * HEARTBEAT_IDLE_INTERVALS;
@@ -116,6 +136,22 @@ CREATE TABLE IF NOT EXISTS inbox (
 	lastReadSeq INTEGER NOT NULL,
 	lastMessageAt INTEGER NOT NULL,
 	version INTEGER NOT NULL DEFAULT 0,
+	otherReadSeq INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (namespace, conversationID)
+);
+CREATE TABLE IF NOT EXISTS early_receipts (
+	namespace TEXT NOT NULL,
+	conversationID TEXT NOT NULL,
+	seq INTEGER NOT NULL,
+	PRIMARY KEY (namespace, conversationID)
+);
+CREATE TABLE IF NOT EXISTS receipts (
+	namespace TEXT NOT NULL,
+	conversationID TEXT NOT NULL,
+	seq INTEGER NOT NULL,
+	sentSeq INTEGER NOT NULL,
+	attempts INTEGER NOT NULL,
+	nextAttemptAt INTEGER NOT NULL,
 	PRIMARY KEY (namespace, conversationID)
 );
 CREATE INDEX IF NOT EXISTS inbox_all ON inbox (namespace, lastMessageAt DESC, conversationID DESC);
@@ -177,7 +213,21 @@ type InboxRow = {
 	lastReadSeq: number;
 	lastMessageAt: number;
 	version: number;
+	otherReadSeq: number;
 };
+
+/** A read receipt to send to the other member's Inbox object: pending while `seq > sentSeq`. */
+type ReceiptRow = {
+	namespace: string;
+	conversationID: string;
+	seq: number;
+	sentSeq: number;
+	attempts: number;
+	nextAttemptAt: number;
+};
+
+/** The settings of a user who set none (as `DEFAULT_INBOX_SETTINGS` on SQL). */
+const DEFAULT_SETTINGS: InboxSettings = {readReceipts: true};
 
 type PropagationRow = {
 	namespace: string;
@@ -205,6 +255,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	private owner?: InboxOwner;
 	/** each socket's syncs, answered in turn (in memory: an object with a sync in progress is not evicted) */
 	private syncs = new Map<WebSocket, Promise<void>>();
+	/** the user's settings, once read (`settings`) */
+	private cachedSettings?: InboxSettings;
 	/** how recently a socket must have shown a sign of life to count as online (a seam for tests) */
 	protected livenessMs = LIVENESS_MS;
 
@@ -224,12 +276,20 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			this.sql.exec(`ALTER TABLE inbox ADD COLUMN version INTEGER NOT NULL DEFAULT 0`);
 			this.sql.exec(`UPDATE inbox SET version = rowid`);
 		}
+		if (!columns.some((column) => column.name === 'otherReadSeq')) {
+			this.sql.exec(`ALTER TABLE inbox ADD COLUMN otherReadSeq INTEGER NOT NULL DEFAULT 0`);
+		}
 		this.sql.exec(VERSION_INDEX);
 	}
 
 	/** The Conversation object of `key` (a seam for tests). */
 	protected conversationOf(key: ConversationKey) {
 		return conversationObject(this.env, key);
+	}
+
+	/** The Inbox object of another user of the domain (a seam for tests). */
+	protected inboxOf(domain: string, user: Address) {
+		return inboxObject(this.env, domain, user);
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -391,6 +451,7 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		}
 	}
 
+	/** Mark read up to `seq`, then send the read point to the other member's Inbox object when this user shares read receipts. */
 	async markRead(owner: InboxOwner, key: ConversationKey, seq: number): Promise<void> {
 		this.remember(owner);
 		this.sql.exec(
@@ -402,6 +463,88 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			seq,
 		);
 		this.publishRow(key);
+		const row = this.row(key);
+		if (!row || !this.settings().readReceipts || !this.otherMember(key.conversationID)) {
+			return;
+		}
+		this.sql.exec(
+			`INSERT INTO receipts (namespace, conversationID, seq, sentSeq, attempts, nextAttemptAt) VALUES (?, ?, ?, 0, 0, ?)
+			ON CONFLICT (namespace, conversationID) DO UPDATE SET seq = MAX(receipts.seq, excluded.seq),
+				attempts = 0, nextAttemptAt = excluded.nextAttemptAt`,
+			key.namespace,
+			key.conversationID,
+			row.lastReadSeq,
+			Date.now() + 1000,
+		);
+		const receipt = this.receipt(key);
+		if (receipt && receipt.seq > receipt.sentSeq) {
+			await this.schedule();
+			await this.sendReceipt(owner, receipt);
+			await this.schedule();
+		}
+	}
+
+	/**
+	 * A read receipt from the other member's Inbox object: their read point, as
+	 * this row's `otherReadSeq` (raised only; shown at most its `lastSeq`), when
+	 * this user shares read receipts too; acknowledged either way. The version
+	 * moves, and the row is pushed, only when what the row shows changes.
+	 */
+	async receiveReceipt(owner: InboxOwner, key: ConversationKey, seq: number): Promise<void> {
+		this.remember(owner);
+		if (!this.settings().readReceipts) {
+			return;
+		}
+		const before = this.rawRow(key);
+		if (!before) {
+			// the row is not made yet (this user's update still retried): folded in when it is
+			this.sql.exec(
+				`INSERT INTO early_receipts (namespace, conversationID, seq) VALUES (?, ?, ?)
+				ON CONFLICT (namespace, conversationID) DO UPDATE SET seq = MAX(early_receipts.seq, excluded.seq)`,
+				key.namespace,
+				key.conversationID,
+				seq,
+			);
+			return;
+		}
+		if (seq <= Number(before.otherReadSeq)) {
+			return;
+		}
+		const shows = Math.min(seq, Number(before.lastSeq)) > Math.min(Number(before.otherReadSeq), Number(before.lastSeq));
+		this.sql.exec(
+			`UPDATE inbox SET otherReadSeq = ?${shows ? `, version = ${NEXT_VERSION}` : ''}
+			WHERE namespace = ? AND conversationID = ?`,
+			seq,
+			key.namespace,
+			key.conversationID,
+		);
+		if (shows) {
+			this.publishRow(key);
+		}
+	}
+
+	async getSettings(owner: InboxOwner): Promise<InboxSettings> {
+		this.remember(owner);
+		return this.settings();
+	}
+
+	/** Change the fields given; a user who stops sharing read receipts drops the ones still pending. */
+	async setSettings(owner: InboxOwner, settings: Partial<InboxSettings>): Promise<InboxSettings> {
+		this.remember(owner);
+		const next: InboxSettings = {
+			...this.settings(),
+			...Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined)),
+		};
+		this.sql.exec(
+			`INSERT INTO meta (key, value) VALUES ('settings', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+			JSON.stringify(next),
+		);
+		this.cachedSettings = next;
+		if (!next.readReceipts) {
+			this.sql.exec(`UPDATE receipts SET seq = sentSeq, attempts = 0`);
+			await this.schedule();
+		}
+		return next;
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -496,6 +639,9 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 				// every pending one, not only the soonest's (a propagation is idempotent)
 				const due = this.sql.exec<PropagationRow>(`SELECT * FROM propagations`).toArray();
 				await Promise.all(due.map((row) => this.propagate(owner, row)));
+				// every pending read receipt (monotonic, so idempotent too)
+				const receipts = this.sql.exec<ReceiptRow>(`SELECT * FROM receipts WHERE seq > sentSeq`).toArray();
+				await Promise.all(receipts.map((row) => this.sendReceipt(owner, row)));
 			}
 		} catch (err) {
 			console.error(`inbox: the alarm failed`, err);
@@ -610,7 +756,12 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	/** The alarm at the soonest of the sockets' session expiry and the propagations' next attempt; none when neither. */
 	private async schedule(): Promise<void> {
 		const now = Date.now();
-		let next = this.sql.exec<{next: number | null}>(`SELECT MIN(nextAttemptAt) AS next FROM propagations`).one().next;
+		let next = this.sql
+			.exec<{next: number | null}>(
+				`SELECT MIN(next) AS next FROM (SELECT MIN(nextAttemptAt) AS next FROM propagations
+				UNION ALL SELECT MIN(nextAttemptAt) AS next FROM receipts WHERE seq > sentSeq)`,
+			)
+			.one().next;
 		for (const ws of this.ctx.getWebSockets()) {
 			const exp = claimsOf(ws)?.exp;
 			if (exp !== undefined && exp > now && (next === null || exp < next)) {
@@ -621,6 +772,60 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			await this.ctx.storage.deleteAlarm();
 		} else {
 			await this.ctx.storage.setAlarm(next);
+		}
+	}
+
+	// ------------------------------------------------------------------------------------------------
+	// read receipts
+	// ------------------------------------------------------------------------------------------------
+
+	/** the user's settings, read once per instance (this object is their only writer) */
+	private settings(): InboxSettings {
+		if (!this.cachedSettings) {
+			const rows = this.sql.exec<{value: string}>(`SELECT value FROM meta WHERE key = 'settings'`).toArray();
+			this.cachedSettings = rows[0]
+				? {...DEFAULT_SETTINGS, ...(JSON.parse(rows[0].value) as Partial<InboxSettings>)}
+				: {...DEFAULT_SETTINGS};
+		}
+		return this.cachedSettings;
+	}
+
+	private receipt(key: {namespace: string; conversationID: string}): ReceiptRow | undefined {
+		const rows = this.sql
+			.exec<ReceiptRow>(
+				`SELECT * FROM receipts WHERE namespace = ? AND conversationID = ?`,
+				key.namespace,
+				key.conversationID,
+			)
+			.toArray();
+		return rows[0];
+	}
+
+	/** Send a pending read receipt to the other member's Inbox object; on failure, retried by alarm. */
+	private async sendReceipt(owner: InboxOwner, row: ReceiptRow): Promise<void> {
+		const other = this.otherMember(row.conversationID);
+		if (!other) {
+			return;
+		}
+		const key = {domain: owner.domain, namespace: row.namespace, conversationID: row.conversationID};
+		try {
+			await this.inboxOf(owner.domain, other).receiveReceipt({domain: owner.domain, user: other}, key, row.seq);
+			this.sql.exec(
+				`UPDATE receipts SET sentSeq = MAX(sentSeq, ?), attempts = 0 WHERE namespace = ? AND conversationID = ?`,
+				row.seq,
+				row.namespace,
+				row.conversationID,
+			);
+		} catch (err) {
+			console.error(`inbox: a read receipt failed, retried by alarm`, err);
+			const attempts = row.attempts + 1;
+			this.sql.exec(
+				`UPDATE receipts SET attempts = ?, nextAttemptAt = ? WHERE namespace = ? AND conversationID = ?`,
+				attempts,
+				Date.now() + retryDelayMs(attempts),
+				row.namespace,
+				row.conversationID,
+			);
 		}
 	}
 
@@ -660,6 +865,37 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			update.own ? update.seq : 0,
 			update.lastMessageAt,
 		);
+		// a receipt that came before the row was made (its version is the upsert's)
+		const early = this.sql
+			.exec<{seq: number}>(
+				`SELECT seq FROM early_receipts WHERE namespace = ? AND conversationID = ?`,
+				update.namespace,
+				update.conversationID,
+			)
+			.toArray()[0];
+		if (early) {
+			this.sql.exec(
+				`UPDATE inbox SET otherReadSeq = MAX(otherReadSeq, ?) WHERE namespace = ? AND conversationID = ?`,
+				early.seq,
+				update.namespace,
+				update.conversationID,
+			);
+			this.sql.exec(
+				`DELETE FROM early_receipts WHERE namespace = ? AND conversationID = ?`,
+				update.namespace,
+				update.conversationID,
+			);
+		}
+	}
+
+	private rawRow(key: {namespace: string; conversationID: string}): InboxRow | undefined {
+		return this.sql
+			.exec<InboxRow>(
+				`SELECT * FROM inbox WHERE namespace = ? AND conversationID = ?`,
+				key.namespace,
+				key.conversationID,
+			)
+			.toArray()[0];
 	}
 
 	private row(key: {namespace: string; conversationID: string}): Conversation | undefined {
@@ -682,6 +918,10 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 			status: STATUS_OF[Number(row.status) as InboxStatus],
 			lastSeq: Number(row.lastSeq),
 			lastReadSeq: Number(row.lastReadSeq),
+			// who does not share read receipts sees nobody's
+			otherReadSeq: this.settings().readReceipts
+				? Math.min(Number(row.otherReadSeq ?? 0), Number(row.lastSeq))
+				: 0,
 			lastMessageAt: Number(row.lastMessageAt),
 			version: Number(row.version),
 		};

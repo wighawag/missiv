@@ -56,6 +56,7 @@ function rowOf(domain: string, lastSeq: number, version: number): Conversation {
 		status: 'accepted',
 		lastSeq,
 		lastReadSeq: 0,
+		otherReadSeq: 0,
 		lastMessageAt: lastSeq,
 		version
 	};

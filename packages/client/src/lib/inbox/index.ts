@@ -35,6 +35,10 @@
 // - A failed poll is retried with the reconnection's backoff (1 s doubling to
 //   30 s), and the channel reports itself not connected until a poll succeeds,
 //   which is a new `onOpen`.
+// - A sync by polling hands each conversation's newest row the channel saw
+//   (from either transport) to the listeners, as a socket's sync answers the
+//   row, so a store that joins a polling channel later still gets the row's
+//   state (its read receipt) without a poll that changes anything.
 // - `features` is what the current socket's `welcome` named (the optional
 //   client frames its server accepts), and undefined while none is known: no
 //   socket, polling, before the welcome, or a server older than the welcome. A
@@ -196,6 +200,8 @@ export function openInboxChannel(params: {
 	let looking = false;
 	/** per conversation (`inboxConversationKey`), the highest seq known to be held: synced, passed on, or its row's */
 	const held = new Map<string, number>();
+	/** per conversation, its newest row seen (by version), so a sync by polling can hand it to a store that joined later */
+	const rows = new Map<string, Conversation>();
 
 	const each = (f: (listener: InboxListener) => void) => {
 		for (const listener of [...listeners]) {
@@ -218,6 +224,11 @@ export function openInboxChannel(params: {
 	function row(conversation: Conversation) {
 		if (typeof conversation.version === 'number' && conversation.version > version) {
 			version = conversation.version;
+		}
+		const key = inboxConversationKey(conversation);
+		const known = rows.get(key);
+		if (!known || (conversation.version ?? 0) >= (known.version ?? 0)) {
+			rows.set(key, conversation);
 		}
 		each((l) => l.onConversation?.(conversation));
 	}
@@ -483,6 +494,9 @@ export function openInboxChannel(params: {
 		await Promise.all(
 			Object.entries(since).map(async ([conversation, seq]) => {
 				hold(conversation, seq);
+				// the row, as a socket's sync answers it: the newest this channel saw
+				const known = rows.get(conversation);
+				if (known) each((l) => l.onConversation?.(known));
 				try {
 					await readAfter(conversation, seq, current);
 				} catch (err) {

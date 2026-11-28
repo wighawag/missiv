@@ -114,6 +114,12 @@ export function createCloudflareStores(env: CloudflareWorkerEnv, cache: KeyDirec
 			async markRead(user, key, seq) {
 				await inbox(key.domain, user).markRead(owner(key.domain, user), conversationKeyOf(key), seq);
 			},
+			async getSettings(user, domain) {
+				return inbox(domain, user).getSettings(owner(domain, user));
+			},
+			async setSettings(user, domain, settings) {
+				return inbox(domain, user).setSettings(owner(domain, user), settings);
+			},
 		},
 	};
 }
