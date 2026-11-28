@@ -1,5 +1,13 @@
 # @missiv/bun
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [4c48909]
+  - @missiv/common@0.8.0
+  - @missiv/server@0.8.0
+
 ## 0.5.1
 
 ### Patch Changes
