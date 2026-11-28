@@ -1,5 +1,12 @@
 # missiv
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [b7cb5fb]
+  - @missiv/server@0.7.0
+
 ## 0.5.0
 
 ### Minor Changes

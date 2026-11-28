@@ -1,6 +1,6 @@
 {
   "name": "@missiv/common",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A messaging system for ethereum addresses",
   "license": "AGPL-3.0-only",
   "repository": {
