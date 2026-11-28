@@ -55,7 +55,7 @@ export {
 	type InboxVersionCache,
 	type KeyDirectoryCache,
 } from './stores/index.js';
-export {answerSync, checkInboxUpgrade, type SyncStores} from './api/inbox/index.js';
+export {answerSync, checkInboxUpgrade, inboxWelcomeFrame, type SyncStores} from './api/inbox/index.js';
 export {inboxTransportsFromEnv, requireInboxTransport, type InboxTransports} from './transports.js';
 export {signSessionToken, verifySessionToken, type SessionClaims} from './session.js';
 export {Room} from './Room.js';

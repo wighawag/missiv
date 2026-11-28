@@ -9,8 +9,9 @@ import {
 	INBOX_SESSION_EXPIRED_REASON,
 	INBOX_WS_PROTOCOL,
 	ActionInboxChangesSchema,
-	InboxSyncSchema,
+	INBOX_SERVER_FEATURES,
 	MAX_PAGE_SIZE,
+	readInboxClientFrame,
 	type ResponseInboxChanges,
 	membersOfConversationID,
 	parseInboxConversationKey,
@@ -32,6 +33,11 @@ export type SyncStores = {
 	conversations: Pick<ConversationStore, 'listMessages'>;
 	inbox: Pick<Inbox, 'getConversation' | 'update'>;
 };
+
+/** The first frame of every accepted socket: the optional client frames this server accepts (`@missiv/common`'s inbox.ts). */
+export function inboxWelcomeFrame(): InboxServerFrame {
+	return {type: 'welcome', features: [...INBOX_SERVER_FEATURES]};
+}
 
 /** The session token a client offers as its second WebSocket protocol, after `missiv-inbox`. */
 function offeredToken(header: string | undefined): string | undefined {
@@ -167,8 +173,9 @@ export function getRoutedInboxAPI<CustomEnv extends Env>(
  * absent, invalid or expired one is refused 401 (`unauthenticated`), as every
  * other route refuses it, and no socket is opened. An accepted socket is added
  * to the user's live inbox (every new message it can see and every change of
- * its inbox rows is pushed to it), answers `sync` frames and the heartbeat's
- * `ping`, and is closed with `session-expired` (4001) when its token expires,
+ * its inbox rows is pushed to it), is sent `welcome` first, answers `sync`
+ * frames and the heartbeat's `ping`, ignores a frame of a type it does not
+ * know, and is closed with `session-expired` (4001) when its token expires,
  * `heartbeat-timeout` (4002) when it sent nothing for three heartbeat
  * intervals (`inboxSocketEvents`).
  */
@@ -218,8 +225,9 @@ export function getInboxChangesAPI<CustomEnv extends Env>(options: ServerOptions
 
 /**
  * The events of one accepted socket of the live inbox held in this process
- * (`getInboxAPI`): added to `live` on open, answering each `sync` in turn and
- * `ping` with `pong` at once (the heartbeat, `@missiv/common`'s heartbeat.ts),
+ * (`getInboxAPI`): added to `live` on open and sent `welcome`, answering each
+ * `sync` in turn, ignoring a frame of a type it does not know, and `ping` with
+ * `pong` at once (the heartbeat, `@missiv/common`'s heartbeat.ts),
  * closed `session-expired` at the token's expiry and `heartbeat-timeout` once
  * it sent nothing for three heartbeat intervals.
  */
@@ -251,6 +259,7 @@ export function inboxSocketEvents(stores: SyncStores, claims: SessionClaims, liv
 				send: (data) => ws.send(data),
 				close: (code, reason) => ws.close(code, reason),
 			};
+			connection.send(JSON.stringify(inboxWelcomeFrame()));
 			remove = live.connect(claims.domain, claims.account, connection);
 			expiry = setTimeout(
 				() => {
@@ -278,15 +287,15 @@ export function inboxSocketEvents(stores: SyncStores, claims: SessionClaims, liv
 					if (!open || !connection) {
 						return;
 					}
-					let frame: unknown;
-					try {
-						frame = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer));
-					} catch {
-						frame = undefined;
+					const frame = readInboxClientFrame(
+						typeof data === 'string' ? data : (data as ArrayBuffer | ArrayBufferView),
+					);
+					if (frame.kind === 'unknown') {
+						// a frame of a newer client: ignored, the socket stays open
+						return;
 					}
-					const sync = InboxSyncSchema.safeParse(frame);
-					if (!sync.success) {
-						// 1008: policy violation; nothing but a sync (or a ping) is expected
+					if (frame.kind === 'invalid') {
+						// 1008: policy violation; not a frame at all, or a malformed sync
 						connection.close(1008, 'expected a sync frame');
 						closed();
 						return;
@@ -295,7 +304,7 @@ export function inboxSocketEvents(stores: SyncStores, claims: SessionClaims, liv
 					await answerSync(
 						stores,
 						claims,
-						sync.data,
+						frame.sync,
 						(frame) => target.send(JSON.stringify(frame)),
 						() => open,
 					);

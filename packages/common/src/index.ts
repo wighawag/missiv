@@ -496,6 +496,10 @@ export {
 	type InboxSync,
 	type InboxClientFrame,
 	type InboxServerFrame,
+	readInboxClientFrame,
+	type ReadInboxClientFrame,
+	INBOX_SERVER_FEATURES,
+	type InboxFeature,
 } from './inbox.js';
 
 export {

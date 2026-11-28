@@ -76,3 +76,11 @@ Messages keyed `(domain, namespace, conversationID, seq)` with unique `(domain, 
 - **Refusing a duplicate messageID outright**: rejected; it reports a successful send as failed to a client that retries after a lost response.
 - **No replay set at all**: rejected for `/session` and `register`, for the reasons above.
 - **Token as the first socket frame**: rejected; the socket cannot be routed to its Inbox before the user is known.
+
+## Amendment: room to grow the live channel's wire (2026-11-28)
+
+The live channel will gain optional client frames (typing and presence, analysed in `work/notes/ideas/dm-presence-typing-read-receipts.md`), and until now a server closed the socket (1008) on any client frame but `sync` and `ping`, so a newer client would lose its socket on an older server. Decided with the human, ahead of those frames, so that tolerant servers are deployed before any client needs them:
+
+- **`welcome`**: every accepted socket is first sent `{type: 'welcome', features: string[]}`, the optional client frames the server accepts (none yet, `INBOX_SERVER_FEATURES`). A client sends an optional frame only when the welcome of the socket it is on names it (`InboxChannel.features`); no welcome means a server older than this, which accepts only `sync` and `ping`. A client ignores server frames it does not know, as it already did, so the welcome breaks no older client.
+- **Unknown client frames are ignored**: a JSON object with a string `type` other than `sync` leaves the socket open (`readInboxClientFrame`); anything else (not JSON, no `type`, a malformed `sync`) still closes it with 1008.
+- Considered: the features on `ready` (rejected: `ready` answers a sync, and a channel with nothing to sync sends none); a second protocol name at the upgrade, such as `missiv-inbox-2` (rejected: one name per wire version multiplies with every feature, where a list does not); the polling transport carries no optional frames, so it gets no welcome.

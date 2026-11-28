@@ -26,6 +26,7 @@ import {
 	ServerObjectConversation,
 	ServerObjectInbox,
 } from '../src/stores/index.js';
+import {isLiveSocket, LIVENESS_MS} from '../src/stores/inbox.js';
 import type {CloudflareWorkerEnv} from '../src/env.js';
 
 const DOMAIN = 'objects.test';
@@ -358,6 +359,47 @@ describe('live sockets', () => {
 		expect(await inbox.isOnline({domain: DOMAIN, user: b})).toBe(false);
 	});
 
+	it('sends welcome first, then ignores a frame of a type it does not know and still answers a sync', async () => {
+		const {send} = setup();
+		const [a, b] = [address(), address()];
+		const {message} = await send(a, b, 'ns', 'one');
+		const socket = await openInbox(b);
+		await socket.until(() => socket.frames.length > 0);
+		expect(socket.frames[0]).toEqual({type: 'welcome', features: []});
+		socket.ws.send(JSON.stringify({type: 'typing', conversation: inboxConversationKey(scope(a, b))}));
+		socket.ws.send(JSON.stringify({type: 'sync', since: {[inboxConversationKey(scope(a, b))]: 0}}));
+		await socket.until(() => socket.frames.some((f) => f.type === 'ready'));
+		expect(socket.frames.find((f) => f.type === 'message')).toEqual({type: 'message', message});
+		expect(socket.closed()).toBeUndefined();
+		socket.ws.close(1000, 'done');
+	});
+
+	it('closes a socket that sends a frame that is not an object with a type (1008)', async () => {
+		const socket = await openInbox(address());
+		socket.ws.send('{"since": {}}');
+		await socket.until(() => socket.closed() !== undefined);
+		expect(socket.closed()?.code).toBe(1008);
+	});
+
+	it('counts a socket online only while it answered a ping (or was accepted) recently', async () => {
+		const b = address();
+		const socket = await openInbox(b);
+		const inbox = inboxObject(cfEnv, DOMAIN, b);
+		// just accepted: online
+		expect(await inbox.isOnline({domain: DOMAIN, user: b})).toBe(true);
+		await runInDurableObject(inbox, (instance: ServerObjectInbox) => {
+			(instance as unknown as {livenessMs: number}).livenessMs = 100;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		// silent past the window, as a client gone without a close frame: not online, though its session runs
+		expect(await inbox.isOnline({domain: DOMAIN, user: b})).toBe(false);
+		socket.ws.send(HEARTBEAT_PING);
+		await socket.until(() => socket.texts.includes(HEARTBEAT_PONG));
+		// a ping the runtime answered: online again
+		expect(await inbox.isOnline({domain: DOMAIN, user: b})).toBe(true);
+		socket.ws.close(1000, 'done');
+	});
+
 	it('refuses an upgrade without a valid token before any socket is opened', async () => {
 		for (const protocol of ['missiv-inbox', 'missiv-inbox, not.a-token']) {
 			const response = await SELF.fetch('https://missiv.test/api/inbox/ws', {
@@ -366,6 +408,22 @@ describe('live sockets', () => {
 			expect(response.status).toBe(401);
 			expect(((await response.json()) as {error: {code: string}}).error.code).toBe('unauthenticated');
 		}
+	});
+});
+
+describe('isLiveSocket', () => {
+	const now = 1_000_000_000;
+	it('is live while the session runs and a ping or the acceptance is within the window', () => {
+		const exp = now + 60_000;
+		expect(LIVENESS_MS).toBe(90_000);
+		expect(isLiveSocket({exp, acceptedAt: now - 1000}, now)).toBe(true);
+		expect(isLiveSocket({exp, acceptedAt: now - LIVENESS_MS}, now)).toBe(false);
+		expect(isLiveSocket({exp, acceptedAt: now - 10 * LIVENESS_MS, lastPingAt: now - 1000}, now)).toBe(true);
+		// accepted before the acceptance was recorded: live from its first answered ping only
+		expect(isLiveSocket({exp}, now)).toBe(false);
+		expect(isLiveSocket({exp, lastPingAt: now - 1000}, now)).toBe(true);
+		// an expired session is never live
+		expect(isLiveSocket({exp: now, acceptedAt: now, lastPingAt: now}, now)).toBe(false);
 	});
 });
 

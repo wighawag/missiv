@@ -69,10 +69,17 @@ describe("the live inbox's sockets on Node.js and Bun", () => {
 		return {live, ws, message};
 	}
 
-	it('answers a ping with pong', async () => {
+	it('answers a ping with pong, after the welcome every socket gets first', async () => {
 		const {ws, message} = open();
 		await message(HEARTBEAT_PING);
-		expect(ws.sent).toEqual([HEARTBEAT_PONG]);
+		expect(ws.sent).toEqual([JSON.stringify({type: 'welcome', features: []}), HEARTBEAT_PONG]);
+		expect(ws.closed).toBeUndefined();
+	});
+
+	it('ignores a frame of a type it does not know, and keeps the socket open', async () => {
+		const {ws, message} = open();
+		await message(JSON.stringify({type: 'typing', conversation: 'x'}));
+		expect(ws.sent).toEqual([JSON.stringify({type: 'welcome', features: []})]);
 		expect(ws.closed).toBeUndefined();
 	});
 

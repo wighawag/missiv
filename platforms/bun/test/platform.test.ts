@@ -78,8 +78,8 @@ describe('bun platform', () => {
 		expect(ws.protocol).toBe(INBOX_WS_PROTOCOL);
 		await actions.send({from: a, to: b, content: 'live on bun'});
 		await received;
-		expect(frames.map((frame) => frame.type)).toEqual(['message', 'conversation']);
-		expect(frames[0].type === 'message' && frames[0].message.content).toBe('live on bun');
+		expect(frames.map((frame) => frame.type)).toEqual(['welcome', 'message', 'conversation']);
+		expect(frames[1].type === 'message' && frames[1].message.content).toBe('live on bun');
 		ws.close();
 	});
 

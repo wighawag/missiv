@@ -97,8 +97,13 @@ describe('nodejs platform', () => {
 			}
 			const {token} = await api.getSession(DOMAIN, {privateKey: b.keySet.signing.privateKey});
 			const ws = new WebSocket(url.replace(/^http/, 'ws') + INBOX_WS_PATH, [INBOX_WS_PROTOCOL, token]);
+			const frames: InboxServerFrame[] = [];
 			const received = new Promise<InboxServerFrame>((resolve) =>
-				ws.addEventListener('message', (event) => resolve(JSON.parse(String(event.data)))),
+				ws.addEventListener('message', (event) => {
+					const frame = JSON.parse(String(event.data)) as InboxServerFrame;
+					frames.push(frame);
+					if (frame.type === 'message') resolve(frame);
+				}),
 			);
 			await new Promise((resolve, reject) => {
 				ws.addEventListener('open', resolve);
@@ -113,6 +118,8 @@ describe('nodejs platform', () => {
 			await api.sendMessage({type: 'sendMessage', message}, {privateKey: a.keySet.signing.privateKey});
 			const frame = await received;
 			expect(frame.type === 'message' && [frame.message.seq, frame.message.content]).toEqual([1, message.content]);
+			// every socket is sent the welcome first
+			expect(frames[0]).toEqual({type: 'welcome', features: []});
 			ws.close();
 		} finally {
 			await new Promise((resolve) => server.close(resolve));

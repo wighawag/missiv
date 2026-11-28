@@ -150,3 +150,34 @@ describe("the live inbox channel's heartbeat", () => {
 		unsubscribe();
 	});
 });
+
+describe("the live inbox channel's features", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("are the current socket's welcome, unknown before it and after the socket is lost", async () => {
+		const { sockets, createWebSocket } = fakeSockets();
+		const channel = channelOf(createWebSocket);
+		const unsubscribe = channel.subscribe({});
+		await vi.advanceTimersByTimeAsync(0);
+		sockets[0].emit('open');
+		// a server older than the welcome sends none: nothing is known
+		expect(channel.features).toBeUndefined();
+		sockets[0].emit('message', {
+			data: JSON.stringify({ type: 'welcome', features: ['typing', 7] })
+		});
+		expect(channel.features).toEqual(['typing']);
+		sockets[0].emit('close', { code: 1006 });
+		expect(channel.features).toBeUndefined();
+		await vi.advanceTimersByTimeAsync(1000);
+		sockets[1].emit('open');
+		sockets[1].emit('message', { data: JSON.stringify({ type: 'welcome', features: [] }) });
+		expect(channel.features).toEqual([]);
+		unsubscribe();
+		expect(channel.features).toBeUndefined();
+	});
+});

@@ -153,7 +153,8 @@ describe('live inbox channel', () => {
 		const forC = await connect(await tokenOf(C));
 		await h.send({from: A, to: B, content: 'not for C'});
 		await wait(100);
-		expect(forC.frames).toEqual([]);
+		// the welcome every socket gets first, and nothing else
+		expect(forC.frames).toEqual([{type: 'welcome', features: []}]);
 		forC.ws.close();
 	});
 
@@ -192,7 +193,7 @@ describe('live inbox channel', () => {
 				[2, 'two'],
 				[3, 'three'],
 			]);
-			expect(forB.frames.map((frame) => frame.type)).toEqual(['message', 'message', 'conversation', 'ready']);
+			expect(forB.frames.map((frame) => frame.type)).toEqual(['welcome', 'message', 'message', 'conversation', 'ready']);
 			forB.ws.close();
 		});
 
@@ -247,11 +248,28 @@ describe('live inbox channel', () => {
 			forB.ws.close();
 		});
 
-		it('closes a socket that sends anything but a sync', async () => {
+		it('ignores a frame of a type it does not know, and still answers a sync after it', async () => {
+			await h.send({from: A, to: B, content: 'one'});
 			const forB = await connect(await tokenOf(B));
-			forB.ws.send('{"type":"hello"}');
-			expect((await forB.closed).code).toBe(1008);
+			forB.ws.send(JSON.stringify({type: 'typing', conversation: 'anything'}));
+			forB.sync({[inboxConversationKey({namespace: NAMESPACE, conversationID: AB})]: 0});
+			await forB.next((frame) => frame.type === 'ready');
+			expect(messagesOf(forB.frames)).toEqual([[1, 'one']]);
+			forB.ws.close();
 		});
+
+		for (const [what, data] of [
+			['text that is not JSON', 'not json'],
+			['JSON that is not an object', '[1, 2]'],
+			['an object without a type', '{"since": {}}'],
+			['a malformed sync', '{"type": "sync", "since": "everything"}'],
+		] as const) {
+			it(`closes a socket that sends ${what} (1008)`, async () => {
+				const forB = await connect(await tokenOf(B));
+				forB.ws.send(data);
+				expect((await forB.closed).code).toBe(1008);
+			});
+		}
 	});
 
 	describe('authentication', () => {

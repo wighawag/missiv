@@ -30,6 +30,20 @@
 //   by the runtime (`setWebSocketAutoResponse`), so it neither wakes this
 //   object nor bills its duration. An idle socket is not closed here, as it is
 //   on Node/Bun: a hibernated socket costs nothing.
+// - A socket counts for `isOnline` (the push skip, `PUSH_SKIP_WHEN_ONLINE`)
+//   only while it is live: its session not expired AND a ping auto-answered
+//   (`getWebSocketAutoResponseTimestamp`, read without waking anything) or its
+//   acceptance within `LIVENESS_MS` (90 s, the idle time after which Node/Bun
+//   close a socket). A client that vanished without a close frame (a phone off
+//   the network) keeps its hibernated socket listed until the runtime notices,
+//   possibly until its token's expiry (up to an hour), during which it would
+//   otherwise suppress every push (observation
+//   `2026-11-28-cf-isonline-stale-up-to-token-expiry`). The acceptance time is
+//   in the socket's attachment beside the claims; a socket accepted before it
+//   was (no `acceptedAt`) counts from its first auto-answered ping.
+// - A frame of a type this object does not know is ignored and the socket
+//   stays open; every socket is sent `welcome` first (`@missiv/common`'s
+//   inbox.ts, "Room to grow the socket's wire").
 // - The inbox version (`@missiv/common`'s inbox.ts) is this object's rows' own:
 //   each change of a row gives it the highest row's version plus one, in the
 //   statement that changes it, so `changes` (the polling transport) reads only
@@ -44,9 +58,11 @@ import {
 	HEARTBEAT_PONG,
 	INBOX_CLOSE_SESSION_EXPIRED,
 	INBOX_SESSION_EXPIRED_REASON,
+	HEARTBEAT_IDLE_INTERVALS,
+	HEARTBEAT_INTERVAL_MS,
 	INBOX_WS_PROTOCOL,
-	InboxSyncSchema,
 	membersOfConversationID,
+	readInboxClientFrame,
 	type Address,
 	type Conversation,
 	type ConversationStatus,
@@ -56,6 +72,7 @@ import {
 import {
 	answerSync,
 	inboxChangesOf,
+	inboxWelcomeFrame,
 	type ConversationKey,
 	type InboxChanges,
 	type InboxUpdate,
@@ -64,6 +81,28 @@ import {
 import type {CloudflareWorkerEnv} from '../env.js';
 import type {InboxApplyAnswer} from './conversation.js';
 import {conversationObject, conversationKeyOf, retryDelayMs, type InboxOwner} from './names.js';
+
+/** How recently a socket must have answered a ping (or been accepted) to count as online: Node/Bun's idle close, 90 s. */
+export const LIVENESS_MS = HEARTBEAT_INTERVAL_MS * HEARTBEAT_IDLE_INTERVALS;
+
+/** What a socket carries through hibernation: its session's claims, and when it was accepted (absent on a socket accepted before it was recorded). */
+type SocketAttachment = SessionClaims & {acceptedAt?: number};
+
+/**
+ * Whether a socket is live at `now`: its session not expired, and its last
+ * auto-answered ping (or, before any, its acceptance) within `livenessMs`.
+ */
+export function isLiveSocket(
+	socket: {exp: number; acceptedAt?: number; lastPingAt?: number},
+	now: number,
+	livenessMs: number = LIVENESS_MS,
+): boolean {
+	if (socket.exp <= now) {
+		return false;
+	}
+	const lastSign = Math.max(socket.acceptedAt ?? 0, socket.lastPingAt ?? 0);
+	return now - lastSign < livenessMs;
+}
 
 /** The header with which the Worker hands an upgrade's checked session claims to the Inbox object. */
 export const SESSION_CLAIMS_HEADER = 'X-Missiv-Session-Claims';
@@ -166,6 +205,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	private owner?: InboxOwner;
 	/** each socket's syncs, answered in turn (in memory: an object with a sync in progress is not evicted) */
 	private syncs = new Map<WebSocket, Promise<void>>();
+	/** how recently a socket must have shown a sign of life to count as online (a seam for tests) */
+	protected livenessMs = LIVENESS_MS;
 
 	constructor(ctx: DurableObjectState, env: CloudflareWorkerEnv) {
 		super(ctx, env);
@@ -367,11 +408,25 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	// the live side
 	// ------------------------------------------------------------------------------------------------
 
-	/** whether the user has a socket open whose session has not expired */
+	/** whether the user has a live socket: its session not expired, and a ping answered (or its acceptance) within `livenessMs` */
 	async isOnline(owner: InboxOwner): Promise<boolean> {
 		this.remember(owner);
 		const now = Date.now();
-		return this.ctx.getWebSockets().some((ws) => (claimsOf(ws)?.exp ?? 0) > now);
+		return this.ctx.getWebSockets().some((ws) => {
+			const attachment = claimsOf(ws);
+			if (!attachment) {
+				return false;
+			}
+			return isLiveSocket(
+				{
+					exp: attachment.exp,
+					acceptedAt: attachment.acceptedAt,
+					lastPingAt: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime(),
+				},
+				now,
+				this.livenessMs,
+			);
+		});
 	}
 
 	/** An upgrade whose token the Worker checked (its claims in `SESSION_CLAIMS_HEADER`): the socket, hibernatable. */
@@ -387,7 +442,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 		const [client, server] = Object.values(new WebSocketPair());
 		this.ctx.acceptWebSocket(server);
 		// the session survives the object's hibernation with the socket
-		server.serializeAttachment(claims);
+		server.serializeAttachment({...claims, acceptedAt: Date.now()} satisfies SocketAttachment);
+		server.send(JSON.stringify(inboxWelcomeFrame()));
 		await this.schedule();
 		return new Response(null, {status: 101, webSocket: client, headers: {'Sec-WebSocket-Protocol': INBOX_WS_PROTOCOL}});
 	}
@@ -449,15 +505,13 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	}
 
 	private async answer(ws: WebSocket, claims: SessionClaims, data: string | ArrayBuffer): Promise<void> {
-		let frame: unknown;
-		try {
-			frame = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
-		} catch {
-			frame = undefined;
+		const frame = readInboxClientFrame(data);
+		if (frame.kind === 'unknown') {
+			// a frame of a newer client: ignored, the socket stays open
+			return;
 		}
-		const sync = InboxSyncSchema.safeParse(frame);
-		if (!sync.success) {
-			// 1008: policy violation; nothing but a sync is expected
+		if (frame.kind === 'invalid') {
+			// 1008: policy violation; not a frame at all, or a malformed sync
 			closeQuietly(ws, 1008, 'expected a sync frame');
 			return;
 		}
@@ -478,7 +532,7 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 				},
 			},
 			claims,
-			sync.data,
+			frame.sync,
 			(frame) => ws.send(JSON.stringify(frame)),
 			() => ws.readyState === 1, // OPEN
 		);
@@ -682,8 +736,8 @@ export class ServerObjectInbox extends DurableObject<CloudflareWorkerEnv> {
 	}
 }
 
-function claimsOf(ws: WebSocket): SessionClaims | undefined {
-	return (ws.deserializeAttachment() as SessionClaims | null) ?? undefined;
+function claimsOf(ws: WebSocket): SocketAttachment | undefined {
+	return (ws.deserializeAttachment() as SocketAttachment | null) ?? undefined;
 }
 
 function closeQuietly(ws: WebSocket, code?: number, reason?: string) {

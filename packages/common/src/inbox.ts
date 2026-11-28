@@ -43,6 +43,24 @@
 // - Which transports a deployment offers is `INBOX_TRANSPORTS` (`socket,poll`
 //   by default): a route that is off answers 404, and a client in `auto`
 //   adapts.
+//
+// Room to grow the socket's wire (ADR-0006 "Amendment: room to grow the live
+// channel's wire", 2026-11-28):
+// - On every accepted socket the server first sends `{type: 'welcome',
+//   features}`: the names of the optional frames it accepts beyond `sync` (none
+//   yet; typing and presence are the expected first ones). A client sends an
+//   optional frame only when the welcome of the socket it is on names it, so it
+//   never needs to know a server's version. A server that sends no welcome
+//   (older than this) accepts nothing but `sync` and `ping`.
+// - A client frame that is a JSON object with a string `type` the server does
+//   not know is IGNORED, the socket stays open: from this version on, a
+//   client newer than its server loses only that frame. A frame that is not
+//   such an object (not JSON, no `type`), or a malformed `sync`, still closes
+//   the socket (1008).
+//   Servers before this amendment closed on any unknown frame, which is why a
+//   client waits for the welcome.
+// - A client ignores a server frame whose `type` it does not know (the client
+//   already did), so the server may add frames without breaking older clients.
 import {z} from 'zod';
 import type {Message} from './message.js';
 import type {Conversation} from './index.js';
@@ -96,12 +114,54 @@ export const InboxSyncSchema = z.object({
 export type InboxSync = z.infer<typeof InboxSyncSchema>;
 export type InboxClientFrame = InboxSync;
 
+/** What a client frame is to the server: a `sync`, a frame of a type it does not know (ignored), or invalid (closes the socket). */
+export type ReadInboxClientFrame = {kind: 'sync'; sync: InboxSync} | {kind: 'unknown'; type: string} | {kind: 'invalid'};
+
+/**
+ * Read a client frame (other than the heartbeat's `ping`, which is answered
+ * before): a `sync`, an object with a string `type` that is not `sync`
+ * (`unknown`, to ignore), or anything else, a malformed `sync` included
+ * (`invalid`).
+ */
+export function readInboxClientFrame(data: string | ArrayBuffer | ArrayBufferView): ReadInboxClientFrame {
+	let frame: unknown;
+	try {
+		frame = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
+	} catch {
+		return {kind: 'invalid'};
+	}
+	if (typeof frame !== 'object' || frame === null || Array.isArray(frame)) {
+		return {kind: 'invalid'};
+	}
+	const type = (frame as {type?: unknown}).type;
+	if (typeof type !== 'string') {
+		return {kind: 'invalid'};
+	}
+	if (type !== 'sync') {
+		return {kind: 'unknown', type};
+	}
+	const sync = InboxSyncSchema.safeParse(frame);
+	return sync.success ? {kind: 'sync', sync: sync.data} : {kind: 'invalid'};
+}
+
+/**
+ * The optional client frames a server may accept beyond `sync`, named in its
+ * `welcome`. None is defined yet: a server built from this version announces
+ * an empty list.
+ */
+export type InboxFeature = string;
+
+/** The optional client frames this version's servers accept (none yet). */
+export const INBOX_SERVER_FEATURES: readonly InboxFeature[] = [];
+
 /**
  * What the server pushes: a new message the account can see (its own included,
  * to its other devices), its inbox row after a change (a message, accept,
- * reject, markRead), and `ready` once a `sync` is answered.
+ * reject, markRead), `ready` once a `sync` is answered, and `welcome` first on
+ * every socket, naming the optional client frames the server accepts.
  */
 export type InboxServerFrame =
+	| {type: 'welcome'; features: InboxFeature[]}
 	| {type: 'message'; message: Message}
 	| {type: 'conversation'; conversation: Conversation}
 	| {type: 'ready'};

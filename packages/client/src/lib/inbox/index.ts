@@ -19,7 +19,8 @@
 // - `transport: 'auto'` (the default) starts on the socket and moves to
 //   polling after `socketFailuresBeforePolling` (3) sockets in a row failed: a
 //   socket refused or lost before the server sent it anything (a frame from
-//   the server proves the transport works, and resets the count; a
+//   the server proves the transport works, and resets the count, but not the
+//   `welcome`, which every accepted socket is sent at once; a
 //   `session-expired` close is no failure). While polling it tries a socket
 //   again every `socketRetryIntervalMs` (60 s); one that opens takes over. A
 //   poll refused 404 (a server without polling) sends `auto` back to the
@@ -34,6 +35,10 @@
 // - A failed poll is retried with the reconnection's backoff (1 s doubling to
 //   30 s), and the channel reports itself not connected until a poll succeeds,
 //   which is a new `onOpen`.
+// - `features` is what the current socket's `welcome` named (the optional
+//   client frames its server accepts), and undefined while none is known: no
+//   socket, polling, before the welcome, or a server older than the welcome. A
+//   caller sends an optional frame only when `features` names it.
 import {
 	HEARTBEAT_CLOSE_TIMEOUT,
 	HEARTBEAT_PONG,
@@ -103,6 +108,12 @@ export type InboxChannel = {
 	readonly connected: boolean;
 	/** the transport in use: `socket` or `poll` */
 	readonly transport: 'socket' | 'poll';
+	/**
+	 * the optional client frames the current socket's server accepts (its
+	 * `welcome`), or undefined while none is known (polling, no socket yet, or a
+	 * server that sends no welcome)
+	 */
+	readonly features: readonly string[] | undefined;
 };
 
 const channels = new Map<string, InboxChannel>();
@@ -170,6 +181,8 @@ export function openInboxChannel(params: {
 	let heartbeat: Heartbeat | undefined;
 	/** the syncs sent on the socket and not yet answered, in order: each `ready` answers the oldest */
 	let pending: Array<() => void> = [];
+	/** what the current socket's `welcome` named; undefined while none is known */
+	let features: readonly string[] | undefined;
 	/** the sockets in a row that failed before the server sent them anything */
 	let socketFailures = 0;
 	let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -279,16 +292,26 @@ export function openInboxChannel(params: {
 		ws.addEventListener('message', (event: { data: unknown }) => {
 			if (socket !== ws) return;
 			heartbeat?.received();
-			// the server answered: this transport works
-			socketFailures = 0;
-			if (event.data === HEARTBEAT_PONG) return;
+			if (event.data === HEARTBEAT_PONG) {
+				// the server answered: this transport works
+				socketFailures = 0;
+				return;
+			}
 			let frame: InboxServerFrame;
 			try {
 				frame = JSON.parse(String(event.data));
 			} catch {
 				return;
 			}
-			if (frame.type === 'ready') {
+			// the server answered: this transport works. Not the welcome, which every
+			// accepted socket gets at once, so a socket dropped right after it still
+			// counts toward falling back to polling.
+			if (frame.type !== 'welcome') socketFailures = 0;
+			if (frame.type === 'welcome') {
+				features = Array.isArray(frame.features)
+					? frame.features.filter((name): name is string => typeof name === 'string')
+					: [];
+			} else if (frame.type === 'ready') {
 				pending.shift()?.();
 			} else if (frame.type === 'message') {
 				message(frame.message);
@@ -305,6 +328,7 @@ export function openInboxChannel(params: {
 	function lost(ws: InboxSocket, code: number | undefined, wasOpen: boolean) {
 		if (socket !== ws) return;
 		socket = undefined;
+		features = undefined;
 		heartbeat?.stop();
 		heartbeat = undefined;
 		if (!wasOpen) renew = true;
@@ -492,6 +516,7 @@ export function openInboxChannel(params: {
 		stopPolling();
 		const ws = socket;
 		socket = undefined;
+		features = undefined;
 		connected = false;
 		heartbeat?.stop();
 		heartbeat = undefined;
@@ -540,6 +565,9 @@ export function openInboxChannel(params: {
 		},
 		get transport() {
 			return mode;
+		},
+		get features() {
+			return features;
 		}
 	};
 	channels.set(key, channel);
